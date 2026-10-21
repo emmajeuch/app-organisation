@@ -89,6 +89,11 @@ export function migrer(o) {
   for (const k of ['taches', 'projets', 'exos', 'seances', 'journal', 'habitudes']) if (!Array.isArray(o[k])) o[k] = [];
   if (typeof o.repos !== 'number') o.repos = 90;
   if (typeof o.club !== 'string') o.club = '';
+  for (const k of ['tirages', 'collection']) if (!Array.isArray(o[k])) o[k] = [];
+  if (!o.bilans || typeof o.bilans !== 'object' || Array.isArray(o.bilans)) o.bilans = {};
+  if (typeof o.bonusXp !== 'number') o.bonusXp = 0;
+  if (typeof o.son !== 'boolean') o.son = true;
+  if (typeof o.theme !== 'string') o.theme = 'classique';
   return o;
 }
 
@@ -97,11 +102,13 @@ export function migrer(o) {
 export const joursAvant = (iso, auj) => Math.round((deIso(iso) - new Date(auj.getFullYear(), auj.getMonth(), auj.getDate())) / 864e5);
 
 // Cocher une tâche récurrente la repousse à sa prochaine date au lieu de la terminer.
+// Chaque fois qu'elle est faite, la date s'ajoute à t.faits : c'est ce qui compte pour l'XP.
 export function cocher(t, auj) {
-  if (!t.recurrence && t.recurrence !== 0) return { ...t, fait: true, faitLe: isoJour(auj) };
+  const faits = [...(t.faits || []), isoJour(auj)];
+  if (!t.recurrence && t.recurrence !== 0) return { ...t, fait: true, faitLe: isoJour(auj), faits };
   let d = t.echeance ? deIso(t.echeance) : new Date(auj.getFullYear(), auj.getMonth(), auj.getDate());
   do d = ajouterJours(d, 1); while (jourSemaine(d) !== t.recurrence || d <= auj);
-  return { ...t, fait: false, echeance: isoJour(d), sous: (t.sous || []).map(s => ({ ...s, fait: false })) };
+  return { ...t, fait: false, faits, echeance: isoJour(d), sous: (t.sous || []).map(s => ({ ...s, fait: false })) };
 }
 
 // À faire bientôt : en retard, aujourd'hui, ou dans les 7 jours ; puis par date et priorité.
@@ -127,6 +134,105 @@ export const faitsSemaine = (h, lundi) => {
   const de = isoJour(lundi), a = isoJour(ajouterJours(lundi, 6));
   return h.faits.filter(d => d >= de && d <= a).length;
 };
+
+// ---------- Motivation ----------
+// Tout se recalcule à partir de ce qui a été fait : ouvrir l'app sans rien faire ne rapporte rien,
+// et décocher retire ce que cocher avait donné.
+
+export const journeeValidee = slots => slots.length > 0 && slots.every(x => x.fait);
+export function joursValides(data) {
+  const v = new Set();
+  for (const [cle, s] of Object.entries(data.semaines)) {
+    for (let j = 0; j < 7; j++) if (journeeValidee(s.slots.filter(x => x.j === j))) v.add(isoJour(ajouterJours(deIso(cle), j)));
+  }
+  return v;
+}
+const joursValidesSemaine = (valides, cle) => [0, 1, 2, 3, 4, 5, 6].filter(j => valides.has(isoJour(ajouterJours(deIso(cle), j)))).length;
+
+// Série de journées validées. Tous les 7 jours d'affilée, un joker (3 au plus) ; un jour manqué
+// en consomme un au lieu de casser la série. Aujourd'hui ne casse rien tant qu'il n'est pas fini.
+export function serie(valides, auj, debut) {
+  let s = 0, jokers = 0, record = 0;
+  const fin = isoJour(auj);
+  for (let d = new Date(debut.getFullYear(), debut.getMonth(), debut.getDate()); isoJour(d) <= fin; d = ajouterJours(d, 1)) {
+    const iso = isoJour(d);
+    if (valides.has(iso)) { s++; if (s % 7 === 0) jokers = Math.min(3, jokers + 1); }
+    else if (iso === fin) break;
+    else if (s > 0 && jokers > 0) jokers--;
+    else s = 0;
+    record = Math.max(record, s);
+  }
+  return { serie: s, jokers, record };
+}
+
+export const seuil = n => 50 * n * (n - 1); // XP pour atteindre le niveau n : 0, 100, 300, 600…
+export function niveau(xp) {
+  let n = 1;
+  while (xp >= seuil(n + 1)) n++;
+  return { n, de: seuil(n), a: seuil(n + 1) };
+}
+
+export const XP = { creneau: 5, tache: 20, tacheImportante: 30, seance: 30, habitude: 5, objectif: { semaine: 25, mois: 60, annee: 150 }, projet: 100, jour: 15, bilan: 50 };
+const completions = t => t.faits?.length || (t.fait ? 1 : 0);
+const important = t => t.priorite === 1 || t.fac;
+
+export function stats(data, auj) {
+  const slots = Object.values(data.semaines).flatMap(s => s.slots);
+  const valides = joursValides(data);
+  const cles = Object.keys(data.semaines).sort();
+  const se = cles.length ? serie(valides, auj, deIso(cles[0])) : { serie: 0, jokers: 0, record: 0 };
+  const club = slots.filter(x => x.club && x.fait).length;
+  const projets = data.projets.filter(p => p.statut === 'termine').length;
+  const sources = {
+    creneaux: slots.filter(x => x.fait).length * XP.creneau,
+    taches: data.taches.reduce((k, t) => k + completions(t) * (important(t) ? XP.tacheImportante : XP.tache), 0),
+    sport: (data.journal.length + club) * XP.seance,
+    habitudes: data.habitudes.reduce((k, h) => k + h.faits.length, 0) * XP.habitude,
+    objectifs: data.objectifs.filter(o => o.fait).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
+    bonus: valides.size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,
+  };
+  const total = Object.values(sources).reduce((a, b) => a + b, 0);
+  return {
+    sources, total, niveau: niveau(total), ...se, valides, joursValides: valides.size,
+    semainesCompletes: cles.filter(c => joursValidesSemaine(valides, c) === 7).length,
+    seances: data.journal.length + club, taches: data.taches.reduce((k, t) => k + completions(t), 0), projets,
+    objSemaine: data.objectifs.filter(o => o.fait && o.horizon === 'semaine').length,
+    habitudeMax: Math.max(0, ...data.habitudes.map(h => h.faits.length)), bilans: Object.keys(data.bilans).length,
+  };
+}
+
+// Tirages gagnés et pas encore ouverts : un par niveau, par grosse tâche, par projet terminé,
+// et par semaine réussie (au moins 5 journées validées).
+export function droitsTirage(data, st) {
+  const d = [];
+  for (let n = 2; n <= st.niveau.n; n++) d.push(`niveau:${n}`);
+  data.taches.forEach(t => { if (important(t) && completions(t)) d.push(`tache:${t.id}`); });
+  data.projets.forEach(p => { if (p.statut === 'termine') d.push(`projet:${p.id}`); });
+  Object.keys(data.semaines).forEach(c => { if (joursValidesSemaine(st.valides, c) >= 5) d.push(`semaine:${c}`); });
+  return d.filter(k => !data.tirages.includes(k));
+}
+
+// Créatures originales de la collection : [id, nom, couleur, forme 0 à 3, rareté].
+export const CREATURES = [
+  ['ronfleur', 'Ronfleur', '#FF9B3D', 0, 'commune'], ['gratte', 'Gratte-papier', '#35C6DF', 1, 'commune'],
+  ['sprintou', 'Sprintou', '#B5DF2B', 2, 'commune'], ['grignote', 'Grignote', '#34BD67', 0, 'commune'],
+  ['plumette', 'Plumette', '#6766F0', 3, 'commune'], ['flanou', 'Flânou', '#FFD447', 1, 'commune'],
+  ['bricolo', 'Bricolo', '#FF8AC1', 2, 'commune'], ['caillou', 'Caillou', '#9AA1AE', 3, 'commune'],
+  ['brindille', 'Brindille', '#7FA35B', 1, 'commune'], ['mirabelle', 'Mirabelle', '#F2B33D', 0, 'commune'],
+  ['tourbillon', 'Tourbillon', '#3C8CE7', 2, 'rare'], ['pepite', 'Pépite', '#D9A520', 3, 'rare'],
+  ['nuage', 'Nuage', '#A9C4E8', 1, 'rare'], ['cactou', 'Cactou', '#2E9E6A', 0, 'rare'],
+  ['lumino', 'Lumino', '#FFE066', 2, 'legendaire'], ['zephyr', 'Zéphyr', '#8E7CF0', 3, 'legendaire'],
+].map(([id, nom, couleur, forme, rarete]) => ({ id, nom, couleur, forme, rarete }));
+
+// Légendaire 5 %, rare 25 %, commune 70 % ; une créature pas encore possédée si possible.
+export function tirer(possedes, rand = Math.random) {
+  const r = rand();
+  const rarete = r < .05 ? 'legendaire' : r < .3 ? 'rare' : 'commune';
+  const pool = CREATURES.filter(c => c.rarete === rarete);
+  const neuves = pool.filter(c => !possedes.includes(c.id));
+  const liste = neuves.length ? neuves : pool;
+  return liste[Math.floor(rand() * liste.length)];
+}
 
 // Renfo conseillé par sport : des exercices classiques, à adapter avec son coach.
 export const CONSEILS = {

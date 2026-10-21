@@ -37,7 +37,20 @@ navigator.storage?.persist?.().catch(() => {});
 function sauver() {
   try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { dire('Enregistrement impossible : exporte tes données depuis Profil.'); }
 }
-const maj = () => { sauver(); rendre(); };
+// Après chaque changement : on enregistre, on redessine, et on annonce l'XP gagnée (avec un petit son).
+let dernier = null;
+function maj() {
+  sauver();
+  rendre();
+  const st = L.stats(data, new Date());
+  if (dernier && st.total > dernier.total) {
+    const gain = `+${st.total - dernier.total} XP`;
+    dire(toast.hidden ? gain : `${toast.textContent} · ${gain}`);
+    son();
+    if (st.niveau.n > dernier.niveau.n) { feter(); setTimeout(() => dire(`Niveau ${st.niveau.n} ! Un tirage t’attend dans Profil`), 2300); }
+  }
+  dernier = st;
+}
 
 const ui = { onglet: 'aujourdhui', lundi: L.lundiDe(new Date()), seul: null, tag: null, q: '', ouvertes: new Set(), derniereCat: null };
 try { ui.onglet = localStorage.getItem('orga-onglet') || ui.onglet; } catch {}
@@ -154,8 +167,19 @@ const bienvenue = () => `<div class="card bientot"><b>Bienvenue</b>
 
 function vueAujourdhui() {
   const { date, h } = L.momentLogique(new Date());
-  let html = `<header class="top"><div><h1>Aujourd’hui</h1><p>${date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p></div></header>`;
+  const st = L.stats(data, new Date());
+  let html = `<header class="top"><div><h1>Aujourd’hui</h1><p>${date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p></div>
+    <div class="chips"><button class="chip" data-act="ouvrir-profil" aria-label="Série de ${st.serie} jours">${FLAMME}${st.serie}</button><button class="chip" data-act="ouvrir-profil" aria-label="Niveau ${st.niveau.n}">Niv. ${st.niveau.n}</button></div></header>`;
   if (!data.types.length) { $('#aujourdhui').innerHTML = html + bienvenue(); return; }
+
+  // Hier pas validé : on le rattrape d'un tap pour garder la série.
+  const hier = L.ajouterJours(date, -1), semHier = data.semaines[cleSem(hier)];
+  const slotsHier = semHier ? semHier.slots.filter(x => x.j === L.jourSemaine(hier)) : [];
+  if (slotsHier.length && !L.journeeValidee(slotsHier)) {
+    html += `<div class="card type"><div class="txt"><b>Hier n’est pas validé</b><small>${slotsHier.filter(x => !x.fait).length} créneaux à valider pour garder ta série</small></div><button class="btn gris petit" data-act="valider-tout" data-jour="${L.isoJour(hier)}" data-jusqua="99">Valider hier</button></div>`;
+  }
+  const aBilan = bilanAFaire();
+  if (aBilan) html += `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>`;
 
   const j = L.jourSemaine(date);
   const slots = semaineDe(cleSem(date)).slots.filter(x => x.j === j);
@@ -185,6 +209,10 @@ function vueAujourdhui() {
       <div class="txt"><b>${esc(x.titre)}</b>${sous ? `<small>${esc(sous)}</small>` : ''}</div>
       ${passe ? `<button class="valid" data-act="valider" data-id="${x.id}" aria-pressed="${!!x.fait}" aria-label="Valider ${esc(x.titre)}">${I.check}</button>` : ''}</li>`;
   }).join('')}</ol>` : '<p class="vide">Rien de prévu aujourd’hui. Ajoute un créneau avec le bouton +.</p>';
+  // Dès 20 h, on peut valider toute la journée d'un coup (on corrige d'abord ce qui a changé).
+  const soir = h >= 20, aValider = slots.filter(x => !x.fait && (soir || x.e <= h)).length;
+  if (aValider) html += `<button class="btn gris" data-act="valider-tout" data-jour="${L.isoJour(date)}" data-jusqua="${soir ? 99 : h}">${soir ? 'Valider la journée' : `Valider les ${aValider} créneaux passés`}</button>`;
+  else if (L.journeeValidee(slots)) html += `<p class="vide">Journée validée : +${L.XP.jour} XP de bonus.</p>`;
   html += '</div>';
 
   const af = L.aFaire(data.taches, date);
@@ -593,8 +621,8 @@ function editerProjet(p, type = 'projet') {
       const j = data.projets.slice(0, i).map(x => x.type === p.type && x.statut !== 'termine').lastIndexOf(true);
       if (j >= 0) [data.projets[j], data.projets[i]] = [data.projets[i], data.projets[j]];
     }
+    if (choix === 'termine') { dire(`${champs.nom} : terminé, bravo !`); feter(); }
     maj();
-    if (choix === 'termine') { feter(); dire(`${champs.nom} : terminé, bravo !`); }
   });
 }
 
@@ -729,6 +757,19 @@ function lancerRepos() {
   tic();
   repos = setInterval(tic, 250);
 }
+function son() {
+  if (!data.son) return;
+  try {
+    audio ||= new (window.AudioContext || window.webkitAudioContext)();
+    audio.resume();
+    const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(660, t); o.frequency.exponentialRampToValueAtTime(1320, t + .08);
+    g.gain.setValueAtTime(.12, t); g.gain.exponentialRampToValueAtTime(.001, t + .16);
+    o.connect(g).connect(audio.destination);
+    o.start(t); o.stop(t + .17);
+  } catch {}
+}
 function arreterRepos() { clearInterval(repos); repos = null; const b = $('#repos'); if (b) b.hidden = true; }
 function bip() {
   if (!audio) return;
@@ -762,7 +803,7 @@ function commencerSeance(seanceId, slotId) {
       series, ressenti: +f.get('ressenti') || null, notes: f.get('notes').trim() });
     const r = slotId && trouverSlot(slotId);
     if (r) r.slot.fait = true;
-    maj(); feter(); dire('Séance enregistrée');
+    dire('Séance enregistrée'); maj(); feter();
   }, { collant: true });
 }
 
@@ -825,28 +866,148 @@ function editerHabitude(hb) {
   });
 }
 
+const THEMES = [['classique', 'Classique', 1, ''], ['ardoise', 'Ardoise', 3, '#4A6FA5'], ['menthe', 'Menthe', 5, '#2FB46E'],
+  ['lavande', 'Lavande', 7, '#8E7CF0'], ['corail', 'Corail', 9, '#F06A5B'], ['or', 'Or', 12, '#D9A520']];
+function appliquerTheme() {
+  const t = THEMES.find(x => x[0] === data.theme);
+  if (t && t[3]) document.documentElement.style.setProperty('--teinte', t[3]); else document.documentElement.style.removeProperty('--teinte');
+}
+const SOURCES = { creneaux: ['Créneaux', '#35C6DF'], taches: ['Tâches', '#EC4A46'], sport: ['Sport', '#B5DF2B'],
+  habitudes: ['Habitudes', '#FF8AC1'], objectifs: ['Objectifs et projets', '#6766F0'], bonus: ['Journées et bilans', '#FFD447'] };
+const SUCCES = [
+  ['Première journée validée', 'joursValides', 1], ['7 jours d’affilée', 'record', 7], ['30 jours d’affilée', 'record', 30],
+  ['Première semaine complète', 'semainesCompletes', 1], ['10 séances de sport', 'seances', 10], ['50 séances de sport', 'seances', 50],
+  ['10 tâches faites', 'taches', 10], ['100 tâches faites', 'taches', 100], ['Premier projet terminé', 'projets', 1],
+  ['5 objectifs de semaine atteints', 'objSemaine', 5], ['Une habitude tenue 21 jours', 'habitudeMax', 21], ['4 bilans de la semaine', 'bilans', 4],
+];
+const RARETE = { commune: 'Commune', rare: 'Rare', legendaire: 'Légendaire' };
+const creaHtml = c => `<div class="crea forme-${c.forme} ${c.rarete}" style="--c:${c.couleur}"><i></i></div>`;
+const FLAMME = '<svg viewBox="0 0 24 24" fill="#EC4A46" aria-hidden="true"><path d="M12 22c-4 0-7-2.7-7-6.6 0-3.3 2.1-5.3 3.4-8.6.9 1.7 2 2.6 3.2 2.9-.3-2.7.9-5.2 3-7.2.3 3.7 4.4 6.4 4.4 11.1 0 4.6-3 8.4-7 8.4z"/></svg>';
+
+// Le bilan est dû le dimanche dès 16 h, et encore le lundi et le mardi pour la semaine passée.
+function bilanAFaire() {
+  const { date, h } = L.momentLogique(new Date()), j = L.jourSemaine(date), cle = cleSem(date);
+  const prec = L.isoJour(L.ajouterJours(L.lundiDe(date), -7));
+  if (j === 6 && h >= 16 && !data.bilans[cle]) return cle;
+  if (j <= 1 && data.semaines[prec]?.slots.length && !data.bilans[prec]) return prec;
+  return null;
+}
+
 function vueProfil() {
+  const st = L.stats(data, new Date()), nv = st.niveau;
   const sem = data.semaines[cleSem(new Date())];
-  const tot = L.heuresParCat(sem ? sem.slots : []), max = Math.max(1, ...Object.values(tot));
+  const prevu = L.heuresParCat(sem ? sem.slots : []), fait = L.heuresParCat(sem ? sem.slots.filter(x => x.fait) : []);
+  const max = Math.max(1, ...Object.values(prevu));
+  const droits = L.droitsTirage(data, st), possedes = new Set(data.collection.map(c => c.id));
+  const prochainTheme = THEMES.find(t => t[2] > nv.n), aBilan = bilanAFaire();
+  const sources = Object.entries(st.sources).filter(([, v]) => v);
+  const obtenus = SUCCES.filter(([, k, c]) => st[k] >= c).length;
+  const motivation = `<header class="top"><div><h1>Profil</h1><p>Niveau, collection et réglages</p></div></header>
+    <div class="card niveau">
+      <div class="kv"><span class="num big">Niveau ${nv.n}</span><span class="num">${st.total - nv.de} / ${nv.a - nv.de} XP</span></div>
+      <div class="xp"><div style="width:${(st.total - nv.de) / (nv.a - nv.de) * 100}%">${sources.map(([k, v]) => `<i style="--c:${SOURCES[k][1]};flex:${v}"></i>`).join('')}</div></div>
+      ${sources.length ? `<div class="xp-leg">${sources.map(([k, v]) => `<span><i style="--c:${SOURCES[k][1]}"></i>${SOURCES[k][0]} ${v}</span>`).join('')}</div>` : '<p class="muted">L’XP se gagne en validant tes créneaux, tes tâches, tes séances, tes habitudes et tes objectifs.</p>'}
+      <small class="muted">${st.total} XP au total${prochainTheme ? ` · niveau ${prochainTheme[2]} : thème ${prochainTheme[1]}` : ''}</small></div>
+    <div class="card serie">${FLAMME}<div><span class="num">${st.serie} jour${st.serie > 1 ? 's' : ''}</span><br><small class="muted">de journées validées · record ${st.record}</small></div><div class="jokers"><b>${st.jokers}</b>joker${st.jokers > 1 ? 's' : ''}</div></div>
+    ${aBilan ? `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>` : ''}
+    <div class="sec"><h2>Collection <span>${possedes.size} sur ${L.CREATURES.length}</span></h2>
+      ${droits.length ? `<button class="btn plein" data-act="tirage">Ouvrir ${droits.length > 1 ? `tes ${droits.length} tirages` : 'ton tirage'}</button>` : ''}
+      <div class="collec">${L.CREATURES.map(c => possedes.has(c.id) ? `<button class="fig" data-act="creature" data-id="${c.id}">${creaHtml(c)}<span>${esc(c.nom)}</span></button>` : '<div class="fig"><div class="crea lock">?</div><span>À gagner</span></div>').join('')}</div>
+      <p class="aide">Un tirage à chaque niveau, à chaque tâche importante ou de fac faite, à chaque projet terminé, et pour chaque semaine avec au moins 5 journées validées.</p></div>
+    <div class="sec"><h2>Succès <span>${obtenus} sur ${SUCCES.length}</span></h2><ul class="list">${SUCCES.map(([nom, k, cible]) => {
+      const ok = st[k] >= cible;
+      return `<li><span class="medal${ok ? '' : ' en-cours'}">${ok ? I.check : `${st[k]}/${cible}`}</span><div class="txt"><b>${nom}</b>${ok ? '<small>Obtenu</small>' : ''}</div></li>`;
+    }).join('')}</ul></div>
+    <div class="sec"><h2>Cette semaine <span>réalisé / prévu</span></h2>${Object.keys(prevu).length ? `<div class="card"><ul class="stats">${Object.entries(prevu).sort((a, b) => b[1] - a[1]).map(([c, v]) =>
+      `<li><span>${esc(cat(c).nom)}</span><span class="track duo" style="${teinte(c)}"><i style="width:${v / max * 100}%"></i><i style="width:${(fait[c] || 0) / max * 100}%"></i></span><b>${L.heures(fait[c] || 0)}<small> / ${L.heures(v)}</small></b></li>`).join('')}</ul></div>` : '<p class="vide">Aucun créneau cette semaine.</p>'}
+      <button class="btn gris" data-act="bilan">Faire le bilan de la semaine</button></div>
+    <div class="sec"><h2>Thème</h2><div class="cats">${THEMES.map(([id, nom, n, c]) => n > nv.n ? `<span class="theme verrou">${nom} · niv. ${n}</span>`
+      : `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${data.theme === id}" style="--c:${c || 'var(--ink)'}">${nom}</button>`).join('')}</div>
+      <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label></div>`;
   const jours = data.dernierExport ? Math.floor((Date.now() - new Date(data.dernierExport)) / 864e5) : null;
   const etat = jours === null ? 'Jamais exportée' : jours === 0 ? 'Exportée aujourd’hui' : `Dernier export il y a ${jours} jour${jours > 1 ? 's' : ''}`;
   const defaut = data.typeDefaut || data.types[0]?.id;
   const opt = (vals, sel) => vals.map(x => `<option value="${x}" ${x === sel ? 'selected' : ''}>${L.hhmm(x)}</option>`).join('');
-  $('#profil').innerHTML = `<header class="top"><div><h1>Profil</h1><p>Réglages et sauvegarde</p></div></header>
+  $('#profil').innerHTML = `${motivation}
     <div class="sec"><h2>Sauvegarde</h2><div class="card bientot">
       <b class="${jours === null || jours > 7 ? 'alerte' : ''}">${etat}</b>
       <p>Tes données ne sont que sur ce téléphone, et iOS peut les effacer s’il manque de place. Exporte-les chaque semaine dans Fichiers (iCloud Drive).</p>
       <div class="rangee"><button class="btn plein" data-act="exporter">Exporter</button><button class="btn gris" data-act="importer">Importer</button></div></div></div>
-    <div class="sec"><h2>Heures prévues cette semaine</h2>${Object.keys(tot).length ? `<div class="card"><ul class="stats">${Object.entries(tot).sort((a, b) => b[1] - a[1]).map(([c, v]) =>
-      `<li><span>${esc(cat(c).nom)}</span><span class="track"><i style="${teinte(c)};width:${v / max * 100}%"></i></span><b>${L.heures(v)}</b></li>`).join('')}</ul></div>` : '<p class="vide">Aucun créneau cette semaine.</p>'}</div>
     <div class="sec"><h2>Catégories</h2>
       <ul class="list">${data.cats.map(c => `<li class="reglage"><input type="color" value="${L.couleurSure(c.couleur)}" data-act="cat-couleur" data-id="${c.id}" aria-label="Couleur de ${esc(c.nom)}"><input type="text" value="${esc(c.nom)}" data-act="cat-nom" data-id="${c.id}" aria-label="Nom de la catégorie"><button class="x" data-act="suppr-cat" data-id="${c.id}" aria-label="Supprimer ${esc(c.nom)}">${I.x}</button></li>`).join('')}</ul>
       <form class="ajout" data-form="cat"><input name="nom" placeholder="Nouvelle catégorie" aria-label="Nouvelle catégorie" autocomplete="off"><button aria-label="Ajouter">${I.plus}</button></form></div>
     <div class="sec"><h2>Plage horaire de la semaine</h2><div class="card reglage"><span>De</span><select data-act="plage" data-i="0" aria-label="Début">${opt([5, 6, 7, 8, 9], data.plage[0])}</select><span>à</span><select data-act="plage" data-i="1" aria-label="Fin">${opt([22, 23, 24, 25], data.plage[1])}</select></div></div>
     <div class="sec"><h2>Semaines types</h2>
       <ul class="list">${data.types.map(t => `<li class="reglage"><input type="text" value="${esc(t.nom)}" data-act="type-nom" data-id="${t.id}" aria-label="Nom de la semaine type"><button class="btn ${t.id === defaut ? 'plein' : 'gris'} petit" data-act="type-defaut" data-id="${t.id}" aria-pressed="${t.id === defaut}">Par défaut</button><button class="x" data-act="suppr-type" data-id="${t.id}" aria-label="Supprimer ${esc(t.nom)}">${I.x}</button></li>`).join('')}</ul>
-      <p class="aide">La semaine type par défaut remplit chaque nouvelle semaine. Pour en créer une : Semaine › Modifier.</p></div>
-    <div class="card bientot"><b>Niveau, XP, collection et succès</b><p>Arrivent en V1.3, avec le bilan du dimanche.</p></div>`;
+      <p class="aide">La semaine type par défaut remplit chaque nouvelle semaine. Pour en créer une : Semaine › Modifier.</p></div>`;
+  appliquerTheme();
+}
+
+const RAISON = k => { const [type, v] = k.split(':'); return { niveau: `Niveau ${v} atteint`, tache: 'Tâche importante faite', projet: 'Projet terminé', semaine: 'Semaine réussie' }[type]; };
+// Le tirage est enregistré avant d'être montré : fermer la fenêtre ne permet pas de retirer.
+function ouvrirTirage() {
+  const droits = L.droitsTirage(data, L.stats(data, new Date()));
+  if (!droits.length) return;
+  const c = L.tirer(data.collection.map(x => x.id));
+  const doublon = data.collection.some(x => x.id === c.id);
+  data.tirages.push(droits[0]);
+  if (doublon) data.bonusXp += 50; else data.collection.push({ id: c.id, date: L.isoJour(new Date()), raison: droits[0] });
+  maj();
+  ouvrirDlg(`<form class="tirage"><h2>${RAISON(droits[0])}</h2><div class="revele">${creaHtml(c)}</div>
+    <b class="nom">${esc(c.nom)}</b><span class="pill ${c.rarete}">${RARETE[c.rarete]}</span>
+    <p class="muted">${doublon ? 'Déjà dans ta collection : +50 XP à la place.' : 'Nouvelle venue dans ta collection !'}</p>
+    <div class="rangee">${droits.length > 1 ? `<button type="button" class="btn gris" data-choix="encore">Tirage suivant (${droits.length - 1})</button>` : ''}<button class="btn plein">Super</button></div></form>`,
+  choix => { if (choix === 'encore') { ouvrirTirage(); return false; } });
+  feter();
+}
+function voirCreature(c) {
+  const g = data.collection.find(x => x.id === c.id);
+  ouvrirDlg(`<form class="tirage"><h2>${esc(c.nom)}</h2><div class="revele">${creaHtml(c)}</div><span class="pill ${c.rarete}">${RARETE[c.rarete]}</span>
+    <p class="muted">Gagnée le ${L.deIso(g.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} · ${RAISON(g.raison)}</p>
+    <button class="btn plein">Fermer</button></form>`, () => {});
+}
+
+function faireBilan(cle) {
+  cle = cle || bilanAFaire() || cleSem(L.momentLogique(new Date()).date);
+  const lundi = L.deIso(cle), fin = L.isoJour(L.ajouterJours(lundi, 6)), suiv = L.isoJour(L.ajouterJours(lundi, 7));
+  const sem = semaineDe(cle), prec = data.semaines[L.isoJour(L.ajouterJours(lundi, -7))];
+  const st = L.stats(data, new Date());
+  const dans = d => d >= cle && d <= fin;
+  const objs = objectifs('semaine', cle), atteints = objs.filter(o => o.fait).length;
+  const restes = data.taches.filter(t => !t.fait && t.echeance && t.echeance <= fin);
+  const prevu = L.heuresParCat(sem.slots), fait = L.heuresParCat(sem.slots.filter(x => x.fait)), avant = L.heuresParCat((prec?.slots || []).filter(x => x.fait));
+  const chiffres = [
+    [[0, 1, 2, 3, 4, 5, 6].filter(j => st.valides.has(L.isoJour(L.ajouterJours(lundi, j)))).length + '/7', 'journées validées'],
+    [data.journal.filter(e => dans(e.date)).length + clubFaits().filter(e => dans(e.date)).length, 'séances de sport'],
+    [data.taches.reduce((k, t) => k + (t.faits || []).filter(dans).length, 0), 'tâches faites'],
+    [data.habitudes.reduce((k, hb) => k + hb.faits.filter(dans).length, 0), 'habitudes tenues'],
+  ];
+  const ecart = c => { if (!prec) return ''; const d = (fait[c] || 0) - (avant[c] || 0); return d > 0 ? `+${L.heures(d)}` : d < 0 ? `−${L.heures(-d)}` : '='; };
+  const f = d => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  const reporter = (nom, id) => `<label class="coche petite"><input type="checkbox" class="chk" name="${nom}" value="${id}" checked>Reporter</label>`;
+  ouvrirDlg(`<form><h2>Bilan de la semaine</h2><p class="muted">Du ${f(lundi)} au ${f(L.deIso(fin))}</p>
+    <div class="chiffres">${chiffres.map(([n, t]) => `<div><span class="num">${n}</span><small>${t}</small></div>`).join('')}</div>
+    <div class="champ">Objectifs : ${atteints} sur ${objs.length} atteints${objs.length ? `<ul class="list">${objs.map(o => `<li><div class="txt"><b>${o.fait ? '✓ ' : ''}${esc(o.txt)}</b></div>${o.fait ? '' : reporter('obj', o.id)}</li>`).join('')}</ul>` : ''}</div>
+    <div class="champ">Tâches pas faites${restes.length ? `<ul class="list">${restes.map(t => `<li><div class="txt"><b>${esc(t.titre)}</b><small>prévue le ${f(L.deIso(t.echeance))}</small></div>${reporter('tache', t.id)}</li>`).join('')}</ul>` : '<p class="muted" style="font-weight:400">Aucune, bravo.</p>'}</div>
+    <div class="champ">Heures réalisées${prec ? ', et l’écart avec la semaine d’avant' : ''}
+      <table class="bilan-t"><tr><th>Catégorie</th><th>Réalisé</th><th>Prévu</th>${prec ? '<th>Écart</th>' : ''}</tr>
+      ${Object.entries(prevu).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<tr><td><span class="dot" style="${teinte(c)}"></span>${esc(cat(c).nom)}</td><td>${L.heures(fait[c] || 0)}</td><td>${L.heures(v)}</td>${prec ? `<td>${ecart(c)}</td>` : ''}</tr>`).join('')}</table></div>
+    <p class="aide">Ce qui reste coché « Reporter » passe à la semaine suivante.</p>
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Plus tard</button><button class="btn plein">${data.bilans[cle] ? 'Mettre à jour' : 'Clore le bilan'}</button></div></form>`, (choix, fd) => {
+    const objIds = new Set(fd.getAll('obj')), tIds = new Set(fd.getAll('tache'));
+    objs.filter(o => objIds.has(o.id) && !objectifs('semaine', suiv).some(x => x.txt === o.txt))
+      .forEach(o => data.objectifs.push({ ...o, id: L.uid(), periode: suiv, fait: false }));
+    restes.filter(t => tIds.has(t.id)).forEach(t => {
+      let d = L.deIso(t.echeance);
+      while (L.isoJour(d) <= fin) d = L.ajouterJours(d, 7);
+      t.echeance = L.isoJour(d);
+    });
+    const premier = !data.bilans[cle], n = objIds.size + tIds.size;
+    data.bilans[cle] = L.isoJour(new Date());
+    dire(`Bilan clos${n ? ` · ${n} reporté${n > 1 ? 's' : ''}` : ''}`);
+    maj();
+    if (premier) feter();
+  });
 }
 
 // ---------- Sauvegarde ----------
@@ -935,6 +1096,21 @@ document.addEventListener('click', e => {
       if (t && !t.fait) cocherTache(t); else if (r.slot.fait) dire('Créneau validé');
       return maj();
     }
+    case 'valider-tout': {
+      const d = L.deIso(el.dataset.jour), s = semaineDe(cleSem(d)), j = L.jourSemaine(d), jusqua = +el.dataset.jusqua;
+      s.slots.filter(x => x.j === j && !x.fait && x.e <= jusqua).forEach(x => {
+        x.fait = true;
+        const t = x.tache && data.taches.find(y => y.id === x.tache);
+        if (t && !t.fait) Object.assign(t, L.cocher(t, new Date()));
+      });
+      dire(L.journeeValidee(s.slots.filter(x => x.j === j)) ? 'Journée validée' : 'Créneaux validés');
+      return maj();
+    }
+    case 'ouvrir-profil': return ouvrir('profil');
+    case 'tirage': return ouvrirTirage();
+    case 'creature': return voirCreature(L.CREATURES.find(c => c.id === id));
+    case 'bilan': return faireBilan(el.dataset.cle);
+    case 'theme': data.theme = id; return maj();
     case 'editer-tache': return editerTache(data.taches.find(t => t.id === id));
     case 'projet': return editerProjet(data.projets.find(p => p.id === id));
     case 'nouveau-projet': return editerProjet(null, el.dataset.type);
@@ -1003,7 +1179,11 @@ document.addEventListener('change', e => {
   if (!act) return;
   if (act === 'objectif') { data.objectifs.find(o => o.id === id).fait = t.checked; if (t.checked) dire('Objectif atteint'); }
   if (act === 'item') data.listes.find(l => l.id === t.dataset.liste).items.find(i => i.id === id).fait = t.checked;
-  if (act === 'tache') { const x = data.taches.find(y => y.id === id); if (t.checked) cocherTache(x); else x.fait = false; }
+  if (act === 'tache') {
+    const x = data.taches.find(y => y.id === id);
+    if (t.checked) cocherTache(x); else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); }
+  }
+  if (act === 'son') data.son = t.checked;
   if (act === 'prog-exo') ui.progExo = t.value;
   if (act === 'club') data.club = t.value;
   if (act === 'repos') data.repos = +t.value;
@@ -1048,4 +1228,5 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && !d
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 rendre();
+dernier = L.stats(data, new Date());
 ouvrir(ui.onglet);

@@ -62,4 +62,37 @@ assert.deepEqual(L.progression(journal, 'p', 'reps').map(x => x.val), [8, 12]);
 assert.deepEqual(L.dernieresSeries(journal, 'p'), [{ reps: 10 }, { reps: 12 }]);
 assert.equal(L.faitsSemaine({ faits: ['2026-10-18', '2026-10-19', '2026-10-25'] }, new Date(2026, 9, 19)), 2);
 
+// Motivation. Série : 7 jours validés → 1 joker ; un jour manqué le consomme ; aujourd'hui non validé ne casse rien.
+const jours = n => Array.from({ length: n }, (_, i) => L.isoJour(L.ajouterJours(new Date(2026, 9, 5), i)));
+const v = new Set(jours(7));                       // du 5 au 11/10
+v.add('2026-10-13'); v.add('2026-10-14');          // le 12 manqué
+let s = L.serie(v, new Date(2026, 9, 15, 10), new Date(2026, 9, 5));
+assert.deepEqual([s.serie, s.jokers, s.record], [9, 0, 9]);
+s = L.serie(new Set(['2026-10-13', '2026-10-15']), new Date(2026, 9, 16), new Date(2026, 9, 13));
+assert.equal(s.serie, 1);                          // le 14 manqué sans joker : la série repart au 15 ; le 16 pas encore fini
+assert.equal(L.serie(new Set(['2026-10-15']), new Date(2026, 9, 16), new Date(2026, 9, 15)).serie, 1);
+
+assert.deepEqual([1, 2, 3, 4].map(L.seuil), [0, 100, 300, 600]);
+assert.deepEqual(L.niveau(299), { n: 2, de: 100, a: 300 });
+
+// L'XP vient de ce qui est fait ; une tâche récurrente compte chaque fois qu'elle est faite.
+const mo = L.vide();
+mo.semaines['2026-10-19'] = { type: null, slots: [{ id: 'a', j: 0, s: 8, e: 9, fait: true }, { id: 'b', j: 0, s: 9, e: 10, fait: true }, { id: 'c', j: 1, s: 8, e: 9, fait: null }] };
+mo.taches.push({ id: 'r', recurrence: 3, faits: ['2026-10-15', '2026-10-22'], fait: false, priorite: 2 });
+mo.taches.push({ id: 'f', fac: true, fait: true, faits: ['2026-10-20'] });
+const st = L.stats(mo, new Date(2026, 9, 21));
+assert.equal(st.sources.creneaux, 10);
+assert.equal(st.sources.taches, 2 * 20 + 30);
+assert.equal(st.sources.bonus, 15);               // le lundi 19 est validé, pas le mardi
+assert.equal(st.joursValides, 1);
+assert.deepEqual(L.droitsTirage(mo, st), ['tache:f']);
+mo.tirages.push('tache:f');
+assert.deepEqual(L.droitsTirage(mo, st), []);
+assert.equal(L.cocher({ id: 'x' }, new Date(2026, 9, 21)).faits.length, 1);
+
+// Tirage : 0,9 → commune ; 0,01 → légendaire ; on évite les doublons quand c'est possible.
+assert.equal(L.tirer([], () => .9).rarete, 'commune');
+assert.equal(L.tirer([], () => .01).rarete, 'legendaire');
+assert.equal(L.tirer(['lumino'], (() => { let k = 0; return () => [.01, 0][k++]; })()).id, 'zephyr');
+
 console.log('ok');
