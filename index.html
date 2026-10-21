@@ -222,12 +222,65 @@ dialog form { display: flex; flex-direction: column; gap: 14px; }
 .cats input:checked + span { background: var(--c); color: var(--t); }
 .cats input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
 .cats .sans { --c: var(--ink); --t: var(--on-ink); }
-.opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .opts button { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 14px 12px; border-radius: 16px; background: var(--surface-2); text-align: left; }
 .opts svg { width: 24px; height: 24px; }
 .opts small { font-size: 12px; color: var(--ink-2); line-height: 1.3; }
 .liens { display: flex; flex-direction: column; gap: 6px; }
 .liens button { text-align: left; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 14px; }
+/* V1.2 : tâches, projets, habitudes, sport */
+.pill.retard { background: color-mix(in srgb, var(--danger) 16%, var(--surface)); color: var(--danger); }
+.prio { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-right: 6px; vertical-align: middle; }
+.pill.statut-en-cours { background: var(--ink); color: var(--on-ink); }
+.pill.statut-pause, .pill.statut-termine { color: var(--ink-2); }
+.ajout input[type="date"] { flex: 0 0 auto; width: 8.6em; font-size: 15px; }
+dialog .ajout input, dialog .ajout select { background: var(--surface-2); }
+.habits { display: flex; flex-wrap: wrap; gap: 8px; }
+.habit { height: 38px; padding: 0 14px; border-radius: 999px; background: var(--surface); font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+.habit svg { width: 16px; height: 16px; display: none; }
+.habit small { font-weight: 500; opacity: .75; }
+.habit[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); }
+.habit[aria-pressed="true"] svg { display: block; }
+.regs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.regs .card { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.regs .kv { text-align: left; flex-direction: column; align-items: flex-start; gap: 0; }
+.reg { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.reg button, .reg i { aspect-ratio: 1; border-radius: 3px; background: var(--surface-2); }
+.reg button.on { background: var(--ink); }
+.reg i.futur { background: transparent; box-shadow: inset 0 0 0 1px var(--surface-2); }
+.kv { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.kv .num { font-size: 20px; }
+.seance { display: flex; flex-direction: column; gap: 12px; }
+.seance table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.seance td { padding: 8px 0; border-top: 1px solid var(--line); }
+.seance td:last-child { text-align: right; font-family: var(--f-num); font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; }
+.chart { display: flex; flex-direction: column; gap: 10px; }
+.chart svg { width: 100%; height: auto; display: block; font-family: var(--f-num); font-size: 11px; }
+.ch-grid { stroke: var(--line); stroke-width: 1; }
+.ch-lab { fill: var(--ink-2); }
+.ch-line { fill: none; stroke: var(--ink); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.ch-end { fill: var(--c-sport, #B5DF2B); stroke: var(--ink); stroke-width: 2; }
+select.choix { height: 40px; border: 0; border-radius: 10px; padding: 0 10px; background: var(--surface-2); font-size: 15px; align-self: flex-start; max-width: 100%; }
+.now .btn { align-self: flex-start; margin-top: 8px; background: color-mix(in srgb, currentColor 16%, transparent); color: inherit; }
+.pile { display: flex; flex-direction: column; gap: 10px; }
+.exo-bloc { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 16px; background: var(--surface-2); }
+.exo-bloc .btn { align-self: flex-start; background: var(--surface); }
+.serie { display: flex; align-items: center; gap: 8px; }
+.serie > .num { width: 16px; color: var(--ink-2); }
+.unite { flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--ink-2); }
+.unite input { width: 100%; min-width: 0; height: 40px; border: 0; border-radius: 10px; padding: 0 10px; background: var(--surface); color: var(--ink); font-size: 16px; }
+.serie .valid { color: transparent; }
+.serie .valid[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); }
+.repos { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 14px; background: var(--ink); color: var(--on-ink); font-weight: 650; }
+.repos .num { font-size: 28px; margin-right: auto; }
+.repos .btn { background: color-mix(in srgb, var(--on-ink) 18%, transparent); color: inherit; }
+.ligne-exo { display: grid; grid-template-columns: minmax(0, 1fr) 52px 64px 32px; gap: 6px; align-items: center; }
+.ligne-exo select, .ligne-exo input, .etape input[name="st"] { height: 42px; min-width: 0; border: 0; border-radius: 10px; padding: 0 8px; background: var(--surface-2); color: var(--ink); font-size: 16px; }
+.etape input[name="st"] { flex: 1; }
+.etapes { display: flex; flex-direction: column; gap: 6px; }
+.confettis { position: fixed; inset: 0; pointer-events: none; z-index: 30; overflow: hidden; }
+.confettis i { position: absolute; top: -14px; width: 8px; height: 13px; border-radius: 2px; animation: tombe var(--d) ease-in forwards; }
+@keyframes tombe { to { transform: translateY(105vh) rotate(var(--r)); } }
 .toast { position: fixed; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 20; background: var(--ink); color: var(--on-ink); padding: 10px 16px; border-radius: 999px; font-weight: 650; font-size: 14px; box-shadow: var(--shadow); max-width: calc(100% - 32px); text-align: center; animation: monte .25s ease-out; }
 @keyframes monte { from { transform: translate(-50%, 10px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

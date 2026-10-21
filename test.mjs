@@ -35,4 +35,31 @@ assert.deepEqual(L.copierJour(sem.slots, 0, 2).map(x => x.j), [0, 2]);
 assert.throws(() => L.valider({ hello: 1 }));
 assert.equal(L.valider(JSON.parse(JSON.stringify(data))).version, 1);
 
+// Une ancienne sauvegarde reçoit les rubriques de la V1.2.
+const ancienne = JSON.parse(JSON.stringify(data));
+delete ancienne.taches; delete ancienne.repos;
+assert.deepEqual(L.valider(ancienne).taches, []);
+assert.equal(ancienne.repos, 90);
+
+// Tâche récurrente du jeudi cochée le jeudi 22/10 : elle revient le jeudi 29/10, sous-tâches décochées.
+const jeudi = new Date(2026, 9, 22, 18, 0);
+const t = L.cocher({ id: 't', echeance: '2026-10-22', recurrence: 3, fait: false, sous: [{ txt: 'a', fait: true }] }, jeudi);
+assert.equal(t.echeance, '2026-10-29');
+assert.equal(t.fait, false);
+assert.equal(t.sous[0].fait, false);
+// Une tâche simple est terminée ; une tâche du lundi (récurrence 0) n'est pas prise pour « sans récurrence ».
+assert.equal(L.cocher({ id: 'u', echeance: '2026-10-22' }, jeudi).fait, true);
+assert.equal(L.cocher({ id: 'v', echeance: '2026-10-19', recurrence: 0 }, jeudi).echeance, '2026-10-26');
+assert.equal(L.joursAvant('2026-12-13', jeudi), 52);
+assert.deepEqual(L.aFaire([{ id: 1, echeance: '2026-11-30' }, { id: 2, echeance: '2026-10-20' }, { id: 3, echeance: '2026-10-25', fait: true }, { id: 4 }], jeudi).map(x => x.id), [2]);
+
+// Progression : le meilleur de chaque séance, dans l'ordre des dates.
+const journal = [
+  { date: '2026-10-20', series: [{ exo: 'p', sets: [{ reps: 10 }, { reps: 12 }] }] },
+  { date: '2026-10-13', series: [{ exo: 'p', sets: [{ reps: 8 }] }, { exo: 'g', sets: [{ sec: 40 }] }] },
+];
+assert.deepEqual(L.progression(journal, 'p', 'reps').map(x => x.val), [8, 12]);
+assert.deepEqual(L.dernieresSeries(journal, 'p'), [{ reps: 10 }, { reps: 12 }]);
+assert.equal(L.faitsSemaine({ faits: ['2026-10-18', '2026-10-19', '2026-10-25'] }, new Date(2026, 9, 19)), 2);
+
 console.log('ok');

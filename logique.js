@@ -82,8 +82,66 @@ export function valider(o) {
   const ok = o && o.version === 1 && Array.isArray(o.cats) && Array.isArray(o.types) && o.semaines && typeof o.semaines === 'object'
     && Array.isArray(o.notes) && Array.isArray(o.listes) && Array.isArray(o.objectifs) && Array.isArray(o.plage);
   if (!ok) throw new Error('Ce fichier n’est pas une sauvegarde de l’app.');
+  return migrer(o);
+}
+// Les sauvegardes d'avant la V1.2 n'ont pas encore ces rubriques.
+export function migrer(o) {
+  for (const k of ['taches', 'projets', 'exos', 'seances', 'journal', 'habitudes']) if (!Array.isArray(o[k])) o[k] = [];
+  if (typeof o.repos !== 'number') o.repos = 90;
+  if (typeof o.club !== 'string') o.club = '';
   return o;
 }
+
+// ---------- Tâches ----------
+
+export const joursAvant = (iso, auj) => Math.round((deIso(iso) - new Date(auj.getFullYear(), auj.getMonth(), auj.getDate())) / 864e5);
+
+// Cocher une tâche récurrente la repousse à sa prochaine date au lieu de la terminer.
+export function cocher(t, auj) {
+  if (!t.recurrence && t.recurrence !== 0) return { ...t, fait: true, faitLe: isoJour(auj) };
+  let d = t.echeance ? deIso(t.echeance) : new Date(auj.getFullYear(), auj.getMonth(), auj.getDate());
+  do d = ajouterJours(d, 1); while (jourSemaine(d) !== t.recurrence || d <= auj);
+  return { ...t, fait: false, echeance: isoJour(d), sous: (t.sous || []).map(s => ({ ...s, fait: false })) };
+}
+
+// À faire bientôt : en retard, aujourd'hui, ou dans les 7 jours ; puis par date et priorité.
+export function aFaire(taches, auj, horizon = 7) {
+  return taches.filter(t => !t.fait && t.echeance && joursAvant(t.echeance, auj) <= horizon)
+    .sort((a, b) => a.echeance.localeCompare(b.echeance) || (a.priorite || 2) - (b.priorite || 2));
+}
+
+// ---------- Sport ----------
+
+export const TYPES_EXO = { reps: 'Répétitions', duree: 'Durée', distance: 'Distance', charge: 'Charge' };
+// La valeur qui compte pour la progression : répétitions, secondes, kilomètres ou kilos.
+export const valeur = (type, s) => +({ reps: s.reps, duree: s.sec, distance: s.km, charge: s.kg }[type] || 0);
+export function progression(journal, exo, type) {
+  return journal.filter(e => e.series?.some(x => x.exo === exo))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map(e => ({ date: e.date, val: Math.max(...e.series.filter(x => x.exo === exo).flatMap(x => x.sets.map(s => valeur(type, s)))) }))
+    .filter(p => p.val > 0);
+}
+export const dernieresSeries = (journal, exo) => [...journal].sort((a, b) => b.date.localeCompare(a.date)).find(e => e.series?.some(x => x.exo === exo))?.series.find(x => x.exo === exo).sets;
+
+export const faitsSemaine = (h, lundi) => {
+  const de = isoJour(lundi), a = isoJour(ajouterJours(lundi, 6));
+  return h.faits.filter(d => d >= de && d <= a).length;
+};
+
+// Renfo conseillé par sport : des exercices classiques, à adapter avec son coach.
+export const CONSEILS = {
+  'Volley': [['Squats sautés', 'reps', 10], ['Fentes avant', 'reps', 12], ['Gainage', 'duree', 45], ['Pompes', 'reps', 10], ['Mollets debout', 'reps', 20], ['Rotations d’épaule à l’élastique', 'reps', 15]],
+  'Basket': [['Squats sautés', 'reps', 10], ['Fentes latérales', 'reps', 12], ['Gainage', 'duree', 45], ['Mollets debout', 'reps', 20], ['Pompes', 'reps', 10], ['Sauts latéraux', 'duree', 30]],
+  'Football': [['Fentes avant', 'reps', 12], ['Squats', 'reps', 15], ['Gainage latéral', 'duree', 30], ['Nordic ischios', 'reps', 6], ['Mollets debout', 'reps', 20], ['Sauts latéraux', 'duree', 30]],
+  'Handball': [['Pompes', 'reps', 12], ['Squats sautés', 'reps', 10], ['Gainage', 'duree', 45], ['Rotations d’épaule à l’élastique', 'reps', 15], ['Fentes avant', 'reps', 12], ['Tirage à l’élastique', 'reps', 15]],
+  'Natation': [['Pompes', 'reps', 10], ['Tirage à l’élastique', 'reps', 15], ['Gainage', 'duree', 45], ['Superman', 'reps', 12], ['Squats', 'reps', 15], ['Rotations d’épaule à l’élastique', 'reps', 15]],
+  'Course à pied': [['Squats', 'reps', 15], ['Fentes avant', 'reps', 12], ['Mollets debout', 'reps', 20], ['Gainage', 'duree', 45], ['Pont fessier', 'reps', 15], ['Montées de genoux', 'duree', 30]],
+  'Tennis': [['Fentes latérales', 'reps', 12], ['Rotations d’épaule à l’élastique', 'reps', 15], ['Gainage', 'duree', 45], ['Squats', 'reps', 15], ['Pompes', 'reps', 10], ['Mollets debout', 'reps', 20]],
+  'Badminton': [['Fentes avant', 'reps', 12], ['Squats sautés', 'reps', 10], ['Rotations d’épaule à l’élastique', 'reps', 15], ['Gainage', 'duree', 45], ['Mollets debout', 'reps', 20], ['Sauts latéraux', 'duree', 30]],
+  'Escalade': [['Tractions', 'reps', 5], ['Suspension à la barre', 'duree', 20], ['Gainage', 'duree', 45], ['Pompes', 'reps', 10], ['Rotations d’épaule à l’élastique', 'reps', 15], ['Superman', 'reps', 12]],
+  'Danse': [['Pont fessier', 'reps', 15], ['Gainage', 'duree', 45], ['Mollets debout', 'reps', 20], ['Squats', 'reps', 15], ['Fentes avant', 'reps', 12], ['Équilibre sur une jambe', 'duree', 30]],
+  'Rugby': [['Squats', 'charge', 8], ['Pompes', 'reps', 15], ['Tractions', 'reps', 6], ['Gainage', 'duree', 60], ['Fentes avant', 'reps', 12], ['Soulevé de terre', 'charge', 6]],
+};
 
 export const CATS_DEPART = [
   ['cours', 'Transport et cours', '#EC4A46'], ['sommeil', 'Sommeil', '#FF9B3D'], ['detente', 'Détente', '#FFD447'],
@@ -91,7 +149,7 @@ export const CATS_DEPART = [
   ['menage', 'Ménage', '#FF8AC1'], ['sport', 'Sport', '#B5DF2B'],
 ].map(([id, nom, couleur]) => ({ id, nom, couleur }));
 
-export const vide = () => ({
+export const vide = () => migrer({
   version: 1,
   cats: CATS_DEPART.map(c => ({ ...c })),
   plage: [6, 25],
