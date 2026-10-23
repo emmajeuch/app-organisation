@@ -60,6 +60,7 @@ function maj() {
     if (st.niveau.n > dernier.niveau.n) { feter(); setTimeout(() => dire(`Niveau ${st.niveau.n} ! Un tirage t’attend dans Profil`), 2300); }
   }
   dernier = st;
+  planifierSynchro();
 }
 
 const ui = { statsPer: 'semaine', onglet: 'aujourdhui', lundi: L.lundiDe(new Date()), seul: null, tag: null, q: '', ouvertes: new Set(), derniereCat: null };
@@ -1049,6 +1050,7 @@ function vueProfil() {
     ${travailHtml()}
     ${statsHtml()}
     ${compagnonHtml(st)}
+    ${rappelsHtml()}
     <div class="sec" data-module="motivation"><h2>Thème</h2><div class="cats">${THEMES.map(([id, nom, n, c]) => n > nv.n ? `<span class="theme verrou">${nom} · niv. ${n}</span>`
       : `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${data.theme === id}" style="--c:${c || 'var(--ink)'}">${nom}</button>`).join('')}</div>
       <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label></div>`;
@@ -1287,9 +1289,80 @@ function toutEffacer() {
     if (choix !== 'effacer') return;
     try { Object.keys(localStorage).filter(k => k.startsWith('orga-')).forEach(k => localStorage.removeItem(k)); } catch {}
     try { for (const k of await caches.keys()) await caches.delete(k); } catch {}
+    if (data.notifs?.actif) await desactiverRappels(true);
     data = L.vide(); dernier = null;
     location.reload();
   });
+}
+
+// ---------- Rappels (notifications) ----------
+// Le serveur ne reçoit que l'adresse d'abonnement de ce téléphone et les heures des rappels ;
+// les textes (cours, salle, affaires) restent ici, dans le cache « orga-rappels » que lit le service worker.
+const pushPossible = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const enApp = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const aleatoire = () => b64url(crypto.getRandomValues(new Uint8Array(24)));
+function b64url(u) { return btoa(String.fromCharCode(...u)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+const deB64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '=')), c => c.charCodeAt(0));
+
+function rappelsHtml() {
+  const n = data.notifs;
+  let corps;
+  if (!L.SERVEUR_RAPPELS) corps = '<p>Bientôt : le serveur des rappels n’est pas encore en ligne.</p>';
+  else if (!pushPossible() || !enApp()) corps = '<p>Pour recevoir des rappels, ouvre l’app depuis son icône sur l’écran d’accueil (iPhone : iOS 16.4 ou plus).</p>';
+  else if (!n.actif) corps = `<p>Un rappel avant tes cours et tes séances, le soir pour relire ta journée, le dimanche pour le bilan.</p>
+    <button class="btn plein" data-act="rappels-activer">Activer les rappels</button>`;
+  else corps = `<label class="champ">Avant un cours, une séance ou un service<select data-act="rappel" data-id="delai">${[5, 10, 15, 20, 30, 45, 60].map(m => `<option value="${m}" ${m === n.delai ? 'selected' : ''}>${m} min avant</option>`).join('')}</select></label>
+    <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="creneaux" ${n.creneaux ? 'checked' : ''}>Avant les cours, séances et services</label>
+    <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="soir" ${n.soir ? 'checked' : ''}>À 20 h 30, relire ma journée</label>
+    <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="bilan" ${n.bilan ? 'checked' : ''}>Le dimanche à 17 h, le bilan</label>
+    <button class="btn gris" data-act="rappels-desactiver">Désactiver les rappels</button>`;
+  return `<div class="sec"><h2>Notifications</h2><div class="card bientot">${corps}
+    <p>Seules les heures des rappels partent vers le serveur, jamais le nom de tes cours ni tes salles. <a href="confidentialite.html">En savoir plus</a></p></div></div>`;
+}
+
+async function activerRappels() {
+  try {
+    if (await Notification.requestPermission() !== 'granted') return dire('Notifications refusées : tu peux les autoriser dans les réglages de l’iPhone.');
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: deB64url(L.VAPID_PUBLIQUE) });
+    data.notifs.id ||= aleatoire();
+    data.notifs.actif = true;
+    await synchroRappels(true, sub);
+    noterUsage('notifications');
+    dire('Rappels activés');
+    maj();
+  } catch (e) { data.notifs.actif = false; dire('Activation impossible : réessaie avec du réseau.'); }
+}
+
+async function desactiverRappels(silencieux) {
+  const id = data.notifs.id;
+  data.notifs.actif = false;
+  try { (await (await navigator.serviceWorker.ready).pushManager.getSubscription())?.unsubscribe(); } catch {}
+  try { await fetch(L.SERVEUR_RAPPELS + '/desabonnement', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }); } catch {}
+  try { await caches.delete('orga-rappels'); } catch {}
+  data.notifs.dernier = '';
+  if (!silencieux) { dire('Rappels désactivés, et effacés du serveur'); maj(); }
+}
+
+// Recalcule les rappels ; n'écrit sur le serveur que si les heures ont changé (l'offre gratuite limite les écritures).
+let synchroEnCours = null;
+async function synchroRappels(forcer, sub) {
+  if (!data.notifs?.actif || !L.SERVEUR_RAPPELS) return;
+  const rappels = L.calculerRappels(data, Date.now(), data.notifs);
+  try { await (await caches.open('orga-rappels')).put('rappels.json', new Response(JSON.stringify(rappels), { headers: { 'Content-Type': 'application/json' } })); } catch {}
+  const heures = rappels.map(r => r.t), empreinte = heures.join(',');
+  if (!forcer && empreinte === data.notifs.dernier) return;
+  sub ||= await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+  if (!sub) { data.notifs.actif = false; sauver(); return; }
+  const r = await fetch(L.SERVEUR_RAPPELS + '/abonnement', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: data.notifs.id, abonnement: sub.toJSON(), rappels: heures }) });
+  if (!r.ok) throw new Error('serveur ' + r.status);
+  data.notifs.dernier = empreinte;
+  sauver();
+}
+function planifierSynchro() {
+  if (!data.notifs?.actif) return;
+  clearTimeout(synchroEnCours);
+  synchroEnCours = setTimeout(() => synchroRappels(false).catch(() => {}), 4000);
 }
 
 function revenirAvant() {
@@ -1472,6 +1545,8 @@ document.addEventListener('click', e => {
       if (data.typeDefaut === id) data.typeDefaut = data.types[0].id;
       return maj();
     case 'exporter': return exporter();
+    case 'rappels-activer': return activerRappels();
+    case 'rappels-desactiver': return desactiverRappels();
     case 'tout-effacer': return toutEffacer();
     case 'stats-per': ui.statsPer = id; return vueProfil();
     case 'choisir-compagnon': if (!data.collection.some(x => x.id === id)) return; data.compagnon = L.grandir({ id, stade: 0 }, L.stats(data, new Date()).joursValides); noterUsage('compagnon'); return maj();
@@ -1500,6 +1575,7 @@ document.addEventListener('change', e => {
     if (t.checked) cocherTache(x); else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); }
   }
   if (act === 'son') data.son = t.checked;
+  if (act === 'rappel') data.notifs[id] = t.type === 'checkbox' ? t.checked : +t.value;
   if (act === 'taux') data.taux = Math.max(0, parseFloat(t.value.replace(',', '.')) || 0);
   if (act === 'module') data.modules[id] = t.checked;
   if (act === 'prog-exo') ui.progExo = t.value;
@@ -1556,3 +1632,4 @@ rendre();
 dernier = L.stats(data, new Date());
 ouvrir(ui.onglet);
 if (!data.tutoVu) tutoriel();
+if (data.notifs?.actif) synchroRappels(false);

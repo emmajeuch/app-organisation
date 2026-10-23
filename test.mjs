@@ -214,4 +214,19 @@ const bE = L.vide(); L.appliquerProfil(bE, escrime);
 assert.ok(bE.listes.some(l => l.nom === 'Jeux à finir') && bE.habitudes.some(h => h.nom === 'Méditer 5 min'));
 assert.equal(L.seancesDeDepart('Escrime').seances.length, 2);   // gainage et récupération, sans renfo propre
 
+// Rappels : un cours à 8 h 30 un lundi donne un rappel à 8 h 15, la relecture à 20 h 30 ; rien n'est dans le passé.
+const rp = L.vide();
+rp.semaines['2026-10-26'] = { slots: [{ j: 0, s: 8, e: 8.5, cat: 'cours', titre: 'Trajet' }, { j: 0, s: 8.5, e: 10.5, cat: 'cours', titre: 'TD', salle: 'B' }, { j: 0, s: 12, e: 13, cat: 'repas', titre: 'Déjeuner' }] };
+const lundi7h = new Date(2026, 9, 26, 7, 0).getTime();
+const rs = L.calculerRappels(rp, lundi7h, { ...L.REGLAGES_RAPPELS });
+assert.equal(rs[0].t, new Date(2026, 9, 26, 8, 15).getTime() / 1000);
+assert.equal(rs[0].titre, 'Dans 15 min : TD');
+assert.equal(rs[0].corps, '08:30 · B');
+assert.ok(rs.some(x => x.titre === 'Relis ta journée' && x.t === new Date(2026, 9, 26, 20, 30).getTime() / 1000));
+assert.ok(!rs.some(x => /Trajet|Déjeuner/.test(x.titre)));
+assert.ok(rs.every(x => x.t > lundi7h / 1000));
+assert.equal(L.calculerRappels(rp, new Date(2026, 9, 26, 9, 0).getTime(), { ...L.REGLAGES_RAPPELS, soir: false, bilan: false }).length, 0);
+// Une sauvegarde importée ne garde pas l'abonnement d'un autre téléphone.
+assert.equal(L.validerImport({ ...JSON.parse(JSON.stringify(L.vide())), notifs: { actif: true, id: 'x' } }).notifs.actif, false);
+
 console.log('ok');

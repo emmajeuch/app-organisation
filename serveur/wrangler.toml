@@ -1,0 +1,15 @@
+# Configuration du serveur des rappels pour Cloudflare Workers (offre gratuite).
+# Les clés VAPID privées ne sont jamais ici : elles se donnent avec « npx.cmd wrangler secret put VAPID_PRIVEE ».
+name = "orga-rappels"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[triggers]
+crons = ["*/2 * * * *"]
+
+[vars]
+VAPID_PUBLIQUE = "A_REMPLIR"
+
+[[kv_namespaces]]
+binding = "RAPPELS"
+id = "A_REMPLIR"

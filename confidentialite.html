@@ -44,8 +44,16 @@
   <h2>Cookies et traceurs</h2>
   <p>Aucun. L’app n’utilise que le stockage nécessaire à son fonctionnement, sur ton téléphone, et ne charge rien depuis un autre site.</p>
 
-  <h2>À venir</h2>
-  <p>Si des notifications arrivent (rappels avant un cours), cette page sera mise à jour avant, pour dire exactement ce qui part vers le serveur des notifications, pourquoi et combien de temps.</p>
+  <h2>Si tu actives les rappels</h2>
+  <p>Les rappels sont facultatifs : rien ne part tant que tu ne les actives pas (Profil › Notifications), et tu peux les désactiver à tout moment.</p>
+  <ul>
+    <li><b>Ce qui part vers le serveur des rappels</b> : l’adresse d’abonnement que le service de notifications de ton téléphone attribue à l’app (Apple sur iPhone), et les heures des rappels des 7 prochains jours. Jamais le nom de tes cours, tes salles, tes notes ni rien de ce que tu écris.</li>
+    <li><b>Pourquoi</b> : une app fermée ne peut recevoir une notification que si un serveur l’envoie à la bonne heure. C’est ton iPhone qui écrit le texte du rappel, à partir de ce qu’il garde.</li>
+    <li><b>Où</b> : chez Cloudflare (Workers et Workers KV, offre gratuite), qui déclare adhérer au cadre de protection des données entre l’Union européenne et les États-Unis. Les données peuvent être stockées hors de l’Union européenne.</li>
+    <li><b>Ce que voit Apple</b> : un message chiffré qui ne contient que l’heure du rappel.</li>
+    <li><b>Combien de temps</b> : chaque heure est effacée une fois le rappel envoyé ; l’abonnement est effacé quand tu désactives les rappels, quand tu effaces tes données, ou au bout de 30 jours sans mise à jour.</li>
+    <li><b>Sur quelle base</b> : ton choix de les activer, que tu retires en les désactivant.</li>
+  </ul>
 
   <h2>Mentions légales</h2>
   <ul>

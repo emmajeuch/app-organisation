@@ -285,6 +285,8 @@ export function migrer(o) {
   // V1.4 : profil sur le téléphone ; V1.5 : compétitions.
   if (!o.profil || typeof o.profil !== 'object' || Array.isArray(o.profil)) o.profil = {};
   if (!Array.isArray(o.competitions)) o.competitions = [];
+  // Rappels : réglages propres à ce téléphone (jamais importés d'une sauvegarde : l'abonnement est lié à l'appareil).
+  if (!o.notifs || typeof o.notifs !== 'object') o.notifs = { ...REGLAGES_RAPPELS };
   if (o.club && !(o.profil.sports || []).length) o.profil.sports = [o.club];
   return o;
 }
@@ -558,4 +560,32 @@ export const stadeCompagnon = nbJours => SEUILS_COMPAGNON.filter(s => nbJours >=
 export const prochainSeuil = nbJours => SEUILS_COMPAGNON.find(s => nbJours < s) ?? null;
 export function grandir(compagnon, nbJours) {
   return { ...compagnon, stade: Math.max(compagnon.stade || 0, stadeCompagnon(nbJours)) };
+}
+
+// ---------- Rappels (notifications) ----------
+// Adresse du serveur des rappels et sa clé publique VAPID : vides tant que le serveur n'est pas en ligne.
+export const SERVEUR_RAPPELS = '';
+export const VAPID_PUBLIQUE = '';
+export const REGLAGES_RAPPELS = { actif: false, delai: 15, creneaux: true, soir: true, bilan: true };
+const CATS_RAPPEL = ['cours', 'sport', 'job'];
+
+// Les rappels des 7 prochains jours, avec leur texte. Seules les heures (t, en secondes) partent vers
+// le serveur ; les textes restent sur le téléphone, qui les affiche quand la notification arrive.
+export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
+  const out = [], s = Math.floor(maintenant / 1000);
+  const ajout = (t, titre, corps) => { if (t > s && !out.some(x => x.t === t)) out.push({ t, titre, corps }); };
+  const auj = new Date(maintenant);
+  for (let i = 0; i < 7; i++) {
+    const d = ajouterJours(new Date(auj.getFullYear(), auj.getMonth(), auj.getDate()), i);
+    const cle = isoJour(lundiDe(d));
+    const t = data.types.find(x => x.id === data.typeDefaut) || data.types[0];
+    const slots = (data.semaines[cle]?.slots || t?.slots || []).filter(x => x.j === jourSemaine(d));
+    const a = h => Math.floor(d.getTime() / 1000 + h * 3600);
+    if (r.creneaux) for (const x of slots) if (CATS_RAPPEL.includes(x.cat) && x.titre !== 'Trajet') {
+      ajout(a(x.s) - r.delai * 60, `Dans ${r.delai} min : ${x.titre}`, [hhmm(x.s), x.salle, x.affaires].filter(Boolean).join(' · '));
+    }
+    if (r.soir && slots.length) ajout(a(20.5), 'Relis ta journée', 'Valide tes créneaux pour qu’elle compte et garder ta série.');
+    if (r.bilan && jourSemaine(d) === 6) ajout(a(17), 'C’est l’heure du bilan', 'Objectifs, tâches à reporter, heures de la semaine.');
+  }
+  return out.sort((x, y) => x.t - y.t).slice(0, 300);
 }
