@@ -359,3 +359,15 @@ textarea.copie { width: 100%; min-height: 160px; border: 0; border-radius: 12px;
   background: conic-gradient(#FFD447 0 33%, #3C8CE7 0 66%, #FFFFFF 0); }
 .crea.acc-sabre-laser::after { left: auto; right: 14%; top: 12%; bottom: 14%; width: 5%; height: auto; border-radius: 3px; opacity: 1; transform: rotate(24deg);
   background: linear-gradient(#7FE0FF 0 78%, #9AA1AE 78%); box-shadow: 0 0 6px #7FE0FF; }
+
+/* V1.7 : statistiques et compagnon */
+.compagnon-carte { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; }
+.compagnon { width: 96px; flex-shrink: 0; display: grid; place-items: center; }
+.compagnon-carte.petit .compagnon { width: 56px; }
+.compagnon .crea { width: var(--taille); transition: width .4s; }
+/* Un accessoire par stade : rien, un bandeau, une étoile, une couronne. */
+.compagnon .crea { position: relative; }
+.compagnon.stade-2 .crea::after, .compagnon.stade-3 .crea::after, .compagnon.stade-4 .crea::after { content: ""; position: absolute; left: 50%; transform: translateX(-50%); }
+.compagnon.stade-2 .crea::after { top: 22%; width: 44%; height: 7%; border-radius: 4px; background: var(--ink); }
+.compagnon.stade-3 .crea::after { top: 2%; width: 26%; aspect-ratio: 1; background: #FFD447; clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+.compagnon.stade-4 .crea::after { top: 0; width: 40%; height: 18%; background: #D9A520; clip-path: polygon(0 100%, 0 20%, 25% 60%, 50% 0, 75% 60%, 100% 20%, 100% 100%); }

@@ -41,9 +41,12 @@ function sauver() {
 // Après chaque changement : on enregistre, on redessine, et on annonce l'XP gagnée (avec un petit son).
 let dernier = null;
 function maj() {
+  const st = L.stats(data, new Date());
+  const avant = data.compagnon?.stade;
+  if (data.compagnon?.id) data.compagnon = L.grandir(data.compagnon, st.joursValides);
   sauver();
   rendre();
-  const st = L.stats(data, new Date());
+  if (data.compagnon?.id && data.compagnon.stade > (avant || 0) && actif('compagnon')) setTimeout(() => dire(`Ton compagnon grandit : stade ${data.compagnon.stade} !`), 1200);
   if (dernier && st.total > dernier.total && actif('motivation')) {
     const gain = `+${st.total - dernier.total} XP`;
     dire(toast.hidden ? gain : `${toast.textContent} · ${gain}`);
@@ -53,7 +56,7 @@ function maj() {
   dernier = st;
 }
 
-const ui = { onglet: 'aujourdhui', lundi: L.lundiDe(new Date()), seul: null, tag: null, q: '', ouvertes: new Set(), derniereCat: null };
+const ui = { statsPer: 'semaine', onglet: 'aujourdhui', lundi: L.lundiDe(new Date()), seul: null, tag: null, q: '', ouvertes: new Set(), derniereCat: null };
 try { ui.onglet = localStorage.getItem('orga-onglet') || ui.onglet; } catch {}
 
 const cat = id => data.cats.find(c => c.id === id) || { id, nom: 'Sans catégorie', couleur: '#9aa1ae' };
@@ -80,7 +83,8 @@ const exo = id => data.exos.find(e => e.id === id);
 
 // Modules masquables (Profil › Réglages › Modules) : masqués, ils gardent leurs données.
 const MODULES = [['taches', 'Tâches'], ['projets', 'Projets et divertissements'], ['objectifs', 'Objectifs'], ['listes', 'Listes'],
-  ['notes', 'Notes libres'], ['sport', 'Sport'], ['habitudes', 'Habitudes'], ['travail', 'Travail (job, extras)'], ['motivation', 'XP, niveaux, collection et succès']];
+  ['notes', 'Notes libres'], ['sport', 'Sport'], ['habitudes', 'Habitudes'], ['travail', 'Travail (job, extras)'], ['motivation', 'XP, niveaux, collection et succès'],
+  ['stats', 'Statistiques (semaine, mois, année)'], ['compagnon', 'Compagnon']];
 const actif = m => m in data.modules ? data.modules[m] : m !== 'travail';
 // La catégorie Travail (distincte de « Travail perso », les révisions) n'existe que si le module est actif.
 function catTravail() {
@@ -233,6 +237,10 @@ function vueAujourdhui() {
   }
   const aBilan = bilanAFaire();
   if (aBilan) html += `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>`;
+  if (actif('compagnon') && data.compagnon?.id) {
+    const c = L.CREATURES.find(x => x.id === data.compagnon.id);
+    if (c) html += `<button class="card compagnon-carte petit" data-act="ouvrir-profil">${compagnonFig(c, data.compagnon.stade || 0)}<span class="txt"><b>${esc(c.nom)}</b><small>Stade ${data.compagnon.stade || 0} sur 4</small></span></button>`;
+  }
 
   const j = L.jourSemaine(date);
   const slots = semaineDe(cleSem(date)).slots.filter(x => x.j === j);
@@ -1029,6 +1037,8 @@ function vueProfil() {
       `<li><span>${esc(cat(c).nom)}</span><span class="track duo" style="${teinte(c)}"><i style="width:${v / max * 100}%"></i><i style="width:${(fait[c] || 0) / max * 100}%"></i></span><b>${L.heures(fait[c] || 0)}<small> / ${L.heures(v)}</small></b></li>`).join('')}</ul></div>` : '<p class="vide">Aucun créneau cette semaine.</p>'}
       <button class="btn gris" data-act="bilan">Faire le bilan de la semaine</button></div>
     ${travailHtml()}
+    ${statsHtml()}
+    ${compagnonHtml(st)}
     <div class="sec" data-module="motivation"><h2>Thème</h2><div class="cats">${THEMES.map(([id, nom, n, c]) => n > nv.n ? `<span class="theme verrou">${nom} · niv. ${n}</span>`
       : `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${data.theme === id}" style="--c:${c || 'var(--ink)'}">${nom}</button>`).join('')}</div>
       <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label></div>`;
@@ -1060,6 +1070,32 @@ function vueProfil() {
     <p class="aide version">App d’organisation · version ${L.VERSION}</p>`;
   $('#profil').querySelectorAll('[data-module]').forEach(e => { e.hidden = !actif(e.dataset.module); });
   appliquerTheme();
+}
+
+// Statistiques : lecture seule, calculées jour par jour sur les créneaux, jusqu'à aujourd'hui.
+function statsHtml() {
+  if (!actif('stats')) return '';
+  const now = new Date(), y = now.getFullYear(), lundi = L.lundiDe(now);
+  const per = { semaine: [lundi, L.ajouterJours(lundi, 6), 'Cette semaine'], mois: [new Date(y, now.getMonth(), 1), new Date(y, now.getMonth() + 1, 0), now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })], annee: [new Date(y, 0, 1), new Date(y, 11, 31), String(y)] }[ui.statsPer];
+  const { prevu, fait } = L.heuresPeriode(data, per[0], per[1], now);
+  const max = Math.max(1, ...Object.values(prevu)), totP = Object.values(prevu).reduce((a, b) => a + b, 0), totF = Object.values(fait).reduce((a, b) => a + b, 0);
+  return `<div class="sec"><h2>Statistiques <span>${per[2]}</span></h2>
+    <div class="tags">${[['semaine', 'Semaine'], ['mois', 'Mois'], ['annee', 'Année']].map(([k, n]) => `<button data-act="stats-per" data-id="${k}" aria-pressed="${ui.statsPer === k}">${n}</button>`).join('')}</div>
+    ${totP ? `<div class="card"><div class="kv" style="margin-bottom:12px"><b>${L.heures(totF)} réalisées</b><span class="muted">sur ${L.heures(totP)} prévues, jusqu’à aujourd’hui</span></div>
+      <ul class="stats">${Object.entries(prevu).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<li><span>${esc(cat(c).nom)}</span><span class="track duo" style="${teinte(c)}"><i style="width:${v / max * 100}%"></i><i style="width:${(fait[c] || 0) / max * 100}%"></i></span><b>${L.heures(fait[c] || 0)}<small> / ${L.heures(v)}</small></b></li>`).join('')}</ul></div>`
+      : '<p class="vide">Pas encore de créneau sur cette période.</p>'}</div>`;
+}
+
+// Compagnon : choisi parmi les 16 créatures, il grandit avec les journées validées et ne régresse jamais.
+const TAILLES = ['54%', '66%', '78%', '90%', '100%'];
+const compagnonFig = (c, stade) => `<div class="compagnon stade-${stade}" style="--taille:${TAILLES[stade]}">${creaHtml(c)}</div>`;
+function compagnonHtml(st) {
+  if (!actif('compagnon')) return '';
+  if (!data.compagnon?.id) return `<div class="sec"><h2>Compagnon</h2><div class="card bientot"><p>Choisis une créature : elle grandit à chaque journée validée (1, 5, 10 et 20) et ne rapetisse jamais, même si ta série casse.</p>
+    <div class="collec">${L.CREATURES.map(c => `<button class="fig" data-act="choisir-compagnon" data-id="${c.id}">${creaHtml(c)}<span>${esc(c.nom)}</span></button>`).join('')}</div></div></div>`;
+  const c = L.CREATURES.find(x => x.id === data.compagnon.id), stade = data.compagnon.stade || 0, suivant = L.prochainSeuil(st.joursValides);
+  return `<div class="sec"><h2>Compagnon <span>stade ${stade} sur 4</span></h2><div class="card compagnon-carte">
+    ${compagnonFig(c, stade)}<div class="txt"><b>${esc(c.nom)}</b><small>${st.joursValides} journée${st.joursValides > 1 ? 's' : ''} validée${st.joursValides > 1 ? 's' : ''} en tout${suivant ? ` · il grandit à ${suivant}` : ' · stade maximal'}</small></div></div></div>`;
 }
 
 function travailHtml() {
@@ -1398,6 +1434,8 @@ document.addEventListener('click', e => {
       if (data.typeDefaut === id) data.typeDefaut = data.types[0].id;
       return maj();
     case 'exporter': return exporter();
+    case 'stats-per': ui.statsPer = id; return vueProfil();
+    case 'choisir-compagnon': data.compagnon = L.grandir({ id, stade: 0 }, L.stats(data, new Date()).joursValides); noterUsage('compagnon'); return maj();
     case 'retirer-sport': data.profil.sports = sportsDuProfil().filter(x => x !== el.dataset.sport); return maj();
     case 'sport-depart': {
       const p = L.seancesDeDepart(el.dataset.sport);

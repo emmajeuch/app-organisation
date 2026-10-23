@@ -189,4 +189,18 @@ hp.semaines['2026-10-19'] = { slots: [{ j: 0, s: 8, e: 10, cat: 'cours', fait: t
 const per = L.heuresPeriode(hp, new Date(2026, 9, 19), new Date(2026, 9, 25), new Date(2026, 9, 23));
 assert.deepEqual([per.prevu.cours, per.fait.cours], [3, 2]);   // le dimanche 25 n'est pas encore vécu
 
+// Bonus. Compagnon : stades sur des journées simulées, et il ne régresse jamais.
+const sim = n => { const x = L.vide(); for (let i = 0; i < n; i++) { const d = L.ajouterJours(new Date(2026, 9, 26), i), cle = L.isoJour(L.lundiDe(d));
+  (x.semaines[cle] ||= { slots: [] }).slots.push({ id: 'z' + i, j: L.jourSemaine(d), s: 8, e: 9, fait: true }); } return L.stats(x, new Date(2026, 11, 31)).joursValides; };
+assert.deepEqual([0, 1, 4, 5, 9, 10, 19, 20, 40].map(n => L.stadeCompagnon(sim(n))), [0, 1, 1, 2, 2, 3, 3, 4, 4]);
+assert.equal(L.prochainSeuil(sim(6)), 10);
+assert.equal(L.grandir({ id: 'nuage', stade: 3 }, sim(2)).stade, 3);
+// Stats : la semaine vaut la somme de ses jours, calculés un par un.
+const st7 = L.vide();
+st7.semaines['2026-10-19'] = { slots: [{ j: 2, s: 8, e: 10, cat: 'cours', fait: true }, { j: 3, s: 9, e: 12, cat: 'cours', fait: true }, { j: 4, s: 14, e: 15, cat: 'sport', fait: true }, { j: 4, s: 16, e: 17, cat: 'sport' }] };
+const auj7 = new Date(2026, 9, 25), semaine7 = L.heuresPeriode(st7, new Date(2026, 9, 19), new Date(2026, 9, 25), auj7);
+const jours7 = [0, 1, 2, 3, 4, 5, 6].map(j => L.heuresPeriode(st7, L.ajouterJours(new Date(2026, 9, 19), j), L.ajouterJours(new Date(2026, 9, 19), j), auj7));
+for (const c of ['cours', 'sport']) assert.equal(jours7.reduce((k, p) => k + (p.fait[c] || 0), 0), semaine7.fait[c]);
+assert.equal(L.heuresPeriode(st7, new Date(2026, 0, 1), new Date(2026, 11, 31), auj7).fait.cours, 5);   // année civile
+
 console.log('ok');

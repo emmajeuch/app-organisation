@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.5';
+export const VERSION = '1.7';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -544,4 +544,15 @@ export function heuresPeriode(data, de, a, auj = new Date()) {
     }
   }
   return { prevu, fait };
+}
+
+// ---------- Bonus avant l'essai (V1.7) ----------
+
+// Compagnon : une créature choisie, qui grandit avec le nombre total de journées validées
+// (stades à 1, 5, 10 et 20) et ne régresse jamais, même si la série casse.
+export const SEUILS_COMPAGNON = [1, 5, 10, 20];
+export const stadeCompagnon = nbJours => SEUILS_COMPAGNON.filter(s => nbJours >= s).length;
+export const prochainSeuil = nbJours => SEUILS_COMPAGNON.find(s => nbJours < s) ?? null;
+export function grandir(compagnon, nbJours) {
+  return { ...compagnon, stade: Math.max(compagnon.stade || 0, stadeCompagnon(nbJours)) };
 }
