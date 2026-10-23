@@ -43,7 +43,7 @@ function maj() {
   sauver();
   rendre();
   const st = L.stats(data, new Date());
-  if (dernier && st.total > dernier.total) {
+  if (dernier && st.total > dernier.total && actif('motivation')) {
     const gain = `+${st.total - dernier.total} XP`;
     dire(toast.hidden ? gain : `${toast.textContent} · ${gain}`);
     son();
@@ -76,6 +76,39 @@ const infos = x => [x.salle, x.affaires].filter(Boolean).join(' · ');
 const objectifs = (horizon, per) => data.objectifs.filter(o => o.horizon === horizon && o.periode === per);
 const tagsDe = s => [...new Set(String(s).split(',').map(t => t.trim()).filter(Boolean))];
 const exo = id => data.exos.find(e => e.id === id);
+
+// Modules masquables (Profil › Réglages › Modules) : masqués, ils gardent leurs données.
+const MODULES = [['taches', 'Tâches'], ['projets', 'Projets et divertissements'], ['objectifs', 'Objectifs'], ['listes', 'Listes'],
+  ['notes', 'Notes libres'], ['sport', 'Sport'], ['habitudes', 'Habitudes'], ['motivation', 'XP, niveaux, collection et succès']];
+const actif = m => data.modules[m] !== false;
+const joursDepuisExport = () => data.dernierExport ? Math.floor((Date.now() - new Date(data.dernierExport)) / 864e5) : null;
+// Ce qui a servi aujourd'hui (jour logique : avant 1 h, c'est encore la veille).
+const aujIso = () => L.isoJour(L.momentLogique(new Date()).date);
+const noterUsage = cle => L.noter(data, aujIso(), cle);
+const dateDuSlot = (cle, j) => L.isoJour(L.ajouterJours(L.deIso(cle), j));
+
+// Relecture d'une journée : chaque créneau se coche un par un ; ceux déjà validés arrivent cochés.
+// Seuls les créneaux cochés rapportent de l'XP ; la relecture seule ne fait pas compter la journée.
+function relecture(jour) {
+  const d = L.deIso(jour), cle = cleSem(d), j = L.jourSemaine(d), sem = semaineDe(cle);
+  const slots = sem.slots.filter(x => x.j === j);
+  const hier = jour !== aujIso();
+  const servi = L.utiliseEnJournee(data, jour);
+  ouvrirDlg(`<form><h2>${hier ? 'Relire hier' : 'Relire ta journée'}</h2>
+    <p class="muted">Coche ce que tu as vraiment fait, puis confirme. ${servi ? 'Cette journée a servi pendant la journée : validée, elle comptera dans l’essai.' : 'Aucun créneau n’a été touché pendant cette journée : validée, elle ne comptera pas dans l’essai.'}</p>
+    <ul class="list">${slots.map(x => `<li><input type="checkbox" class="chk" name="fait" value="${x.id}" ${x.fait ? 'checked' : ''} aria-label="${esc(x.titre)} fait"><span class="dot" style="${teinte(x.cat)}"></span><div class="txt"><b>${esc(x.titre)}</b><small>${L.hhmm(x.s)} – ${L.hhmm(x.e)}</small></div></li>`).join('')}</ul>
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Confirmer</button></div></form>`, (choix, f) => {
+    const faits = new Set(f.getAll('fait'));
+    for (const x of slots) {
+      const avant = !!x.fait;
+      x.fait = faits.has(x.id) ? true : null;
+      const t = x.fait && !avant && x.tache && data.taches.find(y => y.id === x.tache);
+      if (t && !t.fait) Object.assign(t, L.cocher(t, new Date()));
+    }
+    dire(L.journeeValidee(slots) ? (L.utiliseEnJournee(data, jour) ? 'Journée validée' : 'Journée validée, hors essai') : `${faits.size} créneaux sur ${slots.length} validés`);
+    maj();
+  });
+}
 const STATUTS = { idee: 'Idée', 'en-cours': 'En cours', pause: 'En pause', termine: 'Terminé' };
 const radios = (nom, valeurs, sel) => `<div class="cats">${Object.entries(valeurs).map(([v, n]) => `<label><input type="radio" name="${nom}" value="${v}" ${String(sel) === v ? 'checked' : ''}><span class="sans">${esc(n)}</span></label>`).join('')}</div>`;
 
@@ -169,14 +202,18 @@ function vueAujourdhui() {
   const { date, h } = L.momentLogique(new Date());
   const st = L.stats(data, new Date());
   let html = `<header class="top"><div><h1>Aujourd’hui</h1><p>${date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p></div>
-    <div class="chips"><button class="chip" data-act="ouvrir-profil" aria-label="Série de ${st.serie} jours">${FLAMME}${st.serie}</button><button class="chip" data-act="ouvrir-profil" aria-label="Niveau ${st.niveau.n}">Niv. ${st.niveau.n}</button></div></header>`;
+    ${actif('motivation') ? `<div class="chips"><button class="chip" data-act="ouvrir-profil" aria-label="Série de ${st.serie} jours">${FLAMME}${st.serie}</button><button class="chip" data-act="ouvrir-profil" aria-label="Niveau ${st.niveau.n}">Niv. ${st.niveau.n}</button></div>` : ''}</header>`;
+  const jExport = joursDepuisExport();
+  if (jExport === null || jExport > 7) {
+    html += `<div class="card type alerte-export"><div class="txt"><b>${jExport === null ? 'Tes données n’ont jamais été exportées' : `Dernier export il y a ${jExport} jours`}</b><small>Elles ne sont que sur ce téléphone : exporte-les dans Fichiers.</small></div><button class="btn plein petit" data-act="exporter">Exporter</button></div>`;
+  }
   if (!data.types.length) { $('#aujourdhui').innerHTML = html + bienvenue(); return; }
 
-  // Hier pas validé : on le rattrape d'un tap pour garder la série.
+  // Hier pas validé : on le relit le lendemain (la veille ne compte dans l'essai que si elle a servi pendant la journée).
   const hier = L.ajouterJours(date, -1), semHier = data.semaines[cleSem(hier)];
   const slotsHier = semHier ? semHier.slots.filter(x => x.j === L.jourSemaine(hier)) : [];
   if (slotsHier.length && !L.journeeValidee(slotsHier)) {
-    html += `<div class="card type"><div class="txt"><b>Hier n’est pas validé</b><small>${slotsHier.filter(x => !x.fait).length} créneaux à valider pour garder ta série</small></div><button class="btn gris petit" data-act="valider-tout" data-jour="${L.isoJour(hier)}" data-jusqua="99">Valider hier</button></div>`;
+    html += `<div class="card type"><div class="txt"><b>Hier n’est pas validé</b><small>${slotsHier.filter(x => !x.fait).length} créneaux à relire pour garder ta série</small></div><button class="btn gris petit" data-act="relecture" data-jour="${L.isoJour(hier)}">Valider hier</button></div>`;
   }
   const aBilan = bilanAFaire();
   if (aBilan) html += `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>`;
@@ -209,21 +246,26 @@ function vueAujourdhui() {
       <div class="txt"><b>${esc(x.titre)}</b>${sous ? `<small>${esc(sous)}</small>` : ''}</div>
       ${passe ? `<button class="valid" data-act="valider" data-id="${x.id}" aria-pressed="${!!x.fait}" aria-label="Valider ${esc(x.titre)}">${I.check}</button>` : ''}</li>`;
   }).join('')}</ol>` : '<p class="vide">Rien de prévu aujourd’hui. Ajoute un créneau avec le bouton +.</p>';
-  // Dès 20 h, on peut valider toute la journée d'un coup (on corrige d'abord ce qui a changé).
-  const soir = h >= 20, aValider = slots.filter(x => !x.fait && (soir || x.e <= h)).length;
-  if (aValider) html += `<button class="btn gris" data-act="valider-tout" data-jour="${L.isoJour(date)}" data-jusqua="${soir ? 99 : h}">${soir ? 'Valider la journée' : `Valider les ${aValider} créneaux passés`}</button>`;
-  else if (L.journeeValidee(slots)) html += `<p class="vide">Journée validée : +${L.XP.jour} XP de bonus.</p>`;
+  // Dès 20 h, la relecture : chaque créneau se coche un par un (ceux validés dans la journée arrivent cochés).
+  const iso = L.isoJour(date), servi = L.utiliseEnJournee(data, iso);
+  if (L.journeeValidee(slots)) {
+    html += `<p class="vide">${servi ? `Journée validée, elle compte dans l’essai${actif('motivation') ? ` : +${L.XP.jour} XP de bonus` : ''}.` : 'Journée validée, mais elle ne compte pas dans l’essai : aucun créneau touché pendant la journée.'}</p>`;
+  } else if (h >= 20 && slots.length) {
+    html += `<button class="btn plein" data-act="relecture" data-jour="${iso}">Relire et valider la journée</button>`;
+  } else if (slots.length) {
+    html += `<p class="aide">Valide chaque créneau avec son bouton peu après sa fin${servi ? '' : ' : c’est ce qui fait compter la journée'}. La relecture de la journée ouvre à 20 h.</p>`;
+  }
   html += '</div>';
 
   const af = L.aFaire(data.taches, date);
-  html += `<div class="sec"><h2>À faire <span>7 prochains jours</span></h2>${af.length ? `<ul class="list">${af.map(tacheHtml).join('')}</ul>` : '<p class="vide">Rien d’urgent. Ajoute des tâches avec le bouton +.</p>'}</div>`;
-  if (data.habitudes.length) {
+  if (actif('taches')) html += `<div class="sec"><h2>À faire <span>7 prochains jours</span></h2>${af.length ? `<ul class="list">${af.map(tacheHtml).join('')}</ul>` : '<p class="vide">Rien d’urgent. Ajoute des tâches avec le bouton +.</p>'}</div>`;
+  if (data.habitudes.length && actif('habitudes')) {
     const iso = L.isoJour(date);
-    html += `<div class="sec"><h2>Habitudes</h2><div class="habits">${data.habitudes.map(hb => `<button class="habit" data-act="habitude" data-id="${hb.id}" data-jour="${iso}" aria-pressed="${hb.faits.includes(iso)}">${I.check}${esc(hb.nom)}${hb.freq === 'jour' ? '' : ` <small>${L.faitsSemaine(hb, L.lundiDe(date))}/${hb.freq}</small>`}</button>`).join('')}</div></div>`;
+    if (actif('habitudes')) html += `<div class="sec"><h2>Habitudes</h2><div class="habits">${data.habitudes.map(hb => `<button class="habit" data-act="habitude" data-id="${hb.id}" data-jour="${iso}" aria-pressed="${hb.faits.includes(iso)}">${I.check}${esc(hb.nom)}${hb.freq === 'jour' ? '' : ` <small>${L.faitsSemaine(hb, L.lundiDe(date))}/${hb.freq}</small>`}</button>`).join('')}</div></div>`;
   }
 
   const os = objectifs('semaine', L.periode('semaine', date));
-  html += `<div class="sec"><h2>Objectifs de la semaine <span>${os.filter(o => o.fait).length} sur ${os.length}</span></h2>${os.length ? objectifsHtml('semaine', L.periode('semaine', date), false) : '<p class="vide">Aucun objectif cette semaine : ajoute-les dans Notes.</p>'}</div>`;
+  if (actif('objectifs')) html += `<div class="sec"><h2>Objectifs de la semaine <span>${os.filter(o => o.fait).length} sur ${os.length}</span></h2>${os.length ? objectifsHtml('semaine', L.periode('semaine', date), false) : '<p class="vide">Aucun objectif cette semaine : ajoute-les dans Notes.</p>'}</div>`;
   $('#aujourdhui').innerHTML = html;
 }
 
@@ -311,6 +353,12 @@ function editerSlot(slot, cle) {
       delete modele.src;
       type.slots = L.placer(type.slots, modele);
     }
+    // Ce qui a servi : ajouté, déplacé (jour ou heures), corrigé (le reste), décoché.
+    if (neuf) noterUsage(slot.tache ? 'tache-planifiee' : 'creneau-ajout');
+    if (neuf && slot.tache) noterUsage('creneau-ajout');
+    if (!neuf && (c.j !== slot.j || c.s !== slot.s || c.e !== slot.e)) noterUsage('creneau-deplace');
+    else if (!neuf && (c.cat !== slot.cat || c.titre !== slot.titre || c.salle !== (slot.salle || '') || c.affaires !== (slot.affaires || '') || c.notes !== (slot.notes || ''))) noterUsage('creneau-corrige');
+    if (!neuf && slot.fait && !c.fait) noterUsage('creneau-decoche');
     sem.slots = L.placer(sem.slots, c);
     ui.derniereCat = c.cat;
     maj();
@@ -426,6 +474,7 @@ vueSem.addEventListener('pointerup', () => {
   if (g.mode === 'creer') return editerSlot(nouveauSlot(c.j, c.s, c.e), cle);
   const sem = data.semaines[cle];
   sem.slots = L.placer(sem.slots, { ...g.slot, j: c.j, s: c.s, e: c.e });
+  noterUsage('creneau-deplace');
   maj();
 });
 vueSem.addEventListener('pointercancel', finGeste);
@@ -500,7 +549,7 @@ function corpsNotes() {
 
   const ouvertes = data.taches.filter(t => !t.fait).sort((a, b) => (a.echeance || '9999').localeCompare(b.echeance || '9999') || (a.priorite || 2) - (b.priorite || 2));
   const faites = data.taches.filter(t => t.fait).sort((a, b) => (b.faitLe || '').localeCompare(a.faitLe || '')).slice(0, 20);
-  h += `<div class="sec"><h2>Tâches <span>${ouvertes.length} à faire</span></h2><ul class="list">${ouvertes.map(tacheHtml).join('')}</ul>
+  if (actif('taches')) h += `<div class="sec"><h2>Tâches <span>${ouvertes.length} à faire</span></h2><ul class="list">${ouvertes.map(tacheHtml).join('')}</ul>
     <form class="ajout" data-form="tache"><input name="txt" placeholder="Nouvelle tâche" aria-label="Nouvelle tâche" autocomplete="off"><input type="date" name="date" aria-label="Échéance"><button aria-label="Ajouter">${I.plus}</button></form>
     ${faites.length ? `<details class="liste" data-id="faites" ${ui.ouvertes.has('faites') ? 'open' : ''}><summary>Faites récemment<span class="pill">${faites.length}</span></summary><ul class="list">${faites.map(tacheHtml).join('')}</ul></details>` : ''}</div>`;
 
@@ -509,19 +558,19 @@ function corpsNotes() {
     const sous = [p.etape && `Prochaine étape : ${p.etape}`, nt && `${nt} tâche${nt > 1 ? 's' : ''}`].filter(Boolean).join(' · ');
     return `<li data-act="projet" data-id="${p.id}" role="button" tabindex="0"><div class="txt"><b>${esc(p.nom)}</b><small>${esc(sous || 'Pas encore de prochaine étape')}</small></div><span class="pill statut-${p.statut}">${STATUTS[p.statut]}</span></li>`;
   };
-  for (const [type, titre] of [['projet', 'Projets'], ['divertissement', 'Divertissements']]) {
+  for (const [type, titre] of actif('projets') ? [['projet', 'Projets'], ['divertissement', 'Divertissements']] : []) {
     const ps = data.projets.filter(p => p.type === type && p.statut !== 'termine');
     h += `<div class="sec"><h2>${titre} <button class="btn gris petit" data-act="nouveau-projet" data-type="${type}">Nouveau</button></h2>${ps.length ? `<ul class="list">${ps.map(carte).join('')}</ul>` : `<p class="vide">Aucun ${type} en cours.</p>`}</div>`;
   }
   const termines = data.projets.filter(p => p.statut === 'termine');
-  if (termines.length) h += `<details class="liste" data-id="termines" ${ui.ouvertes.has('termines') ? 'open' : ''}><summary>Terminés<span class="pill">${termines.length}</span></summary><ul class="list">${termines.map(carte).join('')}</ul></details>`;
+  if (termines.length && actif('projets')) h += `<details class="liste" data-id="termines" ${ui.ouvertes.has('termines') ? 'open' : ''}><summary>Terminés<span class="pill">${termines.length}</span></summary><ul class="list">${termines.map(carte).join('')}</ul></details>`;
 
-  h += `<div class="sec"><h2>Objectifs de la semaine</h2>${os.length ? `<div class="card"><div class="goal-head"><b>${faits} sur ${os.length} atteints</b><span class="num">${Math.round(faits / os.length * 100)} %</span></div><div class="bar"><i style="width:${faits / os.length * 100}%"></i></div></div>` : ''}${objectifsHtml('semaine', pS, true)}</div>`;
-  h += `<div class="sec"><h2>Objectifs du mois <span>${now.toLocaleDateString('fr-FR', { month: 'long' })}</span></h2>${objectifsHtml('mois', pM, true)}</div>`;
-  h += `<div class="sec"><h2>Objectifs de l’année <span>${pA.replace('-', '–')}</span></h2>${objectifsHtml('annee', pA, true)}</div>`;
-  h += `<div class="sec"><h2>Listes <button class="btn gris petit" data-act="nouvelle-liste">Nouvelle liste</button></h2>${data.listes.filter(garde).map(listeHtml).join('')}</div>`;
+  if (actif('objectifs')) h += `<div class="sec"><h2>Objectifs de la semaine</h2>${os.length ? `<div class="card"><div class="goal-head"><b>${faits} sur ${os.length} atteints</b><span class="num">${Math.round(faits / os.length * 100)} %</span></div><div class="bar"><i style="width:${faits / os.length * 100}%"></i></div></div>` : ''}${objectifsHtml('semaine', pS, true)}</div>`;
+  if (actif('objectifs')) h += `<div class="sec"><h2>Objectifs du mois <span>${now.toLocaleDateString('fr-FR', { month: 'long' })}</span></h2>${objectifsHtml('mois', pM, true)}</div>`;
+  if (actif('objectifs')) h += `<div class="sec"><h2>Objectifs de l’année <span>${pA.replace('-', '–')}</span></h2>${objectifsHtml('annee', pA, true)}</div>`;
+  if (actif('listes')) h += `<div class="sec"><h2>Listes <button class="btn gris petit" data-act="nouvelle-liste">Nouvelle liste</button></h2>${data.listes.filter(garde).map(listeHtml).join('')}</div>`;
   const notes = data.notes.filter(garde).sort((a, b) => (b.epingle ? 1 : 0) - (a.epingle ? 1 : 0) || (b.maj || 0) - (a.maj || 0));
-  h += `<div class="sec"><h2>Notes libres <button class="btn gris petit" data-act="nouvelle-note">Nouvelle note</button></h2>${notes.length ? `<div class="notes">${notes.map(noteHtml).join('')}</div>` : '<p class="vide">Aucune note pour l’instant.</p>'}</div>`;
+  if (actif('notes')) h += `<div class="sec"><h2>Notes libres <button class="btn gris petit" data-act="nouvelle-note">Nouvelle note</button></h2>${notes.length ? `<div class="notes">${notes.map(noteHtml).join('')}</div>` : '<p class="vide">Aucune note pour l’instant.</p>'}</div>`;
   el.innerHTML = h;
 }
 
@@ -534,8 +583,8 @@ function editerNote(n) {
     <label class="champ">Titre<input name="titre" value="${esc(v.titre)}" autocomplete="off"></label>
     <label class="champ">Texte<textarea name="texte" rows="6">${esc(v.texte)}</textarea></label>
     <div class="champ">Couleur<div class="cats"><label><input type="radio" name="couleur" value="" ${v.couleur ? '' : 'checked'}><span class="sans">Aucune</span></label>${data.cats.map(c => `<label><input type="radio" name="couleur" value="${esc(c.couleur)}" ${v.couleur === c.couleur ? 'checked' : ''}><span style="${teinte(c.id)}">${esc(c.nom)}</span></label>`).join('')}</div></div>
-    <label class="champ">Étiquettes, séparées par des virgules<input name="tags" value="${esc((v.tags || []).join(', '))}" placeholder="Fac, Écriture…" autocomplete="off"></label>
-    <label class="champ">Liée au créneau<input name="lien" list="titres" value="${esc(v.lien)}" placeholder="Titre du créneau, ex. Base de données" autocomplete="off"><datalist id="titres">${titres.map(t => `<option value="${esc(t)}">`).join('')}</datalist></label>
+    <label class="champ">Étiquettes, séparées par des virgules<input name="tags" value="${esc((v.tags || []).join(', '))}" placeholder="Fac, Perso…" autocomplete="off"></label>
+    <label class="champ">Liée au créneau<input name="lien" list="titres" value="${esc(v.lien)}" placeholder="Titre du créneau, ex. Cours magistral" autocomplete="off"><datalist id="titres">${titres.map(t => `<option value="${esc(t)}">`).join('')}</datalist></label>
     <label class="coche"><input type="checkbox" class="chk" name="epingle" ${v.epingle ? 'checked' : ''}>Épinglée en haut</label>
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div>
   </form>`, (choix, f) => {
@@ -544,6 +593,7 @@ function editerNote(n) {
       tags: tagsDe(f.get('tags')), lien: f.get('lien').trim(), maj: Date.now() };
     if (!champs.titre && !champs.texte) { dire('La note est vide.'); return false; }
     if (neuf) data.notes.push({ id: L.uid(), ...champs }); else Object.assign(n, champs);
+    noterUsage('notes');
     maj();
   });
 }
@@ -580,6 +630,7 @@ function editerTache(t, defaut = {}) {
     }
     let tache = t;
     if (neuf) { tache = { id: L.uid(), fait: false, ...champs }; data.taches.push(tache); } else Object.assign(t, champs);
+    noterUsage('taches');
     maj();
     if (choix === 'planifier') { planifier(tache); return false; }
   });
@@ -616,6 +667,7 @@ function editerProjet(p, type = 'projet') {
     const champs = { nom: f.get('nom').trim(), type: f.get('type'), statut: choix === 'termine' ? 'termine' : f.get('statut'), etape: f.get('etape').trim(), notes: f.get('notes').trim() };
     if (!champs.nom) { dire('Donne-lui un nom.'); return false; }
     if (neuf) data.projets.push({ id: L.uid(), ...champs }); else Object.assign(p, champs);
+    noterUsage('projets');
     if (choix === 'monter') {
       const i = data.projets.indexOf(p);
       const j = data.projets.slice(0, i).map(x => x.type === p.type && x.statut !== 'termine').lastIndexOf(true);
@@ -683,17 +735,17 @@ function vueSport() {
   const st = p && data.seances.find(s => s.id === p.seance);
   let html = `<header class="top"><div><h1>Sport</h1><p>${nbPerso + nbClub} séance${nbPerso + nbClub > 1 ? 's' : ''} cette semaine${nbClub ? `, dont ${nbClub} au club` : ''}</p></div></header>`;
 
-  html += `<div class="sec"><h2>Prochaine séance ${p ? `<span>${JOURS[p.j]} · ${L.hhmm(p.s)}</span>` : ''}</h2><div class="card seance">
+  if (actif('sport')) html += `<div class="sec"><h2>Prochaine séance ${p ? `<span>${JOURS[p.j]} · ${L.hhmm(p.s)}</span>` : ''}</h2><div class="card seance">
     ${p ? `<b>${esc(p.titre)}${p.club ? ' · club' : ''}</b>` : '<p class="muted">Aucun créneau Sport à venir cette semaine.</p>'}
     ${st ? `<table>${st.exos.filter(x => exo(x.exo)).map(x => `<tr><td>${esc(exo(x.exo).nom)}</td><td>${x.series} × ${cibleTxt(exo(x.exo), x.cible)}</td></tr>`).join('')}</table>`
       : p && !p.club ? '<p class="muted">Pas de séance prévue sur ce créneau : touche-le dans Semaine pour en choisir une.</p>' : ''}
     <button class="btn plein" data-act="seance" data-seance="${st ? st.id : ''}" data-slot="${p && p.j === j ? p.id : ''}">${st ? 'Commencer cette séance' : 'Commencer une séance libre'}</button></div></div>`;
 
-  html += `<div class="sec"><h2>Habitudes</h2>${data.habitudes.length ? `<div class="regs">${data.habitudes.map(hb => `<div class="card"><button class="kv" data-act="editer-habitude" data-id="${hb.id}"><b>${esc(hb.nom)}</b><small class="muted">${hb.freq === 'jour' ? 'chaque jour' : `${L.faitsSemaine(hb, lundi)}/${hb.freq} cette sem.`}</small></button>${regulariteHtml(hb, lundi)}</div>`).join('')}</div>` : ''}
+  if (actif('habitudes')) html += `<div class="sec"><h2>Habitudes</h2>${data.habitudes.length ? `<div class="regs">${data.habitudes.map(hb => `<div class="card"><button class="kv" data-act="editer-habitude" data-id="${hb.id}"><b>${esc(hb.nom)}</b><small class="muted">${hb.freq === 'jour' ? 'chaque jour' : `${L.faitsSemaine(hb, lundi)}/${hb.freq} cette sem.`}</small></button>${regulariteHtml(hb, lundi)}</div>`).join('')}</div>` : ''}
     <form class="ajout" data-form="habitude"><input name="txt" placeholder="Nouvelle habitude" aria-label="Nouvelle habitude" autocomplete="off"><select name="freq" aria-label="Fréquence">${Object.entries(FREQS).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select><button aria-label="Ajouter">${I.plus}</button></form></div>`;
 
   const avecProg = data.exos.filter(e => L.progression(data.journal, e.id, e.type).length);
-  if (avecProg.length) {
+  if (avecProg.length && actif('sport')) {
     if (!avecProg.some(e => e.id === ui.progExo)) ui.progExo = avecProg[0].id;
     const e = exo(ui.progExo), pts = L.progression(data.journal, e.id, e.type);
     html += `<div class="sec"><h2>Progression</h2><div class="card chart">
@@ -703,26 +755,26 @@ function vueSport() {
   }
 
   const entrees = [...data.journal.map(e => ({ ...e, club: false })), ...club.map(c => ({ ...c, club: true }))].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
-  html += `<div class="sec"><h2>Journal</h2>${entrees.length ? `<ul class="list">${entrees.map(e => {
+  if (actif('sport')) html += `<div class="sec"><h2>Journal</h2>${entrees.length ? `<ul class="list">${entrees.map(e => {
     const quand = L.deIso(e.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
     const sous = e.club ? `Club · ${L.heures(e.duree)}` : `${e.series.length} exercice${e.series.length > 1 ? 's' : ''} · ${e.series.reduce((k, x) => k + x.sets.length, 0)} séries${e.ressenti ? ` · ressenti ${e.ressenti}/5` : ''}`;
     return `<li ${e.club ? '' : `data-act="journal" data-id="${e.id}" role="button" tabindex="0"`}><div class="txt"><b>${esc(e.nom)}</b><small>${esc(sous)}</small></div><span class="pill">${quand}</span></li>`;
   }).join('')}</ul>` : '<p class="vide">Tes séances terminées et tes entraînements du club validés s’afficheront ici.</p>'}</div>`;
 
-  html += `<div class="sec"><h2>Séances types <button class="btn gris petit" data-act="seance-type">Nouvelle</button></h2>${data.seances.length ? `<ul class="list">${data.seances.map(s => `<li data-act="seance-type" data-id="${s.id}" role="button" tabindex="0"><div class="txt"><b>${esc(s.nom)}</b><small>${s.exos.length} exercice${s.exos.length > 1 ? 's' : ''}</small></div></li>`).join('')}</ul>` : '<p class="vide">Une séance type, c’est une liste d’exercices avec les séries prévues.</p>'}</div>`;
+  if (actif('sport')) html += `<div class="sec"><h2>Séances types <button class="btn gris petit" data-act="seance-type">Nouvelle</button></h2>${data.seances.length ? `<ul class="list">${data.seances.map(s => `<li data-act="seance-type" data-id="${s.id}" role="button" tabindex="0"><div class="txt"><b>${esc(s.nom)}</b><small>${s.exos.length} exercice${s.exos.length > 1 ? 's' : ''}</small></div></li>`).join('')}</ul>` : '<p class="vide">Une séance type, c’est une liste d’exercices avec les séries prévues.</p>'}</div>`;
 
-  html += `<div class="sec"><h2>Exercices</h2><ul class="list">${data.exos.map(e => `<li data-act="exo" data-id="${e.id}" role="button" tabindex="0"><div class="txt"><b>${esc(e.nom)}</b><small>${L.TYPES_EXO[e.type]}${e.notes ? ` · ${esc(e.notes)}` : ''}</small></div></li>`).join('')}</ul>
+  if (actif('sport')) html += `<div class="sec"><h2>Exercices</h2><ul class="list">${data.exos.map(e => `<li data-act="exo" data-id="${e.id}" role="button" tabindex="0"><div class="txt"><b>${esc(e.nom)}</b><small>${L.TYPES_EXO[e.type]}${e.notes ? ` · ${esc(e.notes)}` : ''}</small></div></li>`).join('')}</ul>
     <form class="ajout" data-form="exo"><input name="txt" placeholder="Nouvel exercice" aria-label="Nouvel exercice" autocomplete="off"><select name="type" aria-label="Type">${Object.entries(L.TYPES_EXO).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select><button aria-label="Ajouter">${I.plus}</button></form></div>`;
 
   const conseils = L.CONSEILS[data.club];
-  html += `<div class="sec"><h2>Sport en club</h2><div class="card bientot">
+  if (actif('sport')) html += `<div class="sec"><h2>Sport en club</h2><div class="card bientot">
     <label class="champ">Ton sport<select data-act="club"><option value="">Aucun</option>${[...Object.keys(L.CONSEILS), 'Autre'].map(s => `<option ${s === data.club ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
     <p>Marque tes entraînements et tes matchs comme « club » dans leur créneau : validés, ils comptent dans le journal.</p>
     ${conseils ? `<p><b>Renfo conseillé :</b> ${conseils.map(([n]) => esc(n)).join(', ')}. Des exercices classiques pour ce sport, à adapter avec ton coach.</p>
       <button class="btn gris" data-act="conseils">Ajouter ces exercices et une séance « Renfo ${esc(data.club.toLowerCase())} »</button>` : data.club ? '<p>Pas encore de suggestions pour ce sport.</p>' : ''}
   </div></div>`;
 
-  html += `<div class="sec"><h2>Minuteur de repos</h2><div class="card reglage"><span class="txt">Entre deux séries</span><select data-act="repos" aria-label="Durée du repos">${[30, 45, 60, 90, 120, 180].map(s => `<option value="${s}" ${s === data.repos ? 'selected' : ''}>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}</option>`).join('')}</select></div></div>`;
+  if (actif('sport')) html += `<div class="sec"><h2>Minuteur de repos</h2><div class="card reglage"><span class="txt">Entre deux séries</span><select data-act="repos" aria-label="Durée du repos">${[30, 45, 60, 90, 120, 180].map(s => `<option value="${s}" ${s === data.repos ? 'selected' : ''}>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}</option>`).join('')}</select></div></div>`;
   $('#sport').innerHTML = html;
 }
 
@@ -803,6 +855,7 @@ function commencerSeance(seanceId, slotId) {
       series, ressenti: +f.get('ressenti') || null, notes: f.get('notes').trim() });
     const r = slotId && trouverSlot(slotId);
     if (r) r.slot.fait = true;
+    noterUsage('seances');
     dire('Séance enregistrée'); maj(); feter();
   }, { collant: true });
 }
@@ -903,25 +956,25 @@ function vueProfil() {
   const sources = Object.entries(st.sources).filter(([, v]) => v);
   const obtenus = SUCCES.filter(([, k, c]) => st[k] >= c).length;
   const motivation = `<header class="top"><div><h1>Profil</h1><p>Niveau, collection et réglages</p></div></header>
-    <div class="card niveau">
+    <div class="card niveau" data-module="motivation">
       <div class="kv"><span class="num big">Niveau ${nv.n}</span><span class="num">${st.total - nv.de} / ${nv.a - nv.de} XP</span></div>
       <div class="xp"><div style="width:${(st.total - nv.de) / (nv.a - nv.de) * 100}%">${sources.map(([k, v]) => `<i style="--c:${SOURCES[k][1]};flex:${v}"></i>`).join('')}</div></div>
       ${sources.length ? `<div class="xp-leg">${sources.map(([k, v]) => `<span><i style="--c:${SOURCES[k][1]}"></i>${SOURCES[k][0]} ${v}</span>`).join('')}</div>` : '<p class="muted">L’XP se gagne en validant tes créneaux, tes tâches, tes séances, tes habitudes et tes objectifs.</p>'}
       <small class="muted">${st.total} XP au total${prochainTheme ? ` · niveau ${prochainTheme[2]} : thème ${prochainTheme[1]}` : ''}</small></div>
-    <div class="card serie">${FLAMME}<div><span class="num">${st.serie} jour${st.serie > 1 ? 's' : ''}</span><br><small class="muted">de journées validées · record ${st.record}</small></div><div class="jokers"><b>${st.jokers}</b>joker${st.jokers > 1 ? 's' : ''}</div></div>
+    <div class="card serie" data-module="motivation">${FLAMME}<div><span class="num">${st.serie} jour${st.serie > 1 ? 's' : ''}</span><br><small class="muted">de journées validées · record ${st.record}</small></div><div class="jokers"><b>${st.jokers}</b>joker${st.jokers > 1 ? 's' : ''}</div></div>
     ${aBilan ? `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>` : ''}
-    <div class="sec"><h2>Collection <span>${possedes.size} sur ${L.CREATURES.length}</span></h2>
+    <div class="sec" data-module="motivation"><h2>Collection <span>${possedes.size} sur ${L.CREATURES.length}</span></h2>
       ${droits.length ? `<button class="btn plein" data-act="tirage">Ouvrir ${droits.length > 1 ? `tes ${droits.length} tirages` : 'ton tirage'}</button>` : ''}
       <div class="collec">${L.CREATURES.map(c => possedes.has(c.id) ? `<button class="fig" data-act="creature" data-id="${c.id}">${creaHtml(c)}<span>${esc(c.nom)}</span></button>` : '<div class="fig"><div class="crea lock">?</div><span>À gagner</span></div>').join('')}</div>
       <p class="aide">Un tirage à chaque niveau, à chaque tâche importante ou de fac faite, à chaque projet terminé, et pour chaque semaine avec au moins 5 journées validées.</p></div>
-    <div class="sec"><h2>Succès <span>${obtenus} sur ${SUCCES.length}</span></h2><ul class="list">${SUCCES.map(([nom, k, cible]) => {
+    <div class="sec" data-module="motivation"><h2>Succès <span>${obtenus} sur ${SUCCES.length}</span></h2><ul class="list">${SUCCES.map(([nom, k, cible]) => {
       const ok = st[k] >= cible;
       return `<li><span class="medal${ok ? '' : ' en-cours'}">${ok ? I.check : `${st[k]}/${cible}`}</span><div class="txt"><b>${nom}</b>${ok ? '<small>Obtenu</small>' : ''}</div></li>`;
     }).join('')}</ul></div>
     <div class="sec"><h2>Cette semaine <span>réalisé / prévu</span></h2>${Object.keys(prevu).length ? `<div class="card"><ul class="stats">${Object.entries(prevu).sort((a, b) => b[1] - a[1]).map(([c, v]) =>
       `<li><span>${esc(cat(c).nom)}</span><span class="track duo" style="${teinte(c)}"><i style="width:${v / max * 100}%"></i><i style="width:${(fait[c] || 0) / max * 100}%"></i></span><b>${L.heures(fait[c] || 0)}<small> / ${L.heures(v)}</small></b></li>`).join('')}</ul></div>` : '<p class="vide">Aucun créneau cette semaine.</p>'}
       <button class="btn gris" data-act="bilan">Faire le bilan de la semaine</button></div>
-    <div class="sec"><h2>Thème</h2><div class="cats">${THEMES.map(([id, nom, n, c]) => n > nv.n ? `<span class="theme verrou">${nom} · niv. ${n}</span>`
+    <div class="sec" data-module="motivation"><h2>Thème</h2><div class="cats">${THEMES.map(([id, nom, n, c]) => n > nv.n ? `<span class="theme verrou">${nom} · niv. ${n}</span>`
       : `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${data.theme === id}" style="--c:${c || 'var(--ink)'}">${nom}</button>`).join('')}</div>
       <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label></div>`;
   const jours = data.dernierExport ? Math.floor((Date.now() - new Date(data.dernierExport)) / 864e5) : null;
@@ -939,7 +992,11 @@ function vueProfil() {
     <div class="sec"><h2>Plage horaire de la semaine</h2><div class="card reglage"><span>De</span><select data-act="plage" data-i="0" aria-label="Début">${opt([5, 6, 7, 8, 9], data.plage[0])}</select><span>à</span><select data-act="plage" data-i="1" aria-label="Fin">${opt([22, 23, 24, 25], data.plage[1])}</select></div></div>
     <div class="sec"><h2>Semaines types</h2>
       <ul class="list">${data.types.map(t => `<li class="reglage"><input type="text" value="${esc(t.nom)}" data-act="type-nom" data-id="${t.id}" aria-label="Nom de la semaine type"><button class="btn ${t.id === defaut ? 'plein' : 'gris'} petit" data-act="type-defaut" data-id="${t.id}" aria-pressed="${t.id === defaut}">Par défaut</button><button class="x" data-act="suppr-type" data-id="${t.id}" aria-label="Supprimer ${esc(t.nom)}">${I.x}</button></li>`).join('')}</ul>
-      <p class="aide">La semaine type par défaut remplit chaque nouvelle semaine. Pour en créer une : Semaine › Modifier.</p></div>`;
+      <p class="aide">La semaine type par défaut remplit chaque nouvelle semaine. Pour en créer une : Semaine › Modifier.</p></div>
+    <div class="sec"><h2>Modules</h2><ul class="list">${MODULES.map(([id, nom]) => `<li><label class="coche" style="flex:1"><input type="checkbox" class="chk" data-act="module" data-id="${id}" ${actif(id) ? 'checked' : ''}>${nom}</label></li>`).join('')}</ul>
+      <p class="aide">Un module masqué disparaît de l’app, mais ses données restent là : le réactiver les fait revenir.</p></div>
+    <p class="aide version">App d’organisation · version ${L.VERSION}</p>`;
+  $('#profil').querySelectorAll('[data-module]').forEach(e => { e.hidden = !actif(e.dataset.module); });
   appliquerTheme();
 }
 
@@ -967,6 +1024,11 @@ function voirCreature(c) {
     <button class="btn plein">Fermer</button></form>`, () => {});
 }
 
+// Ce que le bilan relève, module par module (V1.3.1).
+const SERVI = [['creneau-ajout', 'Créneaux ajoutés'], ['creneau-deplace', 'Créneaux déplacés'], ['creneau-corrige', 'Créneaux corrigés'],
+  ['creneau-decoche', 'Créneaux décochés'], ['creneau-valide', 'Créneaux validés dans la journée'], ['tache-planifiee', 'Tâches planifiées'],
+  ['taches', 'Tâches'], ['projets', 'Projets et divertissements'], ['objectifs', 'Objectifs'], ['listes', 'Listes'], ['notes', 'Notes libres'],
+  ['seances', 'Séances de sport'], ['sport', 'Exercices ajoutés'], ['habitudes', 'Habitudes']];
 function faireBilan(cle) {
   cle = cle || bilanAFaire() || cleSem(L.momentLogique(new Date()).date);
   const lundi = L.deIso(cle), fin = L.isoJour(L.ajouterJours(lundi, 6)), suiv = L.isoJour(L.ajouterJours(lundi, 7));
@@ -976,7 +1038,9 @@ function faireBilan(cle) {
   const objs = objectifs('semaine', cle), atteints = objs.filter(o => o.fait).length;
   const restes = data.taches.filter(t => !t.fait && t.echeance && t.echeance <= fin);
   const prevu = L.heuresParCat(sem.slots), fait = L.heuresParCat(sem.slots.filter(x => x.fait)), avant = L.heuresParCat((prec?.slots || []).filter(x => x.fait));
+  const comptent = L.joursQuiComptent(data, cle, st.valides).length, usage = L.usageSemaine(data, cle), b = data.bilans[cle] || {};
   const chiffres = [
+    [comptent + '/7', 'journées qui comptent dans l’essai'],
     [[0, 1, 2, 3, 4, 5, 6].filter(j => st.valides.has(L.isoJour(L.ajouterJours(lundi, j)))).length + '/7', 'journées validées'],
     [data.journal.filter(e => dans(e.date)).length + clubFaits().filter(e => dans(e.date)).length, 'séances de sport'],
     [data.taches.reduce((k, t) => k + (t.faits || []).filter(dans).length, 0), 'tâches faites'],
@@ -992,6 +1056,11 @@ function faireBilan(cle) {
     <div class="champ">Heures réalisées${prec ? ', et l’écart avec la semaine d’avant' : ''}
       <table class="bilan-t"><tr><th>Catégorie</th><th>Réalisé</th><th>Prévu</th>${prec ? '<th>Écart</th>' : ''}</tr>
       ${Object.entries(prevu).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<tr><td><span class="dot" style="${teinte(c)}"></span>${esc(cat(c).nom)}</td><td>${L.heures(fait[c] || 0)}</td><td>${L.heures(v)}</td>${prec ? `<td>${ecart(c)}</td>` : ''}</tr>`).join('')}</table></div>
+    <div class="champ">Ce qui a servi cette semaine
+      <table class="bilan-t">${SERVI.map(([k, nom]) => `<tr><td>${nom}</td><td>${usage[k] || 0}</td></tr>`).join('')}</table></div>
+    <div class="champ">Suivi ailleurs cette semaine (papier, Calendrier, autre app)
+      <select name="ailleurs">${[0, 1, 2, 3, 4, 5, 6, 7].map(n => `<option value="${n}" ${(b.ailleurs || 0) === n ? 'selected' : ''}>${n} jour${n > 1 ? 's' : ''}</option>`).join('')}</select>
+      <input name="ailleursNote" value="${esc(b.ailleursNote)}" placeholder="Quoi, et pourquoi pas dans l’app ?" autocomplete="off"></div>
     <p class="aide">Ce qui reste coché « Reporter » passe à la semaine suivante.</p>
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Plus tard</button><button class="btn plein">${data.bilans[cle] ? 'Mettre à jour' : 'Clore le bilan'}</button></div></form>`, (choix, fd) => {
     const objIds = new Set(fd.getAll('obj')), tIds = new Set(fd.getAll('tache'));
@@ -1003,7 +1072,7 @@ function faireBilan(cle) {
       t.echeance = L.isoJour(d);
     });
     const premier = !data.bilans[cle], n = objIds.size + tIds.size;
-    data.bilans[cle] = L.isoJour(new Date());
+    data.bilans[cle] = { date: L.isoJour(new Date()), ailleurs: +fd.get('ailleurs') || 0, ailleursNote: fd.get('ailleursNote').trim(), comptent, validees: chiffres[1][0], usage };
     dire(`Bilan clos${n ? ` · ${n} reporté${n > 1 ? 's' : ''}` : ''}`);
     maj();
     if (premier) feter();
@@ -1046,9 +1115,9 @@ $('#fichier').addEventListener('change', async e => {
 function plus() {
   ouvrirDlg(`<form><h2>Ajouter</h2><div class="opts">
     <button type="button" data-choix="slot">${I.agenda}<b>Créneau</b><small>Dans l’emploi du temps</small></button>
-    <button type="button" data-choix="tache">${I.check}<b>Tâche</b><small>Avec une échéance</small></button>
-    <button type="button" data-choix="note">${I.note}<b>Note</b><small>Une idée, une consigne</small></button>
-    <button type="button" data-choix="objectif">${I.cible}<b>Objectif</b><small>Semaine, mois ou année</small></button>
+    ${actif('taches') ? `<button type="button" data-choix="tache">${I.check}<b>Tâche</b><small>Avec une échéance</small></button>` : ''}
+    ${actif('notes') ? `<button type="button" data-choix="note">${I.note}<b>Note</b><small>Une idée, une consigne</small></button>` : ''}
+    ${actif('objectifs') ? `<button type="button" data-choix="objectif">${I.cible}<b>Objectif</b><small>Semaine, mois ou année</small></button>` : ''}
     </div><button type="button" class="btn gris" data-fermer>Fermer</button></form>`, choix => {
     if (choix === 'slot') {
       if (!data.types.length) { dire('Choisis d’abord comment commencer, dans Aujourd’hui.'); return; }
@@ -1064,7 +1133,15 @@ function plus() {
   });
 }
 
+// Un onglet dont tous les modules sont masqués disparaît de la barre.
+const ONGLETS_MODULES = { notes: ['taches', 'projets', 'objectifs', 'listes', 'notes'], sport: ['sport', 'habitudes'] };
+const ongletVisible = v => !ONGLETS_MODULES[v] || ONGLETS_MODULES[v].some(actif);
+function majOnglets() {
+  document.querySelectorAll('.tab').forEach(t => { t.hidden = !ongletVisible(t.dataset.v); });
+  $('.tabs').style.gridTemplateColumns = `repeat(${[...document.querySelectorAll('.tab')].filter(t => !t.hidden).length}, 1fr)`;
+}
 function ouvrir(id) {
+  if (!ongletVisible(id)) id = 'aujourdhui';
   ui.onglet = id;
   document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', t.dataset.v === id));
   document.querySelectorAll('main > .view').forEach(v => v.hidden = v.id !== id);
@@ -1073,7 +1150,7 @@ function ouvrir(id) {
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => ouvrir(t.dataset.v)));
 
-function rendre() { vueAujourdhui(); vueSemaine(); vueNotes(); vueSport(); vueProfil(); }
+function rendre() { majOnglets(); vueAujourdhui(); vueSemaine(); vueNotes(); vueSport(); vueProfil(); if (!ongletVisible(ui.onglet)) ouvrir('aujourdhui'); }
 
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
@@ -1092,20 +1169,15 @@ document.addEventListener('click', e => {
     case 'valider': {
       const r = trouverSlot(id);
       r.slot.fait = r.slot.fait ? null : true;
+      // Validé par son bouton peu après sa fin, le jour même : la journée a servi.
+      const { date, h } = L.momentLogique(new Date());
+      if (!r.slot.fait) noterUsage('creneau-decoche');
+      else if (dateDuSlot(r.cle, r.slot.j) === L.isoJour(date) && h <= L.delaiValidation(r.slot.e)) noterUsage('creneau-valide');
       const t = r.slot.fait && r.slot.tache && data.taches.find(x => x.id === r.slot.tache);
       if (t && !t.fait) cocherTache(t); else if (r.slot.fait) dire('Créneau validé');
       return maj();
     }
-    case 'valider-tout': {
-      const d = L.deIso(el.dataset.jour), s = semaineDe(cleSem(d)), j = L.jourSemaine(d), jusqua = +el.dataset.jusqua;
-      s.slots.filter(x => x.j === j && !x.fait && x.e <= jusqua).forEach(x => {
-        x.fait = true;
-        const t = x.tache && data.taches.find(y => y.id === x.tache);
-        if (t && !t.fait) Object.assign(t, L.cocher(t, new Date()));
-      });
-      dire(L.journeeValidee(s.slots.filter(x => x.j === j)) ? 'Journée validée' : 'Créneaux validés');
-      return maj();
-    }
+    case 'relecture': return relecture(el.dataset.jour);
     case 'ouvrir-profil': return ouvrir('profil');
     case 'tirage': return ouvrirTirage();
     case 'creature': return voirCreature(L.CREATURES.find(c => c.id === id));
@@ -1117,6 +1189,7 @@ document.addEventListener('click', e => {
     case 'habitude': {
       const hb = data.habitudes.find(x => x.id === id), jour = el.dataset.jour;
       hb.faits = hb.faits.includes(jour) ? hb.faits.filter(d => d !== jour) : [...hb.faits, jour].sort();
+      noterUsage('habitudes');
       return maj();
     }
     case 'editer-habitude': return editerHabitude(data.habitudes.find(x => x.id === id));
@@ -1177,6 +1250,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const t = e.target, { act, id } = t.dataset;
   if (!act) return;
+  if (['objectif', 'item', 'tache'].includes(act)) noterUsage({ objectif: 'objectifs', item: 'listes', tache: 'taches' }[act]);
   if (act === 'objectif') { data.objectifs.find(o => o.id === id).fait = t.checked; if (t.checked) dire('Objectif atteint'); }
   if (act === 'item') data.listes.find(l => l.id === t.dataset.liste).items.find(i => i.id === id).fait = t.checked;
   if (act === 'tache') {
@@ -1184,6 +1258,7 @@ document.addEventListener('change', e => {
     if (t.checked) cocherTache(x); else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); }
   }
   if (act === 'son') data.son = t.checked;
+  if (act === 'module') data.modules[id] = t.checked;
   if (act === 'prog-exo') ui.progExo = t.value;
   if (act === 'club') data.club = t.value;
   if (act === 'repos') data.repos = +t.value;
@@ -1200,6 +1275,8 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   const txt = (f.elements.txt || f.elements.nom).value.trim();
   if (!txt) return;
+  const mod = { objectif: 'objectifs', item: 'listes', tache: 'taches', habitude: 'habitudes', exo: 'sport' }[k];
+  if (mod) noterUsage(mod);
   if (k === 'objectif') data.objectifs.push({ id: L.uid(), txt, horizon: f.dataset.horizon, periode: f.dataset.periode, fait: false, parent: f.elements.parent?.value || null });
   if (k === 'item') data.listes.find(l => l.id === f.dataset.id).items.push({ id: L.uid(), txt, fait: false });
   if (k === 'cat') data.cats.push({ id: L.uid(), nom: txt, couleur: '#8a8f9c' });

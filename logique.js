@@ -1,5 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
+export const VERSION = '1.3.1';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -94,8 +95,31 @@ export function migrer(o) {
   if (typeof o.bonusXp !== 'number') o.bonusXp = 0;
   if (typeof o.son !== 'boolean') o.son = true;
   if (typeof o.theme !== 'string') o.theme = 'classique';
+  // V1.3.1 : usage du jour (ce qui a servi), modules masqués, bilans avec « suivi ailleurs ».
+  for (const k of ['usage', 'modules']) if (!o[k] || typeof o[k] !== 'object' || Array.isArray(o[k])) o[k] = {};
+  for (const [cle, b] of Object.entries(o.bilans)) if (typeof b === 'string') o.bilans[cle] = { date: b };
   return o;
 }
+
+// ---------- Ce qui a servi (V1.3.1) ----------
+// data.usage['2026-10-26'] = { 'creneau-ajout': 2, notes: 1, … } : ce qui a été fait ce jour-là.
+export function noter(data, jour, cle) {
+  const u = data.usage[jour] ||= {};
+  u[cle] = (u[cle] || 0) + 1;
+}
+// Une journée ne compte dans l'essai que si l'emploi du temps a servi pendant la journée :
+// un créneau ajouté, déplacé ou décoché, ou validé par son bouton peu après sa fin.
+export const ACTIONS_JOURNEE = ['creneau-ajout', 'creneau-deplace', 'creneau-decoche', 'creneau-valide'];
+export const utiliseEnJournee = (data, jour) => ACTIONS_JOURNEE.some(k => data.usage[jour]?.[k] > 0);
+// Validé « dans la journée » : dans les 2 h après la fin du créneau, et au plus tard à minuit.
+export const delaiValidation = e => Math.min(e + 2, 24);
+export function usageSemaine(data, cle) {
+  const t = {};
+  for (let j = 0; j < 7; j++) for (const [k, n] of Object.entries(data.usage[isoJour(ajouterJours(deIso(cle), j))] || {})) t[k] = (t[k] || 0) + n;
+  return t;
+}
+export const joursQuiComptent = (data, cle, valides) =>
+  [0, 1, 2, 3, 4, 5, 6].map(j => isoJour(ajouterJours(deIso(cle), j))).filter(d => valides.has(d) && utiliseEnJournee(data, d));
 
 // ---------- Tâches ----------
 
@@ -268,14 +292,14 @@ export const vide = () => migrer({
 
 // Semaine d'exemple proposée au premier lancement : [début, fin, catégorie, titre, salle].
 const matin = [[6, 7.5, 'sommeil', 'Sommeil'], [7.5, 8, 'repas', 'Petit-déjeuner']];
-const soir = [[19, 20, 'repas', 'Dîner'], [20, 22, 'loisirs', 'Écriture'], [22, 23, 'detente', 'Série'], [23, 25, 'sommeil', 'Sommeil']];
+const soir = [[19, 20, 'repas', 'Dîner'], [20, 22, 'loisirs', 'Loisirs'], [22, 23, 'detente', 'Série'], [23, 25, 'sommeil', 'Sommeil']];
 const EXEMPLE = [
-  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'Base de données', 'Salle 204'], [10.5, 12.5, 'cours', 'Finance d’entreprise', 'Amphi B'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Algorithmique', 'Salle info 3'], [15.5, 16, 'cours', 'Trajet'], [16, 18, 'travail', 'Révisions'], [18, 19, 'sport', 'Course à pied'], ...soir],
-  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'Contrôle de gestion', 'Salle 204'], [10.5, 12.5, 'cours', 'Anglais', 'Salle 112'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Ethics of IT', 'Amphi A'], [15.5, 16, 'cours', 'Trajet'], [16, 17.5, 'travail', 'TD'], [17.5, 19, 'loisirs', 'Lecture'], ...soir],
-  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'Algorithmique', 'Salle info 3'], [10.5, 12.5, 'travail', 'Travail perso'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Base de données', 'Salle 204'], [15.5, 16, 'cours', 'Trajet'], [16, 17, 'detente', 'Pause'], [17, 18.5, 'sport', 'Renfo'], [18.5, 19, 'menage', 'Rangement'], ...soir],
-  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'Finance d’entreprise', 'Amphi B'], [10.5, 12.5, 'cours', 'Atelier Numérique et Management', 'Salle 015'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Manager responsable', 'Amphi C'], [15.5, 16, 'cours', 'Trajet'], [16, 18, 'travail', 'Révisions'], [18, 19, 'menage', 'Ménage'], ...soir],
-  [...matin, [8, 9.5, 'detente', 'Matinée calme'], [9.5, 10, 'cours', 'Trajet'], [10, 12, 'cours', 'Contrôle de gestion', 'Salle 204'], [12, 13, 'repas', 'Déjeuner'], [13, 14, 'cours', 'Développement pro', 'Salle 112'], [14, 14.5, 'cours', 'Trajet'], [14.5, 16, 'travail', 'Projet Atelier'], [16, 17, 'sport', 'Course à pied'], [17, 19, 'loisirs', 'Loisirs'], ...soir],
-  [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'menage', 'Courses et lessive'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 17, 'loisirs', 'Écriture'], [17, 18, 'sport', 'Renfo'], [18, 19, 'detente', 'Pause'], ...soir],
+  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'Cours magistral', 'Amphi'], [10.5, 12.5, 'cours', 'TD', 'Salle A'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'TP', 'Salle info'], [15.5, 16, 'cours', 'Trajet'], [16, 18, 'travail', 'Révisions'], [18, 19, 'sport', 'Course à pied'], ...soir],
+  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'Cours magistral', 'Amphi'], [10.5, 12.5, 'cours', 'Langue vivante', 'Salle B'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'TD', 'Salle A'], [15.5, 16, 'cours', 'Trajet'], [16, 17.5, 'travail', 'TD'], [17.5, 19, 'loisirs', 'Lecture'], ...soir],
+  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'TP', 'Salle info'], [10.5, 12.5, 'travail', 'Travail perso'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Cours magistral', 'Amphi'], [15.5, 16, 'cours', 'Trajet'], [16, 17, 'detente', 'Pause'], [17, 18.5, 'sport', 'Renfo'], [18.5, 19, 'menage', 'Rangement'], ...soir],
+  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'TD', 'Salle A'], [10.5, 12.5, 'cours', 'Projet de groupe', 'Salle C'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Cours magistral', 'Amphi'], [15.5, 16, 'cours', 'Trajet'], [16, 18, 'travail', 'Révisions'], [18, 19, 'menage', 'Ménage'], ...soir],
+  [...matin, [8, 9.5, 'detente', 'Matinée calme'], [9.5, 10, 'cours', 'Trajet'], [10, 12, 'cours', 'Cours magistral', 'Amphi'], [12, 13, 'repas', 'Déjeuner'], [13, 14, 'cours', 'TD', 'Salle B'], [14, 14.5, 'cours', 'Trajet'], [14.5, 16, 'travail', 'Projet de groupe'], [16, 17, 'sport', 'Course à pied'], [17, 19, 'loisirs', 'Loisirs'], ...soir],
+  [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'menage', 'Courses et lessive'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 17, 'loisirs', 'Loisirs'], [17, 18, 'sport', 'Renfo'], [18, 19, 'detente', 'Pause'], ...soir],
   [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'detente', 'Balade'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 16, 'travail', 'Révisions'], [16, 16.5, 'travail', 'Bilan de la semaine'], [16.5, 19, 'loisirs', 'Loisirs'], ...soir],
 ];
 export const slotsExemple = () => EXEMPLE.flatMap((jour, j) => jour.map(([s, e, cat, titre, salle = '']) =>

@@ -95,4 +95,18 @@ assert.equal(L.tirer([], () => .9).rarete, 'commune');
 assert.equal(L.tirer([], () => .01).rarete, 'legendaire');
 assert.equal(L.tirer(['lumino'], (() => { let k = 0; return () => [.01, 0][k++]; })()).id, 'zephyr');
 
+// V1.3.1 : une journée validée ne compte dans l'essai qu'avec une action pendant la journée.
+const u = L.vide();
+u.semaines['2026-10-26'] = { type: null, slots: [{ id: 'a', j: 0, s: 8, e: 9, fait: true }, { id: 'b', j: 1, s: 8, e: 9, fait: true }] };
+L.noter(u, '2026-10-26', 'creneau-valide');
+L.noter(u, '2026-10-27', 'notes');                // une note ne suffit pas
+const vu = L.joursValides(u);
+assert.deepEqual(L.joursQuiComptent(u, '2026-10-26', vu), ['2026-10-26']);
+assert.equal(L.usageSemaine(u, '2026-10-26').notes, 1);
+assert.equal(L.delaiValidation(17), 19);
+assert.equal(L.delaiValidation(23), 24);           // créneau du soir : jusqu'à minuit
+// Les anciens bilans (une date) deviennent des objets ; la semaine d'exemple n'a plus de matière réelle.
+assert.deepEqual(L.migrer({ ...L.vide(), bilans: { '2026-10-19': '2026-10-21' } }).bilans['2026-10-19'], { date: '2026-10-21' });
+assert.ok(!L.slotsExemple().some(x => /données|Finance|Algorithm|gestion|Anglais|Ethics|Atelier/.test(x.titre)));
+
 console.log('ok');

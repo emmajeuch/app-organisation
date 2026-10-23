@@ -347,6 +347,10 @@ dialog .list { background: var(--surface-2); }
 .bilan-t th:first-child, .bilan-t td:first-child { text-align: left; }
 .bilan-t td { padding: 7px 0; border-top: 1px solid var(--line); text-align: right; font-family: var(--f-num); font-weight: 600; font-size: 15px; font-variant-numeric: tabular-nums; }
 .bilan-t td:first-child { font-family: var(--f-body); font-weight: 500; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+/* V1.3.1 */
+.alerte-export { outline: 2px solid var(--danger); outline-offset: -2px; }
+.alerte-export b { color: var(--danger); }
+.version { text-align: center; margin-top: 8px; }
 .toast { position: fixed; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 20; background: var(--ink); color: var(--on-ink); padding: 10px 16px; border-radius: 999px; font-weight: 650; font-size: 14px; box-shadow: var(--shadow); max-width: calc(100% - 32px); text-align: center; animation: monte .25s ease-out; }
 @keyframes monte { from { transform: translate(-50%, 10px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
