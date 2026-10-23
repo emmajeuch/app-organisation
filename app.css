@@ -371,3 +371,11 @@ textarea.copie { width: 100%; min-height: 160px; border: 0; border-radius: 12px;
 .compagnon.stade-2 .crea::after { top: 22%; width: 44%; height: 7%; border-radius: 4px; background: var(--ink); }
 .compagnon.stade-3 .crea::after { top: 2%; width: 26%; aspect-ratio: 1; background: #FFD447; clip-path: polygon(50% 0, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
 .compagnon.stade-4 .crea::after { top: 0; width: 40%; height: 18%; background: #D9A520; clip-path: polygon(0 100%, 0 20%, 25% 60%, 50% 0, 75% 60%, 100% 20%, 100% 100%); }
+
+/* V1.8 : Aujourd'hui en forme d'emploi du temps */
+.jour-edt { --row: 19px; }
+.jour-edt .blk { padding: 3px 38px 3px 8px; font-size: 13px; cursor: pointer; }
+.jour-edt .blk small { display: block; font-size: 11px; font-weight: 500; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jour-edt .blk.actuel { outline: 2.5px solid var(--ink); outline-offset: 1px; z-index: 1; }
+.jour-edt .blk .valid { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: min(26px, calc(var(--d) * 2 * var(--row) - 6px)); height: min(26px, calc(var(--d) * 2 * var(--row) - 6px)); border: 2px dashed var(--t); opacity: .75; }
+.jour-edt .blk .valid[aria-pressed="true"] { border-style: solid; background: color-mix(in srgb, var(--t) 22%, transparent); color: var(--t); opacity: 1; }

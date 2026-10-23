@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.7';
+export const VERSION = '1.8';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -261,7 +261,7 @@ export function construireProfil(r) {
     sports: r.sport ? [r.sport] : [], semaineType: { nom: r.etudes ? 'Semaine de cours' : 'Ma semaine', creneaux },
     taches: r.menage || [], listes: r.listes || [], habitudes: (r.habitudes || []).map(nom => ({ nom, frequence: 'jour' })) };
   if (r.travail) { p.categories = [{ nom: 'Travail', couleur: '#8C6A4F' }]; if (r.taux) p.taux = r.taux; }
-  const conseils = CONSEILS[r.sport];
+  const conseils = conseilsPour(r.sport);
   if (conseils) {
     p.exercices = conseils.map(([nom, type]) => ({ nom, type }));
     p.seances = [{ nom: `Renfo ${r.sport.toLowerCase()}`, exercices: conseils.map(([nom, , cible]) => ({ nom, series: 3, cible })) }];
@@ -501,9 +501,12 @@ export const slotsExemple = () => EXEMPLE.flatMap((jour, j) => jour.map(([s, e, 
 
 // ---------- Mon sport et mon travail (V1.5) ----------
 
+// Exercices conseillés d'un sport écrit librement (« basket » trouve « Basket »).
+export const conseilsPour = sport => CONSEILS[Object.keys(CONSEILS).find(k => k.toLowerCase() === String(sport || '').trim().toLowerCase())];
+
 // Séances prêtes pour un sport : son renfo, du gainage et de la mobilité, une récupération.
 export function seancesDeDepart(sport) {
-  const c = CONSEILS[sport];
+  const c = conseilsPour(sport);
   const seances = [{ nom: 'Gainage et mobilité', exercices: [{ nom: 'Gainage', series: 3, cible: 45 }, { nom: 'Gainage latéral', series: 2, cible: 30 }, { nom: 'Pont fessier', series: 3, cible: 15 }, { nom: 'Mobilité des hanches', series: 1, cible: 120 }] },
     { nom: 'Récupération', exercices: [{ nom: 'Mobilité des hanches', series: 1, cible: 120 }, { nom: 'Étirements', series: 1, cible: 300 }] }];
   if (c) seances.unshift({ nom: `Renfo ${sport.toLowerCase()}`, exercices: c.map(([nom, , cible]) => ({ nom, series: 3, cible })) });

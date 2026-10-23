@@ -33,8 +33,8 @@ export function formulaireHtml() {
     <label class="champ">Taux horaire en € (facultatif, pour estimer ta paie)<input name="taux" inputmode="decimal" autocomplete="off"></label>
   </fieldset>
   <fieldset class="etape-q"><legend>5. Ton sport</legend>
-    <label class="champ">Ton sport<select name="sport" data-montre-si="q-club"><option value="">Aucun</option>${SPORTS.map(s => `<option>${s}</option>`).join('')}<option value="autre">Autre</option></select></label>
-    <label class="champ" id="q-autre" hidden>Lequel ?<input name="sportAutre" maxlength="40" autocomplete="off"></label>
+    <label class="champ">Ton sport (n’importe lequel, laisse vide si aucun)<input name="sport" list="q-sports" maxlength="40" placeholder="Ex. escrime, judo, natation…" autocomplete="off"></label>
+    <datalist id="q-sports">${SPORTS.map(s => `<option value="${s}">`).join('')}</datalist>
     <div id="q-club" hidden>
       <div class="champ">Les jours d’entraînement${jours('clubJours')}</div>
       <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Heure${heures('clubDebut', 6, 22, 18)}</label>
@@ -46,7 +46,9 @@ export function formulaireHtml() {
   </fieldset>
   <fieldset class="etape-q"><legend>7. Listes et habitudes</legend>
     <div class="champ">Tes listes${'<div class="cats">' + LISTES.map(l => `<label><input type="checkbox" name="listes" value="${l}" ${l === 'Courses' ? 'checked' : ''}><span class="sans">${l}</span></label>`).join('') + '</div>'}</div>
+    <label class="champ">Tes propres listes, séparées par des virgules<input name="listesPerso" maxlength="400" placeholder="Ex. Idées de sorties, Jeux à finir" autocomplete="off"></label>
     <div class="champ">Des habitudes à suivre${'<div class="cats">' + HABITUDES.map(h => `<label><input type="checkbox" name="habitudes" value="${h}"><span class="sans">${h}</span></label>`).join('') + '</div>'}</div>
+    <label class="champ">Tes propres habitudes, séparées par des virgules<input name="habitudesPerso" maxlength="400" placeholder="Ex. Méditer 5 min, Écrire une page" autocomplete="off"></label>
   </fieldset>`;
 }
 
@@ -54,17 +56,18 @@ export function formulaireHtml() {
 export function brancher(form) {
   const maj = () => {
     form.querySelectorAll('[data-montre]').forEach(c => { form.querySelector('#' + c.dataset.montre).hidden = !c.checked; });
-    const sport = form.elements.sport.value;
-    form.querySelector('#q-club').hidden = !sport;
-    form.querySelector('#q-autre').hidden = sport !== 'autre';
+    form.querySelector('#q-club').hidden = !form.elements.sport.value.trim();
   };
   form.addEventListener('change', maj);
+  form.addEventListener('input', maj);
   maj();
 }
 
 export function lireReponses(form) {
   const f = new FormData(form), n = k => +f.get(k), js = k => f.getAll(k).map(Number);
-  const sport = f.get('sport') === 'autre' ? String(f.get('sportAutre') || '').trim().slice(0, 40) : f.get('sport');
+  // Ce que la personne écrit elle-même : séparé par des virgules, 10 au plus, 60 caractères chacun.
+  const perso = k => String(f.get(k) || '').split(',').map(x => x.trim().slice(0, 60)).filter(Boolean).slice(0, 10);
+  const sport = String(f.get('sport') || '').trim().slice(0, 40);
   return {
     prenom: String(f.get('prenom') || '').trim().slice(0, 40), etudes: !!f.get('etudes'), travail: !!f.get('travail'),
     lever: n('lever'), coucher: n('coucher'), repas: !!f.get('repas'),
@@ -73,6 +76,6 @@ export function lireReponses(form) {
     taux: parseFloat(String(f.get('taux') || '').replace(',', '.')) || 0,
     sport, clubJours: js('clubJours'), clubDebut: n('clubDebut'), clubDuree: n('clubDuree'),
     menage: f.getAll('menage').map(i => ({ titre: MENAGE[+i], jour: n(`menageJour${i}`) })),
-    listes: f.getAll('listes'), habitudes: f.getAll('habitudes'),
+    listes: [...new Set([...f.getAll('listes'), ...perso('listesPerso')])], habitudes: [...new Set([...f.getAll('habitudes'), ...perso('habitudesPerso')])],
   };
 }

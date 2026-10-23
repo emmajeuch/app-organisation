@@ -203,4 +203,15 @@ const jours7 = [0, 1, 2, 3, 4, 5, 6].map(j => L.heuresPeriode(st7, L.ajouterJour
 for (const c of ['cours', 'sport']) assert.equal(jours7.reduce((k, p) => k + (p.fait[c] || 0), 0), semaine7.fait[c]);
 assert.equal(L.heuresPeriode(st7, new Date(2026, 0, 1), new Date(2026, 11, 31), auj7).fait.cours, 5);   // année civile
 
+// V1.8 : n'importe quel sport, et ses propres listes et habitudes dès le profil.
+assert.equal(L.conseilsPour('  basket ')[0][0], L.CONSEILS.Basket[0][0]);
+assert.equal(L.conseilsPour('Escrime'), undefined);
+const escrime = L.lireProfil(JSON.parse(JSON.stringify(L.construireProfil({ ...rep, sport: 'Escrime', listes: ['Courses', 'Jeux à finir'], habitudes: ['Méditer 5 min'] }))));
+assert.deepEqual(escrime.sports, ['Escrime']);
+assert.ok(escrime.semaineType.creneaux.some(c => c.titre === 'Entraînement · Escrime'));
+assert.equal(escrime.exercices, undefined);
+const bE = L.vide(); L.appliquerProfil(bE, escrime);
+assert.ok(bE.listes.some(l => l.nom === 'Jeux à finir') && bE.habitudes.some(h => h.nom === 'Méditer 5 min'));
+assert.equal(L.seancesDeDepart('Escrime').seances.length, 2);   // gainage et récupération, sans renfo propre
+
 console.log('ok');
