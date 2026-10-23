@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Essai des rappels</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icone-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Essai">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#F1F2F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0C0E12" media="(prefers-color-scheme: dark)">
+<!-- Sécurité : seuls les fichiers du site lui-même peuvent se charger (GitHub Pages n'envoie pas d'en-tête CSP). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://orga-rappels.orgadevie.workers.dev; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main class="app">
+  <section class="view" id="aujourdhui" role="tabpanel" aria-label="Aujourd’hui"></section>
+  <section class="view" id="semaine" role="tabpanel" aria-label="Semaine" hidden></section>
+  <section class="view" id="notes" role="tabpanel" aria-label="Notes" hidden></section>
+  <section class="view" id="sport" role="tabpanel" aria-label="Sport" hidden></section>
+  <section class="view" id="profil" role="tabpanel" aria-label="Profil" hidden></section>
+</main>
+
+<nav class="dock" aria-label="Onglets">
+  <div class="dock-in">
+    <button class="fab" data-act="plus" aria-label="Ajouter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-v="aujourdhui" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Aujourd’hui</button>
+      <button class="tab" role="tab" data-v="semaine" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8.5 13h1M14.5 13h1M8.5 16.5h1M14.5 16.5h1"/></svg>Semaine</button>
+      <button class="tab" role="tab" data-v="notes" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5h8.5L18 7v13.5H6z"/><path d="M9 11h6M9 14.5h6M9 18h3.5"/></svg>Notes</button>
+      <button class="tab" role="tab" data-v="sport" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 7.5v9M17.5 7.5v9M3.5 10v4M20.5 10v4M6.5 12h11"/></svg>Sport</button>
+      <button class="tab" role="tab" data-v="profil" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c1.2-3.6 4-5.5 7-5.5s5.8 1.9 7 5.5"/></svg>Profil</button>
+    </div>
+  </div>
+</nav>
+
+<dialog id="dlg"></dialog>
+<input type="file" id="fichier" accept="application/json,.json" aria-label="Fichier à importer" hidden>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prépare ton app</title>
+<meta name="theme-color" content="#F1F2F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0C0E12" media="(prefers-color-scheme: dark)">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="app.css">
+<style>
+  .app { padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
+  fieldset { border: 0; margin: 0; padding: 16px; background: var(--surface); border-radius: var(--r); display: flex; flex-direction: column; gap: 12px; }
+  legend { float: left; width: 100%; padding: 0; font-weight: 700; font-size: 17px; }
+  fieldset select { height: 40px; border: 0; border-radius: 10px; padding: 0 8px; background: var(--surface-2); font-size: 15px; }
+  #fini { display: flex; flex-direction: column; gap: 10px; }
+</style>
+</head>
+<body>
+<main class="app">
+  <div class="view">
+    <header class="top"><div><h1>Prépare ton app</h1><p>Quelques questions, puis un fichier à importer dans l’app</p></div></header>
+    <p class="aide">Rien n’est envoyé nulle part : tes réponses deviennent un fichier sur ton téléphone. Tu l’importes ensuite dans l’app (Profil › Importer), qui se construit avec. <a href="confidentialite.html">Confidentialité et mentions légales</a></p>
+    <form id="q" class="pile"></form>
+    <button class="btn plein" form="q">Créer mon fichier</button>
+    <div id="fini" class="card" hidden>
+      <b>Ton fichier est prêt</b>
+      <p class="muted" style="margin:0">Enregistre-le dans Fichiers. Puis installe l’app si ce n’est pas fait (le lien est plus bas), ouvre-la par son icône, et va dans Profil › Importer.</p>
+      <a class="btn gris" href="./">Ouvrir l’app</a>
+    </div>
+  </div>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="questionnaire.js"></script>
+</body>
+</html>
