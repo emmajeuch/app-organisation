@@ -14,7 +14,8 @@
   --shadow: 0 8px 24px rgb(21 23 28 / .18);
   --t-dark: #15171C;
   --t-light: #FFFFFF;
-  --f-num: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  /* Polices déjà présentes sur l’appareil : rien n’est demandé à un serveur tiers. */
+  --f-num: "Avenir Next Condensed", "Bahnschrift SemiBold Condensed", "Roboto Condensed", "Arial Narrow", system-ui, sans-serif;
   --f-body: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
   --r: 18px;
   --row: 14px;

@@ -6,6 +6,8 @@
 <title>Prépare ton app</title>
 <meta name="theme-color" content="#F1F2F5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0C0E12" media="(prefers-color-scheme: dark)">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <link rel="stylesheet" href="app.css">
 <style>
   .app { padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
@@ -19,7 +21,7 @@
 <main class="app">
   <div class="view">
     <header class="top"><div><h1>Prépare ton app</h1><p>Quelques questions, puis un fichier à importer dans l’app</p></div></header>
-    <p class="aide">Rien n’est envoyé nulle part : tes réponses deviennent un fichier sur ton téléphone. Tu l’importes ensuite dans l’app (Profil › Importer), qui se construit avec.</p>
+    <p class="aide">Rien n’est envoyé nulle part : tes réponses deviennent un fichier sur ton téléphone. Tu l’importes ensuite dans l’app (Profil › Importer), qui se construit avec. <a href="confidentialite.html">Confidentialité et mentions légales</a></p>
     <form id="q" class="pile"></form>
     <button class="btn plein" form="q">Créer mon fichier</button>
     <div id="fini" class="card" hidden>
@@ -30,27 +32,6 @@
   </div>
 </main>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<script type="module">
-import { formulaireHtml, brancher, lireReponses } from './assistant.js';
-import { construireProfil } from './logique.js';
-
-const form = document.getElementById('q');
-form.innerHTML = formulaireHtml();
-brancher(form);
-form.addEventListener('submit', async e => {
-  e.preventDefault();
-  const r = lireReponses(form);
-  const nom = `orga-profil-${(r.prenom || 'moi').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`;
-  const blob = new Blob([JSON.stringify(construireProfil(r), null, 1)], { type: 'application/json' });
-  const fichier = new File([blob], nom, { type: 'application/json' });
-  try {
-    if (navigator.canShare?.({ files: [fichier] })) await navigator.share({ files: [fichier], title: nom });
-    else Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: nom }).click();
-    document.getElementById('fini').hidden = false;
-  } catch (err) {
-    if (err.name !== 'AbortError') { const t = document.getElementById('toast'); t.textContent = 'Le fichier n’a pas pu être créé : réessaie.'; t.hidden = false; }
-  }
-});
-</script>
+<script type="module" src="questionnaire.js"></script>
 </body>
 </html>

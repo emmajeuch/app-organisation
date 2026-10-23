@@ -2,6 +2,12 @@
 import * as L from './logique.js';
 import * as A from './assistant.js';
 
+// Dans le cadre d'un autre site, l'app refuse de s'afficher (protection contre le « clickjacking »).
+if (window.top !== window.self) {
+  document.body.textContent = 'Ouvre l’app directement : emmajeuch.github.io/app-organisation';
+  throw new Error('App affichée dans un cadre : arrêt.');
+}
+
 const KEY = 'orga-v1';
 const ROW = 14; // hauteur d'une demi-heure en px, comme --row dans index.html
 const JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
@@ -1055,7 +1061,9 @@ function vueProfil() {
       <b class="${jours === null || jours > 7 ? 'alerte' : ''}">${etat}</b>
       <p>Tes données ne sont que sur ce téléphone, et iOS peut les effacer s’il manque de place. Exporte-les chaque semaine dans Fichiers (iCloud Drive).</p>
       <div class="rangee"><button class="btn plein" data-act="exporter">Exporter</button><button class="btn gris" data-act="importer">Importer</button></div>
-      ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}</div></div>
+      ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}
+      <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>
+      <p><a href="confidentialite.html">Confidentialité et mentions légales</a></p></div></div>
     <div class="sec"><h2>Ton profil</h2><div class="card bientot">
       <b>${esc(data.profil.prenom || 'Sans prénom')}</b>
       <p>${[data.profil.etudes !== false && 'Études', data.profil.travail && 'Travail', ...(data.profil.sports || [])].filter(Boolean).map(esc).join(' · ') || 'Rien de renseigné'}</p>
@@ -1136,7 +1144,7 @@ function ouvrirTirage() {
   else if (deja) deja.sport = sport;
   else data.collection.push({ id: c.id, date: L.isoJour(new Date()), raison: droits[0], ...(sport ? { sport } : {}) });
   maj();
-  ouvrirDlg(`<form class="tirage"><h2>${RAISON(droits[0])}</h2><div class="revele">${creaHtml(c, doublon ? undefined : sport)}</div>
+  ouvrirDlg(`<form class="tirage"><h2>${esc(RAISON(droits[0]))}</h2><div class="revele">${creaHtml(c, doublon ? undefined : sport)}</div>
     <b class="nom">${esc(c.nom)}${sport && !doublon ? ` · version ${esc(sport.toLowerCase())}` : ''}</b><span class="pill ${c.rarete}">${RARETE[c.rarete]}</span>
     <p class="muted">${doublon ? 'Déjà dans ta collection : +50 XP à la place.' : 'Nouvelle venue dans ta collection !'}</p>
     <div class="rangee">${droits.length > 1 ? `<button type="button" class="btn gris" data-choix="encore">Tirage suivant (${droits.length - 1})</button>` : ''}<button class="btn plein">Super</button></div></form>`,
@@ -1146,7 +1154,7 @@ function ouvrirTirage() {
 function voirCreature(c) {
   const g = data.collection.find(x => x.id === c.id);
   ouvrirDlg(`<form class="tirage"><h2>${esc(c.nom)}</h2><div class="revele">${creaHtml(c)}</div><span class="pill ${c.rarete}">${RARETE[c.rarete]}</span>
-    <p class="muted">Gagnée le ${L.deIso(g.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} · ${RAISON(g.raison)}</p>
+    <p class="muted">Gagnée le ${L.deIso(g.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} · ${esc(RAISON(g.raison))}</p>
     ${actif('compagnon') && data.compagnon?.id !== c.id ? `<button type="button" class="btn gris" data-choix="compagnon">En faire mon compagnon</button>` : ''}
     <button class="btn plein">Fermer</button></form>`, choix => {
     if (choix !== 'compagnon') return;
@@ -1240,7 +1248,7 @@ function avantImport() { try { return JSON.parse(localStorage.getItem(CLE_AVANT)
 function proposerProfil(p, titre = 'Importer ce profil ?') {
   const essai = structuredClone(data), lignes = L.appliquerProfil(essai, p);
   if (!lignes.length) return dire('Ce profil n’ajoute rien de nouveau.');
-  ouvrirDlg(`<form><h2>${titre}</h2><p class="muted">Ce qui va être ajouté (rien n’est effacé) :</p>
+  ouvrirDlg(`<form><h2>${esc(titre)}</h2><p class="muted">Ce qui va être ajouté (rien n’est effacé) :</p>
     <ul class="list">${lignes.map(l => `<li><div class="txt"><b>${esc(l)}</b></div></li>`).join('')}</ul>
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Ajouter</button></div></form>`, () => {
     garderAvant();
@@ -1268,6 +1276,21 @@ $('#fichier').addEventListener('change', async e => {
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Remplacer</button></div></form>`,
   () => { garderAvant(); data = o; maj(); dire('Sauvegarde importée'); });
 });
+
+// Droit à l'effacement : tout ce que l'app garde sur ce téléphone disparaît (données, copies, cache).
+function toutEffacer() {
+  ouvrirDlg(`<form><h2>Effacer toutes tes données ?</h2>
+    <p class="muted">Ton emploi du temps, tes tâches, tes notes, ton sport, ta progression et la copie d’avant import seront effacés de ce téléphone. On ne peut pas revenir en arrière : exporte d’abord si tu veux les garder.</p>
+    <div class="rangee"><button type="button" class="btn gris" data-choix="exporter">Exporter d’abord</button><button type="button" class="btn gris" data-fermer>Annuler</button></div>
+    <button type="button" class="btn rouge" data-choix="effacer" data-confirmer="Oui, tout effacer">Effacer</button></form>`, async choix => {
+    if (choix === 'exporter') { exporter(); return; }
+    if (choix !== 'effacer') return;
+    try { Object.keys(localStorage).filter(k => k.startsWith('orga-')).forEach(k => localStorage.removeItem(k)); } catch {}
+    try { for (const k of await caches.keys()) await caches.delete(k); } catch {}
+    data = L.vide(); dernier = null;
+    location.reload();
+  });
+}
 
 function revenirAvant() {
   const a = avantImport();
@@ -1449,6 +1472,7 @@ document.addEventListener('click', e => {
       if (data.typeDefaut === id) data.typeDefaut = data.types[0].id;
       return maj();
     case 'exporter': return exporter();
+    case 'tout-effacer': return toutEffacer();
     case 'stats-per': ui.statsPer = id; return vueProfil();
     case 'choisir-compagnon': if (!data.collection.some(x => x.id === id)) return; data.compagnon = L.grandir({ id, stade: 0 }, L.stats(data, new Date()).joursValides); noterUsage('compagnon'); return maj();
     case 'retirer-sport': data.profil.sports = sportsDuProfil().filter(x => x !== el.dataset.sport); return maj();

@@ -12,9 +12,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#F1F2F5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0C0E12" media="(prefers-color-scheme: dark)">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&display=swap">
+<!-- Sécurité : seuls les fichiers du site lui-même peuvent se charger (GitHub Pages n'envoie pas d'en-tête CSP). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -40,7 +40,7 @@
 </nav>
 
 <dialog id="dlg"></dialog>
-<input type="file" id="fichier" accept="application/json,.json" hidden>
+<input type="file" id="fichier" accept="application/json,.json" aria-label="Fichier à importer" hidden>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script type="module" src="app.js"></script>
 </body>

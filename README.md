@@ -45,6 +45,11 @@ Chrome peut aussi proposer de lui-même une petite bannière pour installer l'ap
 - **Fais une sauvegarde chaque semaine** : Profil › Sauvegarde › Exporter, puis range le
   fichier dans Fichiers (iCloud Drive) ou Google Drive. Profil › Importer la remet en place.
 
+## Confidentialité
+
+Rien ne quitte ton téléphone : pas de compte, pas de cookie, pas de publicité, pas de mesure d'audience.
+Détail et mentions légales : https://emmajeuch.github.io/app-organisation/confidentialite.html
+
 ## Les mises à jour
 
 Elles arrivent toutes seules : ferme l'app et rouvre-la avec du réseau, deux fois de suite.
