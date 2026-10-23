@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.8.1';
+export const VERSION = '1.9';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -564,8 +564,8 @@ export function grandir(compagnon, nbJours) {
 
 // ---------- Rappels (notifications) ----------
 // Adresse du serveur des rappels et sa clé publique VAPID : vides tant que le serveur n'est pas en ligne.
-export const SERVEUR_RAPPELS = '';
-export const VAPID_PUBLIQUE = '';
+export const SERVEUR_RAPPELS = 'https://orga-rappels.orgadevie.workers.dev';
+export const VAPID_PUBLIQUE = 'BBdg9PHUm5_4LI9Vv8k4_zOLL8dEcvF3sfzBgkdqVoGQd2TXT4sz9F8rGsiA7TzcD5Et29wzK3UWe5AU8FejD7o';
 export const REGLAGES_RAPPELS = { actif: false, delai: 15, creneaux: true, soir: true, bilan: true };
 const CATS_RAPPEL = ['cours', 'sport', 'job'];
 

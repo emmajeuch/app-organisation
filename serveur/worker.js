@@ -60,7 +60,7 @@ export async function traiter(req, env, maintenant = Date.now()) {
 
 // Toutes les 2 minutes : envoie les rappels arrivés à échéance, puis les retire.
 export async function tourner(env, maintenant = Date.now(), faireFetch = fetch) {
-  const s = Math.floor(maintenant / 1000), cles = { publique: env.VAPID_PUBLIQUE, privee: env.VAPID_PRIVEE, sujet: 'https://emmajeuch.github.io/app-organisation/' };
+  const s = Math.floor(maintenant / 1000), cles = { publique: env.VAPID_PUBLIQUE.trim(), privee: env.VAPID_PRIVEE.trim(), sujet: 'https://emmajeuch.github.io/app-organisation/' };
   let curseur, envoyes = 0;
   do {
     const page = await env.RAPPELS.list({ prefix: 'a:', cursor: curseur });
