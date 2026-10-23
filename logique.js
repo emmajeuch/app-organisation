@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.4';
+export const VERSION = '1.5';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -285,6 +285,7 @@ export function migrer(o) {
   // V1.4 : profil sur le téléphone ; V1.5 : compétitions.
   if (!o.profil || typeof o.profil !== 'object' || Array.isArray(o.profil)) o.profil = {};
   if (!Array.isArray(o.competitions)) o.competitions = [];
+  if (o.club && !(o.profil.sports || []).length) o.profil.sports = [o.club];
   return o;
 }
 
@@ -409,6 +410,7 @@ export function stats(data, auj) {
     seances: data.journal.length + club, taches: data.taches.reduce((k, t) => k + completions(t), 0), projets,
     objSemaine: data.objectifs.filter(o => o.fait && o.horizon === 'semaine').length,
     habitudeMax: Math.max(0, ...data.habitudes.map(h => h.faits.length)), bilans: Object.keys(data.bilans).length,
+    entrainements: club, competitions: (data.competitions || []).filter(c => c.resultat).length, records: recordsBattus(data),
   };
 }
 
@@ -420,6 +422,9 @@ export function droitsTirage(data, st) {
   data.taches.forEach(t => { if (important(t) && completions(t)) d.push(`tache:${t.id}`); });
   data.projets.forEach(p => { if (p.statut === 'termine') d.push(`projet:${p.id}`); });
   Object.keys(data.semaines).forEach(c => { if (joursValidesSemaine(st.valides, c) >= 5) d.push(`semaine:${c}`); });
+  // V1.5 : un tirage aux couleurs du sport toutes les 5 séances ou entraînements, et par compétition notée.
+  for (let n = 5; n <= st.seances; n += 5) d.push(`seances:${n}`);
+  (data.competitions || []).forEach(c => { if (c.resultat) d.push(`competition:${c.id}`); });
   return d.filter(k => !data.tirages.includes(k));
 }
 
@@ -458,6 +463,8 @@ export const CONSEILS = {
   'Escalade': [['Tractions', 'reps', 5], ['Suspension à la barre', 'duree', 20], ['Gainage', 'duree', 45], ['Pompes', 'reps', 10], ['Rotations d’épaule à l’élastique', 'reps', 15], ['Superman', 'reps', 12]],
   'Danse': [['Pont fessier', 'reps', 15], ['Gainage', 'duree', 45], ['Mollets debout', 'reps', 20], ['Squats', 'reps', 15], ['Fentes avant', 'reps', 12], ['Équilibre sur une jambe', 'duree', 30]],
   'Rugby': [['Squats', 'charge', 8], ['Pompes', 'reps', 15], ['Tractions', 'reps', 6], ['Gainage', 'duree', 60], ['Fentes avant', 'reps', 12], ['Soulevé de terre', 'charge', 6]],
+  // Jeu de jambes et gainage, sans charge imposée.
+  'Sabre laser': [['Fentes avant', 'reps', 10], ['Fentes arrière', 'reps', 10], ['Gainage', 'duree', 45], ['Rotations du tronc', 'reps', 15], ['Squats', 'reps', 15], ['Équilibre sur une jambe', 'duree', 30]],
 };
 
 export const CATS_DEPART = [
@@ -491,3 +498,50 @@ const EXEMPLE = [
 ];
 export const slotsExemple = () => EXEMPLE.flatMap((jour, j) => jour.map(([s, e, cat, titre, salle = '']) =>
   ({ id: uid(), j, s, e, cat, titre, salle, affaires: '', notes: '' })));
+
+// ---------- Mon sport et mon travail (V1.5) ----------
+
+// Séances prêtes pour un sport : son renfo, du gainage et de la mobilité, une récupération.
+export function seancesDeDepart(sport) {
+  const c = CONSEILS[sport];
+  const seances = [{ nom: 'Gainage et mobilité', exercices: [{ nom: 'Gainage', series: 3, cible: 45 }, { nom: 'Gainage latéral', series: 2, cible: 30 }, { nom: 'Pont fessier', series: 3, cible: 15 }, { nom: 'Mobilité des hanches', series: 1, cible: 120 }] },
+    { nom: 'Récupération', exercices: [{ nom: 'Mobilité des hanches', series: 1, cible: 120 }, { nom: 'Étirements', series: 1, cible: 300 }] }];
+  if (c) seances.unshift({ nom: `Renfo ${sport.toLowerCase()}`, exercices: c.map(([nom, , cible]) => ({ nom, series: 3, cible })) });
+  const exercices = [...(c || []).map(([nom, type]) => ({ nom, type })), { nom: 'Gainage', type: 'duree' }, { nom: 'Gainage latéral', type: 'duree' },
+    { nom: 'Pont fessier', type: 'reps' }, { nom: 'Mobilité des hanches', type: 'duree' }, { nom: 'Étirements', type: 'duree' }];
+  return { exercices: exercices.filter((e, i) => exercices.findIndex(x => x.nom === e.nom) === i), seances };
+}
+
+// Préparation de compétition, par règles écrites à l'avance (repères d'organisation, pas un avis médical) :
+// la veille, séance raccourcie de moitié et sans nouvel exercice ; le jour J, pas de renfo ; le lendemain, récupération ou repos.
+export function regleCompetition(competitions, iso) {
+  for (const [ecart, regle] of [[0, 'jour'], [1, 'veille'], [-1, 'lendemain']]) {
+    const c = (competitions || []).find(x => x.date && isoJour(ajouterJours(deIso(iso), ecart)) === x.date);
+    if (c) return { regle, competition: c };
+  }
+  return null;
+}
+export const seriesVeille = n => Math.max(1, Math.ceil(n / 2));
+
+// Records battus : séances où un exercice dépasse tout ce qui avait été fait avant.
+export function recordsBattus(data) {
+  let n = 0;
+  for (const e of data.exos) {
+    let meilleur = 0;
+    for (const p of progression(data.journal, e.id, e.type)) { if (meilleur && p.val > meilleur) n++; meilleur = Math.max(meilleur, p.val); }
+  }
+  return n;
+}
+
+// Heures prévues et réalisées, jour par jour, entre deux dates (incluses), sans dépasser aujourd'hui.
+export function heuresPeriode(data, de, a, auj = new Date()) {
+  const fin = [isoJour(a), isoJour(auj)].sort()[0], prevu = {}, fait = {};
+  for (let d = new Date(de.getFullYear(), de.getMonth(), de.getDate()); isoJour(d) <= fin; d = ajouterJours(d, 1)) {
+    const sem = data.semaines[isoJour(lundiDe(d))];
+    for (const x of sem ? sem.slots.filter(y => y.j === jourSemaine(d)) : []) {
+      prevu[x.cat] = (prevu[x.cat] || 0) + x.e - x.s;
+      if (x.fait) fait[x.cat] = (fait[x.cat] || 0) + x.e - x.s;
+    }
+  }
+  return { prevu, fait };
+}

@@ -80,8 +80,15 @@ const exo = id => data.exos.find(e => e.id === id);
 
 // Modules masquables (Profil › Réglages › Modules) : masqués, ils gardent leurs données.
 const MODULES = [['taches', 'Tâches'], ['projets', 'Projets et divertissements'], ['objectifs', 'Objectifs'], ['listes', 'Listes'],
-  ['notes', 'Notes libres'], ['sport', 'Sport'], ['habitudes', 'Habitudes'], ['motivation', 'XP, niveaux, collection et succès']];
-const actif = m => data.modules[m] !== false;
+  ['notes', 'Notes libres'], ['sport', 'Sport'], ['habitudes', 'Habitudes'], ['travail', 'Travail (job, extras)'], ['motivation', 'XP, niveaux, collection et succès']];
+const actif = m => m in data.modules ? data.modules[m] : m !== 'travail';
+// La catégorie Travail (distincte de « Travail perso », les révisions) n'existe que si le module est actif.
+function catTravail() {
+  let c = data.cats.find(x => x.id === 'job') || data.cats.find(x => x.nom.trim().toLowerCase() === 'travail');
+  if (!c && actif('travail')) { c = { id: 'job', nom: 'Travail', couleur: '#8C6A4F' }; data.cats.push(c); sauver(); }
+  return c;
+}
+const sportsDuProfil = () => data.profil.sports || [];
 const joursDepuisExport = () => data.dernierExport ? Math.floor((Date.now() - new Date(data.dernierExport)) / 864e5) : null;
 // Ce qui a servi aujourd'hui (jour logique : avant 1 h, c'est encore la veille).
 const aujIso = () => L.isoJour(L.momentLogique(new Date()).date);
@@ -125,7 +132,7 @@ function pillEcheance(t) {
 const tacheHtml = t => {
   const p = data.projets.find(x => x.id === t.projet);
   const ns = (t.sous || []).length, nf = (t.sous || []).filter(s => s.fait).length;
-  const sous = [t.fac && 'Fac', p && p.nom, ns && `${nf}/${ns} étapes`, t.recurrence != null && `Chaque ${JOURS[t.recurrence]}`].filter(Boolean).join(' · ');
+  const sous = [t.fac && 'Fac', t.travail && 'Travail', p && p.nom, ns && `${nf}/${ns} étapes`, t.recurrence != null && `Chaque ${JOURS[t.recurrence]}`].filter(Boolean).join(' · ');
   return `<li><input type="checkbox" class="chk" data-act="tache" data-id="${t.id}" ${t.fait ? 'checked' : ''} aria-label="Fait">
     <div class="txt" data-act="editer-tache" data-id="${t.id}" role="button" tabindex="0"><b>${t.priorite === 1 ? '<span class="prio" title="Priorité haute"></span>' : ''}${esc(t.titre)}</b>${sous ? `<small>${esc(sous)}</small>` : ''}</div>
     ${t.echeance && !t.fait ? pillEcheance(t) : ''}</li>`;
@@ -217,6 +224,12 @@ function vueAujourdhui() {
   const slotsHier = semHier ? semHier.slots.filter(x => x.j === L.jourSemaine(hier)) : [];
   if (slotsHier.length && !L.journeeValidee(slotsHier)) {
     html += `<div class="card type"><div class="txt"><b>Hier n’est pas validé</b><small>${slotsHier.filter(x => !x.fait).length} créneaux à relire pour garder ta série</small></div><button class="btn gris petit" data-act="relecture" data-jour="${L.isoJour(hier)}">Valider hier</button></div>`;
+  }
+  if (actif('sport')) {
+    const regle = L.regleCompetition(data.competitions, L.isoJour(date));
+    const prochaine = data.competitions.filter(c => c.date >= L.isoJour(date)).sort((a, b) => a.date.localeCompare(b.date))[0];
+    if (regle) html += `<div class="card type"><div class="txt"><b>${{ veille: 'Veille de compétition', jour: 'Jour de compétition', lendemain: 'Lendemain de compétition' }[regle.regle]} · ${esc(regle.competition.nom)}</b><small>${{ veille: 'Séance raccourcie de moitié, sans nouvel exercice.', jour: 'Pas de renfo aujourd’hui. Bonne compétition !', lendemain: 'Récupération (mobilité, étirements) ou repos.' }[regle.regle]}</small></div></div>`;
+    else if (prochaine && L.joursAvant(prochaine.date, date) <= 30) html += `<div class="card type"><div class="txt"><b>${esc(prochaine.nom)}</b><small>${esc([prochaine.sport, prochaine.lieu].filter(Boolean).join(' · '))}</small></div><span class="pill">J-${L.joursAvant(prochaine.date, date)}</span></div>`;
   }
   const aBilan = bilanAFaire();
   if (aBilan) html += `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>`;
@@ -330,6 +343,7 @@ function editerSlot(slot, cle) {
       <label class="champ">Séance prévue<select name="seance"><option value="">Aucune</option>${data.seances.map(s => `<option value="${s.id}" ${s.id === slot.seance ? 'selected' : ''}>${esc(s.nom)}</option>`).join('')}</select></label>
       <label class="coche"><input type="checkbox" class="chk" name="club" ${slot.club ? 'checked' : ''}>Entraînement ou match du club</label>
     </div>
+    <label class="champ" id="zone-travail" ${slot.cat === catTravail()?.id ? '' : 'hidden'}>Collègue<input name="collegue" value="${esc(slot.collegue)}" autocomplete="off"></label>
     ${slot.tache ? `<p class="muted">Tâche planifiée : valider ce créneau la coche.</p>` : ''}
     ${neuf ? '' : `<label class="coche"><input type="checkbox" class="chk" name="fait" ${slot.fait ? 'checked' : ''}>Réalisé comme prévu</label>`}
     ${type ? `<label class="coche"><input type="checkbox" class="chk" name="type" ${neuf && !slot.tache ? 'checked' : ''}>${neuf ? 'Répéter chaque semaine' : 'Modifier aussi la semaine type'} (${esc(type.nom)})</label>` : ''}
@@ -348,6 +362,7 @@ function editerSlot(slot, cle) {
     if (slot.src) c.src = slot.src;
     if (slot.tache) c.tache = slot.tache;
     if (c.cat === 'sport') { c.seance = f.get('seance') || null; c.club = !!f.get('club'); }
+    if (c.cat === catTravail()?.id) c.collegue = (f.get('collegue') || '').trim();
     if (c.fait && c.tache) { const t = data.taches.find(x => x.id === c.tache); if (t && !t.fait) cocherTache(t); }
     if (versType) {
       const { fait, tache, ...modele } = c;
@@ -366,7 +381,7 @@ function editerSlot(slot, cle) {
     ui.derniereCat = c.cat;
     maj();
   });
-  dlg.querySelectorAll('input[name="cat"]').forEach(r => r.addEventListener('change', () => { $('#zone-sport').hidden = r.value !== 'sport'; }));
+  dlg.querySelectorAll('input[name="cat"]').forEach(r => r.addEventListener('change', () => { $('#zone-sport').hidden = r.value !== 'sport'; $('#zone-travail').hidden = r.value !== catTravail()?.id; }));
 }
 
 // Une tâche se planifie en créneau ; valider le créneau coche la tâche.
@@ -615,6 +630,7 @@ function editerTache(t, defaut = {}) {
     <div class="champ">Priorité${radios('priorite', { 1: 'Haute', 2: 'Normale', 3: 'Basse' }, v.priorite || 2)}</div>
     <label class="champ">Projet ou divertissement<select name="projet"><option value="">Aucun</option>${data.projets.filter(p => p.statut !== 'termine').map(p => `<option value="${p.id}" ${v.projet === p.id ? 'selected' : ''}>${esc(p.nom)}</option>`).join('')}</select></label>
     ${data.profil.etudes === false && !v.fac ? '' : `<label class="coche"><input type="checkbox" class="chk" name="fac" ${v.fac ? 'checked' : ''}>Rendu ou partiel de fac (compte à rebours)</label>`}
+    ${actif('travail') ? `<label class="coche"><input type="checkbox" class="chk" name="travail" ${v.travail ? 'checked' : ''}>Tâche du travail</label>` : ''}
     <div class="champ">Étapes<div class="etapes">${(v.sous || []).map(etapeHtml).join('')}</div>
       <div class="ajout"><input data-nouvelle-etape placeholder="Nouvelle étape" aria-label="Nouvelle étape" autocomplete="off"><button type="button" data-ajout-etape aria-label="Ajouter l’étape">${I.plus}</button></div></div>
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-choix="planifier">Planifier un créneau</button></div>
@@ -622,7 +638,7 @@ function editerTache(t, defaut = {}) {
   </form>`, (choix, f) => {
     if (choix === 'suppr') { data.taches = data.taches.filter(x => x !== t); maj(); dire('Tâche supprimée'); return; }
     const faits = new Set(f.getAll('sf'));
-    const champs = { titre: f.get('titre').trim(), echeance: f.get('echeance') || null, priorite: +f.get('priorite') || 2, fac: !!f.get('fac'),
+    const champs = { titre: f.get('titre').trim(), echeance: f.get('echeance') || null, priorite: +f.get('priorite') || 2, fac: !!f.get('fac'), travail: !!f.get('travail'),
       recurrence: f.get('recurrence') === '' ? null : +f.get('recurrence'), projet: f.get('projet') || null,
       sous: f.getAll('st').map((txt, i) => ({ txt: txt.trim(), fait: faits.has(String(i)) })).filter(s => s.txt) };
     if (!champs.titre) { dire('Donne un titre à la tâche.'); return false; }
@@ -769,13 +785,19 @@ function vueSport() {
   if (actif('sport')) html += `<div class="sec"><h2>Exercices</h2><ul class="list">${data.exos.map(e => `<li data-act="exo" data-id="${e.id}" role="button" tabindex="0"><div class="txt"><b>${esc(e.nom)}</b><small>${L.TYPES_EXO[e.type]}${e.notes ? ` · ${esc(e.notes)}` : ''}</small></div></li>`).join('')}</ul>
     <form class="ajout" data-form="exo"><input name="txt" placeholder="Nouvel exercice" aria-label="Nouvel exercice" autocomplete="off"><select name="type" aria-label="Type">${Object.entries(L.TYPES_EXO).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select><button aria-label="Ajouter">${I.plus}</button></form></div>`;
 
-  const conseils = L.CONSEILS[data.club];
-  if (actif('sport')) html += `<div class="sec"><h2>Sport en club</h2><div class="card bientot">
-    <label class="champ">Ton sport<select data-act="club"><option value="">Aucun</option>${[...Object.keys(L.CONSEILS), 'Autre'].map(s => `<option ${s === data.club ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
-    <p>Marque tes entraînements et tes matchs comme « club » dans leur créneau : validés, ils comptent dans le journal.</p>
-    ${conseils ? `<p><b>Renfo conseillé :</b> ${conseils.map(([n]) => esc(n)).join(', ')}. Des exercices classiques pour ce sport, à adapter avec ton coach.</p>
-      <button class="btn gris" data-act="conseils">Ajouter ces exercices et une séance « Renfo ${esc(data.club.toLowerCase())} »</button>` : data.club ? '<p>Pas encore de suggestions pour ce sport.</p>' : ''}
-  </div></div>`;
+  const auj = L.isoJour(date), sports = sportsDuProfil();
+  const avenir = data.competitions.filter(c => c.date >= auj).sort((a, b) => a.date.localeCompare(b.date));
+  const passees = data.competitions.filter(c => c.date < auj).sort((a, b) => b.date.localeCompare(a.date));
+  const compHtml = c => `<li data-act="competition" data-id="${c.id}" role="button" tabindex="0"><div class="txt"><b>${esc(c.nom)}</b><small>${[c.sport, c.lieu, c.categorie, c.resultat && `Résultat : ${c.resultat}`].filter(Boolean).map(esc).join(' · ')}</small></div><span class="pill${c.date < auj && !c.resultat ? ' retard' : ''}">${c.date >= auj ? `J-${L.joursAvant(c.date, date)}` : c.resultat ? L.deIso(c.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : 'Résultat ?'}</span></li>`;
+  if (actif('sport')) html += `<div class="sec"><h2>Mes sports</h2><div class="card bientot">
+    ${sports.length ? `<div class="cats">${sports.map(sp => `<span class="theme" style="--c:var(--ink)">${esc(sp)}<button class="x" data-act="retirer-sport" data-sport="${esc(sp)}" aria-label="Retirer ${esc(sp)}">${I.x}</button></span>`).join('')}</div>` : '<p>Choisis ton sport : l’app te propose ses exercices et des séances prêtes.</p>'}
+    <form class="ajout" data-form="sport"><select name="txt" aria-label="Sport">${A.SPORTS.filter(x => !sports.includes(x)).map(x => `<option>${x}</option>`).join('')}<option value="">Autre…</option></select><input name="autre" placeholder="Autre sport" aria-label="Autre sport" autocomplete="off"><button aria-label="Ajouter">${I.plus}</button></form>
+    ${sports.map(sp => `<button class="btn gris" data-act="sport-depart" data-sport="${esc(sp)}">${L.CONSEILS[sp] ? `Ajouter les exercices et séances de ${esc(sp.toLowerCase())}` : `Séances de départ pour ${esc(sp.toLowerCase())} (gainage, récupération)`}</button>`).join('')}
+    <p>Marque tes entraînements et tes matchs comme « club » dans leur créneau : validés, ils comptent dans le journal. Les exercices proposés sont du renforcement courant, à adapter avec ton coach.</p>
+  </div></div>
+  <div class="sec"><h2>Compétitions <button class="btn gris petit" data-act="competition">Nouvelle</button></h2>
+    ${avenir.length || passees.length ? `<ul class="list">${[...avenir, ...passees.slice(0, 5)].map(compHtml).join('')}</ul>` : '<p class="vide">Ajoute tes matchs et tournois : compte à rebours sur Aujourd’hui, et une séance adaptée la veille.</p>'}
+    <p class="aide">Veille : séance raccourcie de moitié, sans nouvel exercice. Jour J : pas de renfo. Lendemain : récupération ou repos. Des repères d’organisation, pas un conseil médical.</p></div>`;
 
   if (actif('sport')) html += `<div class="sec"><h2>Minuteur de repos</h2><div class="card reglage"><span class="txt">Entre deux séries</span><select data-act="repos" aria-label="Durée du repos">${[30, 45, 60, 90, 120, 180].map(s => `<option value="${s}" ${s === data.repos ? 'selected' : ''}>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}</option>`).join('')}</select></div></div>`;
   $('#sport').innerHTML = html;
@@ -837,12 +859,20 @@ function bip() {
 }
 
 function commencerSeance(seanceId, slotId) {
+  const regle = L.regleCompetition(data.competitions, aujIso());
+  if (regle?.regle === 'jour') {
+    return ouvrirDlg(`<form><h2>Jour de compétition</h2><p>${esc(regle.competition.nom)} aujourd’hui : pas de renfo. Garde tes forces pour la compétition.</p><p class="aide">Des repères d’organisation, pas un conseil médical.</p><button class="btn plein">Compris</button></form>`, () => {});
+  }
   const st = data.seances.find(s => s.id === seanceId);
-  const blocs = (st ? st.exos : []).filter(x => exo(x.exo));
+  const veille = regle?.regle === 'veille';
+  const blocs = (st ? st.exos : []).filter(x => exo(x.exo)).map(x => veille ? { ...x, series: L.seriesVeille(x.series) } : x);
+  const recup = data.seances.find(s => s.nom === 'Récupération');
   ouvrirDlg(`<form><h2>${esc(st ? st.nom : 'Séance libre')}</h2>
     <div class="repos" id="repos" hidden><span>Repos</span><b class="num" id="repos-t"></b><button type="button" class="btn petit" data-passer>Passer</button></div>
+    ${veille ? `<p class="aide">Veille de compétition (${esc(regle.competition.nom)}) : séance raccourcie de moitié, sans nouvel exercice.</p>` : ''}
+    ${regle?.regle === 'lendemain' && st?.nom !== 'Récupération' ? `<p class="aide">Lendemain de compétition : plutôt récupération (mobilité, étirements) ou repos.${recup ? '' : ' Ajoute les séances de départ de ton sport pour en avoir une prête.'}</p>` : ''}
     <div id="exos" class="pile">${blocs.map(b => blocExo(b.exo, b.series, b.cible)).join('')}</div>
-    ${data.exos.length ? `<div class="ajout"><select id="ajout-exo" aria-label="Exercice à ajouter">${data.exos.map(e => `<option value="${e.id}">${esc(e.nom)}</option>`).join('')}</select><button type="button" data-ajout-exo aria-label="Ajouter l’exercice">${I.plus}</button></div>`
+    ${data.exos.length && !veille ? `<div class="ajout"><select id="ajout-exo" aria-label="Exercice à ajouter">${data.exos.map(e => `<option value="${e.id}">${esc(e.nom)}</option>`).join('')}</select><button type="button" data-ajout-exo aria-label="Ajouter l’exercice">${I.plus}</button></div>`
       : '<p class="muted">Ajoute des exercices dans l’onglet Sport pour les noter ici.</p>'}
     <p class="aide">Coche chaque série faite : le minuteur de repos démarre tout seul.</p>
     <div class="champ">Ressenti${radios('ressenti', { 1: '1', 2: '2', 3: '3', 4: '4', 5: '5' }, '')}</div>
@@ -861,6 +891,25 @@ function commencerSeance(seanceId, slotId) {
     noterUsage('seances');
     dire('Séance enregistrée'); maj(); feter();
   }, { collant: true });
+}
+
+function editerCompetition(c) {
+  const neuf = !c, v = c || { sport: sportsDuProfil()[0] || '', nom: '', date: '', lieu: '', categorie: '', resultat: '' };
+  ouvrirDlg(`<form><h2>${neuf ? 'Nouvelle compétition' : esc(v.nom)}</h2>
+    <label class="champ">Nom<input name="nom" value="${esc(v.nom)}" placeholder="Ex. Tournoi régional" autocomplete="off"></label>
+    <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Date<input type="date" name="date" value="${v.date || ''}"></label>
+      <label class="champ">Sport<input name="sport" value="${esc(v.sport)}" list="sports-liste" autocomplete="off"><datalist id="sports-liste">${sportsDuProfil().map(x => `<option value="${esc(x)}">`).join('')}</datalist></label></div>
+    <label class="champ">Lieu<input name="lieu" value="${esc(v.lieu)}" autocomplete="off"></label>
+    <label class="champ">Catégorie<input name="categorie" value="${esc(v.categorie)}" placeholder="Ex. U21, poule B" autocomplete="off"></label>
+    <label class="champ">Résultat (après coup)<input name="resultat" value="${esc(v.resultat)}" placeholder="Ex. 2e, victoire 3-1" autocomplete="off"></label>
+    <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
+    if (choix === 'suppr') { data.competitions = data.competitions.filter(x => x !== c); maj(); return; }
+    const champs = { nom: f.get('nom').trim(), date: f.get('date'), sport: f.get('sport').trim(), lieu: f.get('lieu').trim(), categorie: f.get('categorie').trim(), resultat: f.get('resultat').trim() };
+    if (!champs.nom || !champs.date) { dire('Il faut au moins un nom et une date.'); return false; }
+    if (neuf) data.competitions.push({ id: L.uid(), ...champs }); else Object.assign(c, champs);
+    noterUsage('competitions');
+    maj();
+  });
 }
 
 function voirJournal(e) {
@@ -935,9 +984,11 @@ const SUCCES = [
   ['Première semaine complète', 'semainesCompletes', 1], ['10 séances de sport', 'seances', 10], ['50 séances de sport', 'seances', 50],
   ['10 tâches faites', 'taches', 10], ['100 tâches faites', 'taches', 100], ['Premier projet terminé', 'projets', 1],
   ['5 objectifs de semaine atteints', 'objSemaine', 5], ['Une habitude tenue 21 jours', 'habitudeMax', 21], ['4 bilans de la semaine', 'bilans', 4],
+  ['10 entraînements du club', 'entrainements', 10], ['Première compétition', 'competitions', 1], ['Un record battu', 'records', 1],
 ];
 const RARETE = { commune: 'Commune', rare: 'Rare', legendaire: 'Légendaire' };
-const creaHtml = c => `<div class="crea forme-${c.forme} ${c.rarete}" style="--c:${c.couleur}"><i></i></div>`;
+const slug = t => String(t || '').toLowerCase().normalize('NFD').replace(/[^a-z]+/g, '-');
+const creaHtml = (c, sport) => `<div class="crea forme-${c.forme} ${c.rarete}${sport ? ` acc acc-${slug(sport)}` : ''}" style="--c:${c.couleur}"${sport ? ` title="Version ${esc(sport)}"` : ''}><i></i></div>`;
 const FLAMME = '<svg viewBox="0 0 24 24" fill="#EC4A46" aria-hidden="true"><path d="M12 22c-4 0-7-2.7-7-6.6 0-3.3 2.1-5.3 3.4-8.6.9 1.7 2 2.6 3.2 2.9-.3-2.7.9-5.2 3-7.2.3 3.7 4.4 6.4 4.4 11.1 0 4.6-3 8.4-7 8.4z"/></svg>';
 
 // Le bilan est dû le dimanche dès 16 h, et encore le lundi et le mardi pour la semaine passée.
@@ -968,7 +1019,7 @@ function vueProfil() {
     ${aBilan ? `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>` : ''}
     <div class="sec" data-module="motivation"><h2>Collection <span>${possedes.size} sur ${L.CREATURES.length}</span></h2>
       ${droits.length ? `<button class="btn plein" data-act="tirage">Ouvrir ${droits.length > 1 ? `tes ${droits.length} tirages` : 'ton tirage'}</button>` : ''}
-      <div class="collec">${L.CREATURES.map(c => possedes.has(c.id) ? `<button class="fig" data-act="creature" data-id="${c.id}">${creaHtml(c)}<span>${esc(c.nom)}</span></button>` : '<div class="fig"><div class="crea lock">?</div><span>À gagner</span></div>').join('')}</div>
+      <div class="collec">${L.CREATURES.map(c => possedes.has(c.id) ? `<button class="fig" data-act="creature" data-id="${c.id}">${creaHtml(c, data.collection.find(x => x.id === c.id).sport)}<span>${esc(c.nom)}</span></button>` : '<div class="fig"><div class="crea lock">?</div><span>À gagner</span></div>').join('')}</div>
       <p class="aide">Un tirage à chaque niveau, à chaque tâche importante ou de fac faite, à chaque projet terminé, et pour chaque semaine avec au moins 5 journées validées.</p></div>
     <div class="sec" data-module="motivation"><h2>Succès <span>${obtenus} sur ${SUCCES.length}</span></h2><ul class="list">${SUCCES.map(([nom, k, cible]) => {
       const ok = st[k] >= cible;
@@ -977,6 +1028,7 @@ function vueProfil() {
     <div class="sec"><h2>Cette semaine <span>réalisé / prévu</span></h2>${Object.keys(prevu).length ? `<div class="card"><ul class="stats">${Object.entries(prevu).sort((a, b) => b[1] - a[1]).map(([c, v]) =>
       `<li><span>${esc(cat(c).nom)}</span><span class="track duo" style="${teinte(c)}"><i style="width:${v / max * 100}%"></i><i style="width:${(fait[c] || 0) / max * 100}%"></i></span><b>${L.heures(fait[c] || 0)}<small> / ${L.heures(v)}</small></b></li>`).join('')}</ul></div>` : '<p class="vide">Aucun créneau cette semaine.</p>'}
       <button class="btn gris" data-act="bilan">Faire le bilan de la semaine</button></div>
+    ${travailHtml()}
     <div class="sec" data-module="motivation"><h2>Thème</h2><div class="cats">${THEMES.map(([id, nom, n, c]) => n > nv.n ? `<span class="theme verrou">${nom} · niv. ${n}</span>`
       : `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${data.theme === id}" style="--c:${c || 'var(--ink)'}">${nom}</button>`).join('')}</div>
       <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label></div>`;
@@ -1010,18 +1062,38 @@ function vueProfil() {
   appliquerTheme();
 }
 
-const RAISON = k => { const [type, v] = k.split(':'); return { niveau: `Niveau ${v} atteint`, tache: 'Tâche importante faite', projet: 'Projet terminé', semaine: 'Semaine réussie' }[type]; };
+function travailHtml() {
+  const c = actif('travail') && catTravail();
+  if (!c) return '';
+  const now = new Date(), lundi = L.lundiDe(now);
+  const sem = L.heuresPeriode(data, lundi, L.ajouterJours(lundi, 6), L.ajouterJours(lundi, 6));
+  const mois = L.heuresPeriode(data, new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 0), new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  const fait = (p, k) => L.heures(p[k][c.id] || 0);
+  const paie = h => data.taux ? ` · environ ${Math.round(h * data.taux)} €` : '';
+  return `<div class="sec"><h2>Travail <span>réalisé / prévu</span></h2><div class="card bientot">
+    <div class="kv"><span>Cette semaine</span><b>${fait(sem, 'fait')} / ${fait(sem, 'prevu')}${paie(sem.fait[c.id] || 0)}</b></div>
+    <div class="kv"><span>Ce mois-ci</span><b>${fait(mois, 'fait')} / ${fait(mois, 'prevu')}${paie(mois.fait[c.id] || 0)}</b></div>
+    <label class="champ">Taux horaire en €, pour estimer la paie<input data-act="taux" inputmode="decimal" value="${data.taux || ''}" autocomplete="off"></label>
+    <p>Une estimation : heures validées × taux horaire, pas une fiche de paie.</p></div></div>`;
+}
+const RAISON = k => { const [type, v] = k.split(':'); return { niveau: `Niveau ${v} atteint`, tache: 'Tâche importante faite', projet: 'Projet terminé', semaine: 'Semaine réussie', seances: `${v} séances de sport`, competition: 'Compétition notée' }[type]; };
 // Le tirage est enregistré avant d'être montré : fermer la fenêtre ne permet pas de retirer.
 function ouvrirTirage() {
   const droits = L.droitsTirage(data, L.stats(data, new Date()));
   if (!droits.length) return;
-  const c = L.tirer(data.collection.map(x => x.id));
-  const doublon = data.collection.some(x => x.id === c.id);
+  const [type, v] = droits[0].split(':');
+  const sport = type === 'competition' ? data.competitions.find(x => x.id === v)?.sport || sportsDuProfil()[0] : type === 'seances' ? sportsDuProfil()[0] : undefined;
+  const c = L.tirer(data.collection.filter(x => !sport || x.sport).map(x => x.id));
+  const deja = data.collection.find(x => x.id === c.id);
+  // Une créature déjà là gagne la version du sport ; sinon le doublon vaut 50 XP.
+  const doublon = deja && (!sport || deja.sport);
   data.tirages.push(droits[0]);
-  if (doublon) data.bonusXp += 50; else data.collection.push({ id: c.id, date: L.isoJour(new Date()), raison: droits[0] });
+  if (doublon) data.bonusXp += 50;
+  else if (deja) deja.sport = sport;
+  else data.collection.push({ id: c.id, date: L.isoJour(new Date()), raison: droits[0], ...(sport ? { sport } : {}) });
   maj();
-  ouvrirDlg(`<form class="tirage"><h2>${RAISON(droits[0])}</h2><div class="revele">${creaHtml(c)}</div>
-    <b class="nom">${esc(c.nom)}</b><span class="pill ${c.rarete}">${RARETE[c.rarete]}</span>
+  ouvrirDlg(`<form class="tirage"><h2>${RAISON(droits[0])}</h2><div class="revele">${creaHtml(c, doublon ? undefined : sport)}</div>
+    <b class="nom">${esc(c.nom)}${sport && !doublon ? ` · version ${esc(sport.toLowerCase())}` : ''}</b><span class="pill ${c.rarete}">${RARETE[c.rarete]}</span>
     <p class="muted">${doublon ? 'Déjà dans ta collection : +50 XP à la place.' : 'Nouvelle venue dans ta collection !'}</p>
     <div class="rangee">${droits.length > 1 ? `<button type="button" class="btn gris" data-choix="encore">Tirage suivant (${droits.length - 1})</button>` : ''}<button class="btn plein">Super</button></div></form>`,
   choix => { if (choix === 'encore') { ouvrirTirage(); return false; } });
@@ -1291,17 +1363,6 @@ document.addEventListener('click', e => {
     case 'seance-type': return editerSeanceType(data.seances.find(s => s.id === id));
     case 'exo': return editerExo(exo(id));
     case 'journal': return voirJournal(data.journal.find(e => e.id === id));
-    case 'conseils': {
-      const nom = `Renfo ${data.club.toLowerCase()}`;
-      const exos = L.CONSEILS[data.club].map(([n, type, cible]) => {
-        let e = data.exos.find(x => x.nom.toLowerCase() === n.toLowerCase());
-        if (!e) { e = { id: L.uid(), nom: n, type, notes: '' }; data.exos.push(e); }
-        return { exo: e.id, series: 3, cible };
-      });
-      if (!data.seances.some(s => s.nom === nom)) data.seances.push({ id: L.uid(), nom, exos });
-      maj();
-      return dire(`Séance « ${nom} » ajoutée`);
-    }
     case 'sem-prec': ui.lundi = L.ajouterJours(ui.lundi, -7); return vueSemaine();
     case 'sem-suiv': ui.lundi = L.ajouterJours(ui.lundi, 7); return vueSemaine();
     case 'sem-auj': ui.lundi = L.lundiDe(new Date()); return vueSemaine();
@@ -1337,6 +1398,12 @@ document.addEventListener('click', e => {
       if (data.typeDefaut === id) data.typeDefaut = data.types[0].id;
       return maj();
     case 'exporter': return exporter();
+    case 'retirer-sport': data.profil.sports = sportsDuProfil().filter(x => x !== el.dataset.sport); return maj();
+    case 'sport-depart': {
+      const p = L.seancesDeDepart(el.dataset.sport);
+      return proposerProfil(L.lireProfil({ format: 'orga-profil', version: 1, exercices: p.exercices, seances: p.seances }), `Pour le ${el.dataset.sport.toLowerCase()}`);
+    }
+    case 'competition': return editerCompetition(data.competitions.find(c => c.id === id));
     case 'revenir-avant': return revenirAvant();
     case 'assistant': return assistant();
     case 'tutoriel': return tutoriel();
@@ -1356,9 +1423,9 @@ document.addEventListener('change', e => {
     if (t.checked) cocherTache(x); else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); }
   }
   if (act === 'son') data.son = t.checked;
+  if (act === 'taux') data.taux = Math.max(0, parseFloat(t.value.replace(',', '.')) || 0);
   if (act === 'module') data.modules[id] = t.checked;
   if (act === 'prog-exo') ui.progExo = t.value;
-  if (act === 'club') data.club = t.value;
   if (act === 'repos') data.repos = +t.value;
   if (act === 'cat-couleur') cat(id).couleur = t.value;
   if (act === 'cat-nom' && t.value.trim()) cat(id).nom = t.value.trim();
@@ -1371,6 +1438,12 @@ document.addEventListener('submit', e => {
   const f = e.target, k = f.dataset.form;
   if (!k) return;
   e.preventDefault();
+  if (k === 'sport') {
+    const nom = (f.elements.txt.value || f.elements.autre.value).trim().slice(0, 40);
+    if (nom && !sportsDuProfil().includes(nom)) data.profil.sports = [...sportsDuProfil(), nom];
+    noterUsage('sport');
+    return maj();
+  }
   const txt = (f.elements.txt || f.elements.nom).value.trim();
   if (!txt) return;
   const mod = { objectif: 'objectifs', item: 'listes', tache: 'taches', habitude: 'habitudes', exo: 'sport' }[k];

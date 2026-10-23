@@ -164,4 +164,29 @@ assert.ok(base.seances.some(s => s.nom === 'Renfo basket'));
 assert.equal(base.profil.travail, true);
 assert.ok(ajoute.length > 5);
 
+// V1.5 : préparation de compétition par règles.
+const comps = [{ id: 'c', date: '2026-11-14', nom: 'Tournoi' }];
+assert.equal(L.regleCompetition(comps, '2026-11-13').regle, 'veille');
+assert.equal(L.regleCompetition(comps, '2026-11-14').regle, 'jour');
+assert.equal(L.regleCompetition(comps, '2026-11-15').regle, 'lendemain');
+assert.equal(L.regleCompetition(comps, '2026-11-20'), null);
+assert.deepEqual([1, 3, 4, 5].map(L.seriesVeille), [1, 2, 2, 3]);
+// Records battus, séances de départ, tirages du sport, ancien sport en club repris dans le profil.
+const sp = L.vide();
+sp.exos.push({ id: 'p', nom: 'Pompes', type: 'reps' });
+sp.journal.push({ date: '2026-10-01', series: [{ exo: 'p', sets: [{ reps: 8 }] }] }, { date: '2026-10-08', series: [{ exo: 'p', sets: [{ reps: 10 }] }] }, { date: '2026-10-15', series: [{ exo: 'p', sets: [{ reps: 9 }] }] });
+assert.equal(L.recordsBattus(sp), 1);
+const dep = L.seancesDeDepart('Sabre laser');
+assert.equal(dep.seances[0].nom, 'Renfo sabre laser');
+assert.ok(dep.seances.some(s => s.nom === 'Récupération'));
+assert.equal(new Set(dep.exercices.map(e => e.nom)).size, dep.exercices.length);
+for (let i = 0; i < 3; i++) sp.journal.push({ date: '2026-10-2' + i, series: [] });
+assert.ok(L.droitsTirage(sp, L.stats(sp, new Date(2026, 9, 23))).includes('seances:5'));
+assert.deepEqual(L.migrer({ ...L.vide(), club: 'Basket', profil: {} }).profil.sports, ['Basket']);
+// Heures sur une période : jour par jour, jamais au-delà d'aujourd'hui.
+const hp = L.vide();
+hp.semaines['2026-10-19'] = { slots: [{ j: 0, s: 8, e: 10, cat: 'cours', fait: true }, { j: 4, s: 8, e: 9, cat: 'cours' }, { j: 6, s: 8, e: 9, cat: 'cours', fait: true }] };
+const per = L.heuresPeriode(hp, new Date(2026, 9, 19), new Date(2026, 9, 25), new Date(2026, 9, 23));
+assert.deepEqual([per.prevu.cours, per.fait.cours], [3, 2]);   // le dimanche 25 n'est pas encore vécu
+
 console.log('ok');
