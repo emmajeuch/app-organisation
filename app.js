@@ -1,5 +1,6 @@
 // L'app : affichage, gestes et enregistrement. La logique pure est dans logique.js.
 import * as L from './logique.js';
+import * as A from './assistant.js';
 
 const KEY = 'orga-v1';
 const ROW = 14; // hauteur d'une demi-heure en px, comme --row dans index.html
@@ -193,8 +194,10 @@ dlg.addEventListener('click', e => {
 dlg.addEventListener('cancel', e => { if (dlg.dataset.collant) e.preventDefault(); });
 
 const bienvenue = () => `<div class="card bientot"><b>Bienvenue</b>
-  <p>Pour commencer, prends la semaine d’exemple et modifie-la, ou pars d’un emploi du temps vide.</p>
-  <div class="rangee"><button class="btn plein" data-act="depart-exemple">Semaine d’exemple</button><button class="btn gris" data-act="depart-vide">Partir de zéro</button></div></div>`;
+  <p>Réponds à quelques questions et l’app se construit avec toi. Tu peux aussi importer un profil préparé à l’avance, ou partir d’un exemple.</p>
+  <button class="btn plein" data-act="assistant">Construire mon app</button>
+  <div class="rangee"><button class="btn gris" data-act="importer">Importer un profil</button><button class="btn gris" data-act="depart-exemple">Semaine d’exemple</button></div>
+  <button class="btn gris" data-act="depart-vide">Partir de zéro</button></div>`;
 
 // ---------- Aujourd'hui ----------
 
@@ -611,7 +614,7 @@ function editerTache(t, defaut = {}) {
     </div>
     <div class="champ">Priorité${radios('priorite', { 1: 'Haute', 2: 'Normale', 3: 'Basse' }, v.priorite || 2)}</div>
     <label class="champ">Projet ou divertissement<select name="projet"><option value="">Aucun</option>${data.projets.filter(p => p.statut !== 'termine').map(p => `<option value="${p.id}" ${v.projet === p.id ? 'selected' : ''}>${esc(p.nom)}</option>`).join('')}</select></label>
-    <label class="coche"><input type="checkbox" class="chk" name="fac" ${v.fac ? 'checked' : ''}>Rendu ou partiel de fac (compte à rebours)</label>
+    ${data.profil.etudes === false && !v.fac ? '' : `<label class="coche"><input type="checkbox" class="chk" name="fac" ${v.fac ? 'checked' : ''}>Rendu ou partiel de fac (compte à rebours)</label>`}
     <div class="champ">Étapes<div class="etapes">${(v.sous || []).map(etapeHtml).join('')}</div>
       <div class="ajout"><input data-nouvelle-etape placeholder="Nouvelle étape" aria-label="Nouvelle étape" autocomplete="off"><button type="button" data-ajout-etape aria-label="Ajouter l’étape">${I.plus}</button></div></div>
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-choix="planifier">Planifier un créneau</button></div>
@@ -985,7 +988,14 @@ function vueProfil() {
     <div class="sec"><h2>Sauvegarde</h2><div class="card bientot">
       <b class="${jours === null || jours > 7 ? 'alerte' : ''}">${etat}</b>
       <p>Tes données ne sont que sur ce téléphone, et iOS peut les effacer s’il manque de place. Exporte-les chaque semaine dans Fichiers (iCloud Drive).</p>
-      <div class="rangee"><button class="btn plein" data-act="exporter">Exporter</button><button class="btn gris" data-act="importer">Importer</button></div></div></div>
+      <div class="rangee"><button class="btn plein" data-act="exporter">Exporter</button><button class="btn gris" data-act="importer">Importer</button></div>
+      ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}</div></div>
+    <div class="sec"><h2>Ton profil</h2><div class="card bientot">
+      <b>${esc(data.profil.prenom || 'Sans prénom')}</b>
+      <p>${[data.profil.etudes !== false && 'Études', data.profil.travail && 'Travail', ...(data.profil.sports || [])].filter(Boolean).map(esc).join(' · ') || 'Rien de renseigné'}</p>
+      <div class="rangee"><button class="btn gris" data-act="assistant">Refaire le questionnaire</button><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button></div>
+      <button class="btn gris" data-act="avis">Donner mon avis</button>
+      <p>Pour un ami : envoie-lui le lien <b>emmajeuch.github.io/app-organisation/questionnaire.html</b> ; il répond et repart avec son fichier de profil.</p></div></div>
     <div class="sec"><h2>Catégories</h2>
       <ul class="list">${data.cats.map(c => `<li class="reglage"><input type="color" value="${L.couleurSure(c.couleur)}" data-act="cat-couleur" data-id="${c.id}" aria-label="Couleur de ${esc(c.nom)}"><input type="text" value="${esc(c.nom)}" data-act="cat-nom" data-id="${c.id}" aria-label="Nom de la catégorie"><button class="x" data-act="suppr-cat" data-id="${c.id}" aria-label="Supprimer ${esc(c.nom)}">${I.x}</button></li>`).join('')}</ul>
       <form class="ajout" data-form="cat"><input name="nom" placeholder="Nouvelle catégorie" aria-label="Nouvelle catégorie" autocomplete="off"><button aria-label="Ajouter">${I.plus}</button></form></div>
@@ -1098,17 +1108,101 @@ async function exporter() {
   maj(); dire('Sauvegarde exportée');
 }
 
+// Import contrôlé : un profil s'ajoute, une sauvegarde remplace ; dans les deux cas on montre d'abord
+// ce qui va changer, et on garde une copie des données d'avant (Profil › Revenir à avant l'import).
+const CLE_AVANT = KEY + '-avant-import';
+function garderAvant() { try { localStorage.setItem(CLE_AVANT, JSON.stringify({ quand: new Date().toISOString(), data })); } catch {} }
+function avantImport() { try { return JSON.parse(localStorage.getItem(CLE_AVANT)); } catch { return null; } }
+
+function proposerProfil(p, titre = 'Importer ce profil ?') {
+  const essai = structuredClone(data), lignes = L.appliquerProfil(essai, p);
+  if (!lignes.length) return dire('Ce profil n’ajoute rien de nouveau.');
+  ouvrirDlg(`<form><h2>${titre}</h2><p class="muted">Ce qui va être ajouté (rien n’est effacé) :</p>
+    <ul class="list">${lignes.map(l => `<li><div class="txt"><b>${esc(l)}</b></div></li>`).join('')}</ul>
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Ajouter</button></div></form>`, () => {
+    garderAvant();
+    L.appliquerProfil(data, p);
+    noterUsage('profil');
+    maj(); dire('Profil ajouté'); feter();
+  });
+}
+
 $('#fichier').addEventListener('change', async e => {
   const fichier = e.target.files[0];
   e.target.value = '';
   if (!fichier) return;
+  if (fichier.size > L.TAILLE_MAX) return dire('Ce fichier est trop gros pour être une sauvegarde de l’app.');
   let o;
-  try { o = L.valider(JSON.parse(await fichier.text())); } catch (err) { return dire(err instanceof SyntaxError ? 'Ce fichier est illisible.' : err.message); }
-  ouvrirDlg(`<form><h2>Importer cette sauvegarde ?</h2>
-    <p class="muted">Elle remplace toutes les données de l’app${o.dernierExport ? ` par celles du ${new Date(o.dernierExport).toLocaleDateString('fr-FR')}` : ''}. Exporte d’abord si tu veux garder les données actuelles.</p>
+  try { o = JSON.parse(await fichier.text()); } catch { return dire('Ce fichier est illisible.'); }
+  if (o && o.format === 'orga-profil') {
+    try { return proposerProfil(L.lireProfil(o)); } catch (err) { return dire(err.message); }
+  }
+  try { o = L.validerImport(o); } catch (err) { return dire(err.message); }
+  const nb = Object.values(o.semaines).reduce((k, x) => k + x.slots.length, 0);
+  ouvrirDlg(`<form><h2>Remplacer par cette sauvegarde ?</h2>
+    <p class="muted">Sauvegarde${o.dernierExport ? ` du ${new Date(o.dernierExport).toLocaleDateString('fr-FR')}` : ''} : ${nb} créneaux, ${o.taches.length} tâches, ${o.notes.length} notes, ${o.journal.length} séances.
+    Elle remplace les données actuelles, qui restent récupérables dans Profil › Revenir à avant l’import.</p>
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Remplacer</button></div></form>`,
-  () => { data = o; maj(); dire('Sauvegarde importée'); });
+  () => { garderAvant(); data = o; maj(); dire('Sauvegarde importée'); });
 });
+
+function revenirAvant() {
+  const a = avantImport();
+  if (!a) return;
+  ouvrirDlg(`<form><h2>Revenir à avant l’import ?</h2><p class="muted">Les données reviennent à leur état du ${new Date(a.quand).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}. Ce qui a été fait depuis est perdu.</p>
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Revenir</button></div></form>`, () => {
+    try { data = L.validerImport(a.data); } catch (err) { dire(err.message); return; }
+    try { localStorage.removeItem(CLE_AVANT); } catch {}
+    maj(); dire('Données d’avant l’import remises');
+  });
+}
+
+// ---------- Construire son app (V1.4) ----------
+
+function assistant() {
+  ouvrirDlg(`<form class="pile"><h2>Construire ton app</h2><p class="muted">Quelques questions : l’app crée ta semaine type, tes tâches de maison, tes listes et ton sport. Rien n’est effacé.</p>
+    ${A.formulaireHtml()}
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Voir ce qui sera créé</button></div></form>`, () => {
+    proposerProfil(L.lireProfil(L.construireProfil(A.lireReponses(dlg.querySelector('form')))), 'Voici ton app');
+    return false;
+  });
+  A.brancher(dlg.querySelector('form'));
+}
+
+const TUTO = [
+  ['Bienvenue', 'Ton emploi du temps par demi-heure, tes tâches, tes notes et ton sport, au même endroit. Tout reste sur ton téléphone.'],
+  ['Les onglets', 'Aujourd’hui : le créneau en cours et ta journée. Semaine : la grille, à remplir au doigt (appui long puis glisser). Notes, Sport et Profil pour le reste.'],
+  ['Le bouton +', 'Depuis n’importe quel écran, il ajoute un créneau, une tâche, une note ou un objectif.'],
+  ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Le soir, à partir de 20 h, tu relis la journée et tu coches ce que tu as fait.'],
+  ['Ta sauvegarde', 'Tes données ne sont que sur ce téléphone. Exporte-les chaque semaine (Profil › Exporter). Et ne supprime pas l’icône : ça peut effacer tes données.'],
+];
+function tutoriel(i = 0) {
+  const [titre, texte] = TUTO[i];
+  ouvrirDlg(`<form><h2>${titre}</h2><p>${texte}</p><p class="aide">${i + 1} sur ${TUTO.length}</p>
+    <div class="rangee"><button type="button" class="btn gris" data-choix="passer">${i === TUTO.length - 1 ? 'Fermer' : 'Passer'}</button>${i < TUTO.length - 1 ? '<button class="btn plein">Suivant</button>' : ''}</div></form>`, choix => {
+    data.tutoVu = true; sauver();
+    if (choix === 'ok' && i < TUTO.length - 1) { tutoriel(i + 1); return false; }
+  });
+}
+
+// Donner mon avis : un message prêt à envoyer par le testeur lui-même ; rien n'est collecté.
+function donnerAvis() {
+  ouvrirDlg(`<form><h2>Donner mon avis</h2>
+    <div class="champ">L’installation a marché ?${radios('install', { oui: 'Oui', difficile: 'Oui, mais difficilement', non: 'Non' }, 'oui')}</div>
+    <label class="champ">Qu’est-ce qui t’a servi ?<textarea name="servi"></textarea></label>
+    <label class="champ">Qu’est-ce qui manque ou ne marche pas ?<textarea name="manque"></textarea></label>
+    <div class="champ">Ta note sur 5${radios('note', { 1: '1', 2: '2', 3: '3', 4: '4', 5: '5' }, '')}</div>
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Préparer le message</button></div></form>`, (choix, f) => {
+    const inst = { oui: 'oui', difficile: 'oui, mais difficilement', non: 'non' }[f.get('install')];
+    const texte = `Avis sur l’app d’organisation (version ${L.VERSION})\nInstallation : ${inst}\nCe qui a servi : ${f.get('servi').trim() || '—'}\nCe qui manque ou ne marche pas : ${f.get('manque').trim() || '—'}\nNote : ${f.get('note') || '—'}/5`;
+    envoyerTexte(texte);
+  });
+}
+async function envoyerTexte(texte) {
+  try { if (navigator.share) { await navigator.share({ text: texte }); return; } } catch (e) { if (e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(texte); dire('Message copié : colle-le dans un SMS ou une messagerie'); }
+  catch { ouvrirDlg(`<form><h2>Ton message</h2><p class="muted">Copie-le et envoie-le toi-même.</p><textarea class="copie" readonly>${esc(texte)}</textarea><button class="btn plein">Fermer</button></form>`, () => {}); }
+}
 
 // ---------- Bouton + et navigation ----------
 
@@ -1243,6 +1337,10 @@ document.addEventListener('click', e => {
       if (data.typeDefaut === id) data.typeDefaut = data.types[0].id;
       return maj();
     case 'exporter': return exporter();
+    case 'revenir-avant': return revenirAvant();
+    case 'assistant': return assistant();
+    case 'tutoriel': return tutoriel();
+    case 'avis': return donnerAvis();
     case 'importer': return $('#fichier').click();
   }
 });
@@ -1307,3 +1405,4 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) naviga
 rendre();
 dernier = L.stats(data, new Date());
 ouvrir(ui.onglet);
+if (!data.tutoVu) tutoriel();

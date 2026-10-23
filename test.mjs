@@ -109,4 +109,59 @@ assert.equal(L.delaiValidation(23), 24);           // créneau du soir : jusqu'�
 assert.deepEqual(L.migrer({ ...L.vide(), bilans: { '2026-10-19': '2026-10-21' } }).bilans['2026-10-19'], { date: '2026-10-21' });
 assert.ok(!L.slotsExemple().some(x => /données|Finance|Algorithm|gestion|Anglais|Ethics|Atelier/.test(x.titre)));
 
+// V1.4 : une sauvegarde complète traverse l'import contrôlé sans rien perdre…
+const plein = L.vide();
+Object.assign(plein, { typeDefaut: 't1', dernierExport: '2026-10-23T10:00:00.000Z', club: 'Basket', bonusXp: 50, theme: 'menthe', tutoVu: true, taux: 11.5,
+  profil: { prenom: 'Léa', etudes: true, travail: false, sports: ['Basket'] }, modules: { sport: false }, usage: { '2026-10-26': { 'creneau-ajout': 2 } },
+  compagnon: { id: 'nuage', stade: 2 }, tirages: ['niveau:2'], collection: [{ id: 'nuage', date: '2026-10-21', raison: 'niveau:2', sport: 'Basket' }],
+  bilans: { '2026-10-19': { date: '2026-10-25', ailleurs: 1, ailleursNote: 'papier', comptent: 5, validees: '6/7', usage: { notes: 3 } } } });
+const sl = { id: 's1', j: 2, s: 8.5, e: 10, cat: 'cours', titre: 'TD', salle: 'B', affaires: 'cahier', notes: 'x', fait: true, src: 'm1', tache: 'k1', seance: 'q1', club: true, collegue: 'Sam' };
+plein.types.push({ id: 't1', nom: 'Cours', slots: [{ ...sl, id: 'm1', fait: undefined }].map(({ fait, ...x }) => x) });
+plein.semaines['2026-10-26'] = { type: 't1', slots: [sl] };
+plein.notes.push({ id: 'n1', titre: 'A', texte: 'B', couleur: '#FFD447', epingle: true, tags: ['Fac'], lien: 'TD', maj: 5 });
+plein.listes[0].items.push({ id: 'i1', txt: 'Lait', fait: true });
+plein.objectifs.push({ id: 'o1', txt: 'Lire', horizon: 'mois', periode: '2026-10', fait: true, parent: 'o0' });
+plein.taches.push({ id: 'k1', titre: 'Rendu', echeance: '2026-12-13', priorite: 1, fac: true, travail: false, recurrence: 3, projet: 'p1', sous: [{ txt: 'a', fait: true }], fait: false, faitLe: '2026-10-22', faits: ['2026-10-22'] });
+plein.projets.push({ id: 'p1', nom: 'App', type: 'projet', statut: 'en-cours', etape: 'V1.4', notes: '' });
+plein.exos.push({ id: 'e1', nom: 'Gainage', type: 'duree', notes: '', sport: 'Basket' });
+plein.seances.push({ id: 'q1', nom: 'Renfo', sport: 'Basket', exos: [{ exo: 'e1', series: 3, cible: 45 }, { exo: 'e1', series: 2, cible: '' }] });
+plein.journal.push({ id: 'j1', date: '2026-10-22', seance: 'q1', nom: 'Renfo', slot: 's1', ressenti: 4, notes: 'ok', series: [{ exo: 'e1', sets: [{ sec: 40 }, { kg: 10, reps: 8 }] }] });
+plein.habitudes.push({ id: 'h1', nom: 'Lire', freq: 3, faits: ['2026-10-22'] });
+plein.competitions.push({ id: 'c1', sport: 'Basket', nom: 'Tournoi', date: '2026-11-14', lieu: 'Gymnase', categorie: 'U21', resultat: '' });
+const copie = JSON.parse(JSON.stringify(plein));
+assert.deepEqual(L.validerImport(JSON.parse(JSON.stringify(plein))), copie);
+// … mais retire ce qui pourrait casser la page ou n'a rien à faire là.
+const piege = JSON.parse(JSON.stringify(plein));
+piege.cats[0].id = '"><img src=x onerror=alert(1)>';
+piege.objectifs[0].periode = '<script>';
+piege.habitudes[0].freq = '<b>';
+piege.inconnu = 'à ignorer';
+const net = L.validerImport(piege);
+assert.equal(net.cats[0].id, undefined);
+assert.equal(net.objectifs[0].periode, undefined);
+assert.equal(net.habitudes[0].freq, undefined);
+assert.equal(net.inconnu, undefined);
+assert.throws(() => L.validerImport({ version: 2 }));
+
+// Profil : lu, nettoyé, puis ajouté sans rien écraser.
+assert.throws(() => L.lireProfil({ version: 1 }));
+const rep = { prenom: 'Sam', etudes: true, travail: true, lever: 7, coucher: 23, repas: true, coursJours: [0, 1], coursDebut: 8, coursFin: 17,
+  travailJours: [5], travailDebut: 10, travailFin: 18, taux: 11.88, sport: 'Basket', clubJours: [2], clubDebut: 18, clubDuree: 1.5,
+  menage: [{ titre: 'Ménage', jour: 3 }], listes: ['Courses', 'Films'], habitudes: ['Lire'] };
+const prof = L.lireProfil(JSON.parse(JSON.stringify(L.construireProfil(rep))));
+assert.equal(prof.prenom, 'Sam');
+const base = L.vide();
+base.taches.push({ id: 'x', titre: 'Ménage', fait: false });
+const avant = base.listes.length;
+const ajoute = L.appliquerProfil(base, prof, new Date(2026, 9, 23));
+assert.equal(base.taches.filter(t => t.titre === 'Ménage').length, 1);   // déjà là : pas en double
+assert.equal(base.listes.length, avant + 1);                              // « Films » ajoutée, « Courses » existait
+assert.ok(base.cats.some(c => c.nom === 'Travail') && base.cats.some(c => c.nom === 'Travail perso'));
+const semType = base.types.at(-1);
+assert.ok(semType.slots.some(x => x.j === 5 && x.titre === 'Travail' && x.cat === base.cats.find(c => c.nom === 'Travail').id));
+assert.ok(semType.slots.some(x => x.j === 0 && x.titre === 'Déjeuner' && x.s === 12));  // le déjeuner coupe les cours
+assert.ok(base.seances.some(s => s.nom === 'Renfo basket'));
+assert.equal(base.profil.travail, true);
+assert.ok(ajoute.length > 5);
+
 console.log('ok');

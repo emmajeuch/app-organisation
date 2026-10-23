@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.3.1';
+export const VERSION = '1.4';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -85,6 +85,190 @@ export function valider(o) {
   if (!ok) throw new Error('Ce fichier n’est pas une sauvegarde de l’app.');
   return migrer(o);
 }
+// ---------- Import contrôlé (V1.4) ----------
+// Un fichier importé est reconstruit champ par champ : bon type ou rien, champs inconnus ignorés,
+// identifiants et dates au format attendu (ils finissent dans des attributs HTML), textes bornés.
+export const TAILLE_MAX = 5e6;
+const ID = v => typeof v === 'string' && /^[\w-]{1,40}$/.test(v) ? v : undefined;
+const DATE = v => typeof v === 'string' && /^\d{4}(-\d{2}){0,2}(-\d{4})?$/.test(v) ? v : undefined;
+const TXT = v => typeof v === 'string' ? v.slice(0, 5000) : undefined;
+const NUM = v => typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+const BOOL = v => typeof v === 'boolean' ? v : undefined;
+const ENTRE = (a, b) => v => NUM(v) !== undefined && v >= a && v <= b ? v : undefined;
+const UN_DE = (...ok) => v => ok.includes(v) ? v : undefined;
+const NUM_OU_VIDE = v => v === '' ? '' : NUM(v);
+const SLOT = { id: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID, titre: TXT, salle: TXT, affaires: TXT, notes: TXT,
+  fait: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT };
+const SCHEMA = {
+  version: UN_DE(1), plage: [ENTRE(0, 26)], typeDefaut: ID, dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
+  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, tutoVu: BOOL, taux: ENTRE(0, 1000),
+  cats: [{ id: ID, nom: TXT, couleur: TXT }],
+  types: [{ id: ID, nom: TXT, slots: [SLOT] }],
+  semaines: { '*': { type: ID, slots: [SLOT] } },
+  notes: [{ id: ID, titre: TXT, texte: TXT, couleur: TXT, epingle: BOOL, tags: [TXT], lien: TXT, maj: NUM }],
+  listes: [{ id: ID, nom: TXT, tags: [TXT], items: [{ id: ID, txt: TXT, fait: BOOL }] }],
+  objectifs: [{ id: ID, txt: TXT, horizon: UN_DE('semaine', 'mois', 'annee'), periode: DATE, fait: BOOL, parent: ID }],
+  taches: [{ id: ID, titre: TXT, echeance: DATE, priorite: UN_DE(1, 2, 3), fac: BOOL, travail: BOOL, recurrence: ENTRE(0, 6), projet: ID,
+    sous: [{ txt: TXT, fait: BOOL }], fait: BOOL, faitLe: DATE, faits: [DATE] }],
+  projets: [{ id: ID, nom: TXT, type: UN_DE('projet', 'divertissement'), statut: UN_DE('idee', 'en-cours', 'pause', 'termine'), etape: TXT, notes: TXT }],
+  exos: [{ id: ID, nom: TXT, type: UN_DE('reps', 'duree', 'distance', 'charge'), notes: TXT, sport: TXT }],
+  seances: [{ id: ID, nom: TXT, sport: TXT, exos: [{ exo: ID, series: ENTRE(1, 50), cible: NUM_OU_VIDE }] }],
+  journal: [{ id: ID, date: DATE, seance: ID, nom: TXT, slot: ID, ressenti: ENTRE(1, 5), notes: TXT,
+    series: [{ exo: ID, sets: [{ reps: NUM, sec: NUM, km: NUM, kg: NUM }] }] }],
+  habitudes: [{ id: ID, nom: TXT, freq: v => v === 'jour' ? v : ENTRE(1, 6)(v), faits: [DATE] }],
+  tirages: [TXT], collection: [{ id: ID, date: DATE, raison: TXT, sport: TXT }],
+  bilans: { '*': { date: DATE, ailleurs: ENTRE(0, 7), ailleursNote: TXT, comptent: ENTRE(0, 7), validees: TXT, usage: { '*': NUM } } },
+  usage: { '*': { '*': NUM } }, modules: { '*': BOOL },
+  profil: { prenom: TXT, etudes: BOOL, travail: BOOL, sports: [TXT] },
+  competitions: [{ id: ID, sport: TXT, nom: TXT, date: DATE, lieu: TXT, categorie: TXT, resultat: TXT }],
+  compagnon: { id: ID, stade: ENTRE(0, 4) },
+};
+export function nettoyer(v, sch) {
+  if (typeof sch === 'function') return sch(v);
+  if (Array.isArray(sch)) return Array.isArray(v) ? v.slice(0, 20000).map(x => nettoyer(x, sch[0])).filter(x => x !== undefined) : undefined;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const o = {};
+  if (sch['*']) {
+    for (const [k, x] of Object.entries(v).slice(0, 5000)) if (/^[\w-]{1,40}$/.test(k)) { const y = nettoyer(x, sch['*']); if (y !== undefined) o[k] = y; }
+    return o;
+  }
+  for (const [k, s] of Object.entries(sch)) { const y = nettoyer(v[k], s); if (y !== undefined) o[k] = y; }
+  return o;
+}
+// Une sauvegarde importée : vérifiée, nettoyée, puis complétée.
+export function validerImport(o) {
+  valider(o);
+  return migrer(nettoyer(o, SCHEMA));
+}
+
+// ---------- Profil de départ (V1.4) ----------
+// Format d'un profil, à produire tel quel (par exemple avec Claude dans le chat) :
+// {
+//   "format": "orga-profil", "version": 1,
+//   "prenom": "Léa", "etudes": true, "travail": false, "sports": ["Basket"], "taux": 11.88,
+//   "categories": [{ "nom": "Travail", "couleur": "#8C6A4F" }],
+//   "semaineType": { "nom": "Semaine de cours", "creneaux": [
+//     { "jour": 0, "debut": 8.5, "fin": 10.5, "categorie": "Transport et cours", "titre": "Cours", "salle": "" } ] },
+//   "taches": [{ "titre": "Ménage", "jour": 3 }],
+//   "listes": ["Courses", "À lire"],
+//   "habitudes": [{ "nom": "Lire", "frequence": "jour" }],
+//   "objectifs": [{ "texte": "Valider le semestre", "horizon": "annee" }],
+//   "exercices": [{ "nom": "Gainage", "type": "duree" }],
+//   "seances": [{ "nom": "Renfo", "exercices": [{ "nom": "Gainage", "series": 3, "cible": 45 }] }]
+// }
+// jour : 0 = lundi … 6 = dimanche ; heures en décimales par demi-heure (8.5 = 8 h 30, 25 = 1 h du matin) ;
+// categorie : le nom d'une catégorie existante ou de "categories" ; type : reps, duree, distance ou charge ;
+// frequence : "jour" ou 1 à 6 (fois par semaine) ; horizon : semaine, mois ou annee. Tout est facultatif.
+const PROFIL = {
+  prenom: v => TXT(v)?.slice(0, 40), etudes: BOOL, travail: BOOL, sports: [v => TXT(v)?.slice(0, 40)], taux: ENTRE(0, 1000),
+  categories: [{ nom: v => TXT(v)?.slice(0, 40), couleur: v => /^#[0-9a-f]{6}$/i.test(v) ? v : undefined }],
+  semaineType: { nom: v => TXT(v)?.slice(0, 60), creneaux: [{ jour: ENTRE(0, 6), debut: ENTRE(0, 25.5), fin: ENTRE(0.5, 26), categorie: TXT, titre: v => TXT(v)?.slice(0, 80), salle: v => TXT(v)?.slice(0, 80) }] },
+  taches: [{ titre: v => TXT(v)?.slice(0, 120), jour: ENTRE(0, 6) }],
+  listes: [v => TXT(v)?.slice(0, 60)],
+  habitudes: [{ nom: v => TXT(v)?.slice(0, 60), frequence: v => v === 'jour' ? v : ENTRE(1, 6)(v) }],
+  objectifs: [{ texte: v => TXT(v)?.slice(0, 200), horizon: UN_DE('semaine', 'mois', 'annee') }],
+  exercices: [{ nom: v => TXT(v)?.slice(0, 80), type: UN_DE('reps', 'duree', 'distance', 'charge') }],
+  seances: [{ nom: v => TXT(v)?.slice(0, 80), exercices: [{ nom: v => TXT(v)?.slice(0, 80), series: ENTRE(1, 20), cible: NUM }] }],
+};
+export function lireProfil(o) {
+  if (!o || o.format !== 'orga-profil' || o.version !== 1) throw new Error('Ce fichier n’est pas un profil de l’app.');
+  const p = nettoyer(o, PROFIL);
+  const demi = x => Math.round(x * 2) / 2;
+  if (p.semaineType) p.semaineType.creneaux = (p.semaineType.creneaux || []).filter(c => c.jour !== undefined && c.debut !== undefined && c.fin !== undefined)
+    .map(c => ({ ...c, debut: demi(c.debut), fin: demi(c.fin) })).filter(c => c.fin > c.debut);
+  return p;
+}
+
+const PALETTE = ['#8C6A4F', '#3C8CE7', '#2E9E6A', '#D9A520', '#A35BD6', '#E0703C'];
+// Ajoute un profil aux données sans rien effacer ; renvoie la liste de ce qui a été ajouté.
+export function appliquerProfil(data, p, auj = new Date()) {
+  const fait = [], meme = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+  if (p.prenom || p.etudes !== undefined || p.travail !== undefined || p.sports) {
+    const pr = data.profil ||= {};
+    if (p.prenom) pr.prenom = p.prenom;
+    if (p.etudes !== undefined) pr.etudes = p.etudes;
+    if (p.travail !== undefined) { pr.travail = p.travail; data.modules.travail = p.travail; }
+    if (p.sports?.length) pr.sports = [...new Set([...(pr.sports || []), ...p.sports])];
+  }
+  if (p.taux !== undefined) data.taux = p.taux;
+  const catPour = nom => {
+    let c = data.cats.find(x => meme(x.nom, nom)) || data.cats.find(x => meme(x.id, nom));
+    if (!c && nom) { c = { id: uid(), nom: nom.slice(0, 40), couleur: PALETTE[data.cats.length % PALETTE.length] }; data.cats.push(c); fait.push(`Catégorie « ${c.nom} »`); }
+    return c;
+  };
+  for (const c of p.categories || []) if (c.nom && !data.cats.some(x => meme(x.nom, c.nom))) {
+    data.cats.push({ id: uid(), nom: c.nom, couleur: c.couleur || PALETTE[data.cats.length % PALETTE.length] });
+    fait.push(`Catégorie « ${c.nom} »`);
+  }
+  const creneaux = p.semaineType?.creneaux || [];
+  if (creneaux.length) {
+    let nom = p.semaineType.nom || 'Ma semaine', n = 2;
+    while (data.types.some(t => meme(t.nom, nom))) nom = `${p.semaineType.nom || 'Ma semaine'} (${n++})`;
+    let slots = [];
+    for (const c of creneaux) {
+      const k = catPour(c.categorie || 'Transport et cours') || data.cats[0];
+      slots = placer(slots, { id: uid(), j: c.jour, s: c.debut, e: c.fin, cat: k.id, titre: c.titre || k.nom, salle: c.salle || '', affaires: '', notes: '' });
+    }
+    const t = { id: uid(), nom, slots };
+    data.types.push(t);
+    if (!data.typeDefaut || data.types.length === 1) data.typeDefaut = t.id;
+    fait.push(`Semaine type « ${nom} » : ${slots.length} créneaux`);
+  }
+  for (const t of p.taches || []) if (t.titre && !data.taches.some(x => !x.fait && meme(x.titre, t.titre))) {
+    let d = new Date(auj.getFullYear(), auj.getMonth(), auj.getDate());
+    const rec = t.jour ?? null;
+    if (rec !== null) while (jourSemaine(d) !== rec) d = ajouterJours(d, 1);
+    data.taches.push({ id: uid(), titre: t.titre, echeance: rec !== null ? isoJour(d) : null, priorite: 2, fac: false, recurrence: rec, projet: null, sous: [], fait: false });
+    fait.push(`Tâche « ${t.titre} »${rec !== null ? ' chaque semaine' : ''}`);
+  }
+  for (const nom of p.listes || []) if (nom && !data.listes.some(l => meme(l.nom, nom))) { data.listes.push({ id: uid(), nom, tags: [], items: [] }); fait.push(`Liste « ${nom} »`); }
+  for (const h of p.habitudes || []) if (h.nom && !data.habitudes.some(x => meme(x.nom, h.nom))) {
+    data.habitudes.push({ id: uid(), nom: h.nom, freq: h.frequence ?? 'jour', faits: [] });
+    fait.push(`Habitude « ${h.nom} »`);
+  }
+  for (const o of p.objectifs || []) if (o.texte) {
+    const horizon = o.horizon || 'semaine';
+    data.objectifs.push({ id: uid(), txt: o.texte, horizon, periode: periode(horizon, auj), fait: false, parent: null });
+    fait.push(`Objectif « ${o.texte} »`);
+  }
+  const exoPour = (nom, type = 'reps') => {
+    let e = data.exos.find(x => meme(x.nom, nom));
+    if (!e) { e = { id: uid(), nom, type, notes: '' }; data.exos.push(e); fait.push(`Exercice « ${nom} »`); }
+    return e;
+  };
+  for (const e of p.exercices || []) if (e.nom) exoPour(e.nom, e.type);
+  for (const s of p.seances || []) if (s.nom && !data.seances.some(x => meme(x.nom, s.nom))) {
+    data.seances.push({ id: uid(), nom: s.nom, exos: (s.exercices || []).filter(x => x.nom).map(x => ({ exo: exoPour(x.nom).id, series: x.series || 3, cible: x.cible ?? '' })) });
+    fait.push(`Séance « ${s.nom} »`);
+  }
+  if (p.sports?.length && !data.club) data.club = p.sports[0];
+  return fait;
+}
+
+// Les réponses de l'assistant (ou du questionnaire en ligne) deviennent un profil.
+export function construireProfil(r) {
+  const creneaux = [], ajout = (jour, debut, fin, categorie, titre) => { if (fin > debut) creneaux.push({ jour, debut, fin, categorie, titre }); };
+  const jours = [0, 1, 2, 3, 4, 5, 6];
+  for (const j of jours) {
+    if (r.lever > 6) ajout(j, 6, r.lever, 'Sommeil', 'Sommeil');
+    if (r.etudes && r.coursJours?.includes(j)) ajout(j, r.coursDebut, r.coursFin, 'Transport et cours', 'Cours');
+    if (r.travail && r.travailJours?.includes(j)) ajout(j, r.travailDebut, r.travailFin, 'Travail', 'Travail');
+    if (r.sport && r.clubJours?.includes(j)) ajout(j, r.clubDebut, r.clubDebut + r.clubDuree, 'Sport', `Entraînement · ${r.sport}`);
+    if (r.repas) { ajout(j, r.lever, r.lever + .5, 'Repas', 'Petit-déjeuner'); ajout(j, 12, 13, 'Repas', 'Déjeuner'); ajout(j, 19.5, 20.5, 'Repas', 'Dîner'); }
+    ajout(j, r.coucher, 25, 'Sommeil', 'Sommeil');
+  }
+  const p = { format: 'orga-profil', version: 1, prenom: r.prenom || undefined, etudes: !!r.etudes, travail: !!r.travail,
+    sports: r.sport ? [r.sport] : [], semaineType: { nom: r.etudes ? 'Semaine de cours' : 'Ma semaine', creneaux },
+    taches: r.menage || [], listes: r.listes || [], habitudes: (r.habitudes || []).map(nom => ({ nom, frequence: 'jour' })) };
+  if (r.travail) { p.categories = [{ nom: 'Travail', couleur: '#8C6A4F' }]; if (r.taux) p.taux = r.taux; }
+  const conseils = CONSEILS[r.sport];
+  if (conseils) {
+    p.exercices = conseils.map(([nom, type]) => ({ nom, type }));
+    p.seances = [{ nom: `Renfo ${r.sport.toLowerCase()}`, exercices: conseils.map(([nom, , cible]) => ({ nom, series: 3, cible })) }];
+  }
+  return p;
+}
+
 // Les sauvegardes d'avant la V1.2 n'ont pas encore ces rubriques.
 export function migrer(o) {
   for (const k of ['taches', 'projets', 'exos', 'seances', 'journal', 'habitudes']) if (!Array.isArray(o[k])) o[k] = [];
@@ -98,6 +282,9 @@ export function migrer(o) {
   // V1.3.1 : usage du jour (ce qui a servi), modules masqués, bilans avec « suivi ailleurs ».
   for (const k of ['usage', 'modules']) if (!o[k] || typeof o[k] !== 'object' || Array.isArray(o[k])) o[k] = {};
   for (const [cle, b] of Object.entries(o.bilans)) if (typeof b === 'string') o.bilans[cle] = { date: b };
+  // V1.4 : profil sur le téléphone ; V1.5 : compétitions.
+  if (!o.profil || typeof o.profil !== 'object' || Array.isArray(o.profil)) o.profil = {};
+  if (!Array.isArray(o.competitions)) o.competitions = [];
   return o;
 }
 
