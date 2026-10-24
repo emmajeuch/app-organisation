@@ -75,6 +75,7 @@ export async function tourner(env, maintenant = Date.now(), faireFetch = fetch) 
       if (s - t <= 900) {
         const statut = await envoyer(entree.abonnement, JSON.stringify({ t }), cles, faireFetch);
         envoyes++;
+        console.log('envoi', statut); // seul le code de réponse du service, pour savoir si Apple accepte
         if (statut === 404 || statut === 410) { await env.RAPPELS.delete(name); continue; }
       }
       await env.RAPPELS.put(name, JSON.stringify({ abonnement: entree.abonnement, rappels: restants }), { expirationTtl: GARDE });
