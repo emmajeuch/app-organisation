@@ -89,8 +89,8 @@ const tagsDe = s => [...new Set(String(s).split(',').map(t => t.trim()).filter(B
 const exo = id => data.exos.find(e => e.id === id);
 
 // Modules masquables (Profil › Réglages › Modules) : masqués, ils gardent leurs données.
-const MODULES = [['taches', 'Tâches'], ['projets', 'Projets et divertissements'], ['objectifs', 'Objectifs'], ['listes', 'Listes'],
-  ['notes', 'Notes libres'], ['sport', 'Sport'], ['habitudes', 'Habitudes'], ['travail', 'Travail (job, extras)'], ['motivation', 'XP, niveaux, collection et succès'],
+const MODULES = [['taches', 'Tâches'], ['habitudes', 'Habitudes'], ['objectifs', 'Objectifs'], ['listes', 'Listes'],
+  ['notes', 'Notes libres'], ['sport', 'Sport'], ['travail', 'Travail (job, extras)'], ['motivation', 'XP, niveaux, collection et succès'],
   ['stats', 'Statistiques (semaine, mois, année)'], ['compagnon', 'Compagnon']];
 const actif = m => m in data.modules ? data.modules[m] : m !== 'travail';
 // La catégorie Travail (distincte de « Travail perso », les révisions) n'existe que si le module est actif.
@@ -128,7 +128,6 @@ function relecture(jour) {
     maj();
   });
 }
-const STATUTS = { idee: 'Idée', 'en-cours': 'En cours', pause: 'En pause', termine: 'Terminé' };
 const radios = (nom, valeurs, sel) => `<div class="cats">${Object.entries(valeurs).map(([v, n]) => `<label><input type="radio" name="${nom}" value="${v}" ${String(sel) === v ? 'checked' : ''}><span class="sans">${esc(n)}</span></label>`).join('')}</div>`;
 
 function cocherTache(t) {
@@ -141,9 +140,8 @@ function pillEcheance(t) {
   return `<span class="pill${j < 0 ? ' retard' : ''}">${txt}</span>`;
 }
 const tacheHtml = t => {
-  const p = data.projets.find(x => x.id === t.projet);
   const ns = (t.sous || []).length, nf = (t.sous || []).filter(s => s.fait).length;
-  const sous = [t.fac && 'Fac', t.travail && 'Travail', p && p.nom, ns && `${nf}/${ns} étapes`, t.recurrence != null && `Chaque ${JOURS[t.recurrence]}`].filter(Boolean).join(' · ');
+  const sous = [t.fac && 'Fac', t.travail && 'Travail', ns && `${nf}/${ns} étapes`, t.recurrence != null && `Chaque ${JOURS[t.recurrence]}`].filter(Boolean).join(' · ');
   return `<li><input type="checkbox" class="chk" data-act="tache" data-id="${t.id}" ${t.fait ? 'checked' : ''} aria-label="Fait">
     <div class="txt" data-act="editer-tache" data-id="${t.id}" role="button" tabindex="0"><b>${t.priorite === 1 ? '<span class="prio" title="Priorité haute"></span>' : ''}${esc(t.titre)}</b>${sous ? `<small>${esc(sous)}</small>` : ''}</div>
     ${t.echeance && !t.fait ? pillEcheance(t) : ''}</li>`;
@@ -564,7 +562,6 @@ function resultats(q) {
   data.notes.filter(n => m(n.titre) || m(n.texte)).forEach(n => r.push(`<li data-act="note" data-id="${n.id}"><div class="txt"><b>${esc(n.titre || 'Sans titre')}</b><small>Note</small></div></li>`));
   data.listes.forEach(l => l.items.filter(i => m(i.txt)).forEach(i => r.push(`<li data-act="ouvrir-liste" data-id="${l.id}"><div class="txt"><b>${esc(i.txt)}</b><small>Liste ${esc(l.nom)}</small></div></li>`)));
   data.taches.filter(t => m(t.titre) || (t.sous || []).some(s => m(s.txt))).forEach(t => r.push(`<li data-act="editer-tache" data-id="${t.id}"><div class="txt"><b>${esc(t.titre)}</b><small>Tâche${t.fait ? ' faite' : ''}</small></div></li>`));
-  data.projets.filter(p => m(p.nom) || m(p.etape) || m(p.notes)).forEach(p => r.push(`<li data-act="projet" data-id="${p.id}"><div class="txt"><b>${esc(p.nom)}</b><small>${p.type === 'projet' ? 'Projet' : 'Divertissement'} · ${STATUTS[p.statut]}</small></div></li>`));
   data.objectifs.filter(o => m(o.txt)).forEach(o => r.push(`<li><div class="txt"><b>${esc(o.txt)}</b><small>Objectif ${nomHorizon[o.horizon]}</small></div></li>`));
   data.semaines[cleSem(new Date())]?.slots.filter(x => m(x.titre) || m(x.salle) || m(x.affaires) || m(x.notes))
     .forEach(x => r.push(`<li data-act="slot" data-id="${x.id}"><div class="txt"><b>${esc(x.titre)}</b><small>Créneau · ${JOURS[x.j]} ${L.hhmm(x.s)}</small></div></li>`));
@@ -572,7 +569,7 @@ function resultats(q) {
 }
 
 function vueNotes() {
-  $('#notes').innerHTML = `<header class="top"><div><h1>Notes</h1><p>Objectifs, listes et idées</p></div></header>
+  $('#notes').innerHTML = `<header class="top"><div><h1>Notes</h1><p>Tâches, habitudes, objectifs et listes</p></div></header>
     <label class="search">${I.loupe}<input type="search" id="recherche" value="${esc(ui.q)}" placeholder="Notes, listes, objectifs, créneaux…" aria-label="Rechercher" autocomplete="off"></label>
     <div id="notes-corps" class="view"></div>`;
   corpsNotes();
@@ -584,7 +581,7 @@ function corpsNotes() {
   const tags = [...new Set([...data.notes, ...data.listes].flatMap(x => x.tags || []))].sort();
   if (ui.tag && !tags.includes(ui.tag)) ui.tag = null;
   const garde = x => !ui.tag || (x.tags || []).includes(ui.tag);
-  const os = objectifs('semaine', pS), faits = os.filter(o => o.fait).length;
+  const os = objectifs('semaine', pS), faits = os.filter(o => o.fait).length, lundiH = L.lundiDe(L.momentLogique(now).date);
   let h = tags.length ? `<div class="tags">${['', ...tags].map(t => `<button data-act="tag" data-tag="${esc(t)}" aria-pressed="${(ui.tag || '') === t}">${t ? esc(t) : 'Tout'}</button>`).join('')}</div>` : '';
 
   const ouvertes = data.taches.filter(t => !t.fait).sort((a, b) => (a.echeance || '9999').localeCompare(b.echeance || '9999') || (a.priorite || 2) - (b.priorite || 2));
@@ -593,18 +590,8 @@ function corpsNotes() {
     <form class="ajout" data-form="tache"><input name="txt" placeholder="Nouvelle tâche" aria-label="Nouvelle tâche" autocomplete="off"><input type="date" name="date" aria-label="Échéance"><button aria-label="Ajouter">${I.plus}</button></form>
     ${faites.length ? `<details class="liste" data-id="faites" ${ui.ouvertes.has('faites') ? 'open' : ''}><summary>Faites récemment<span class="pill">${faites.length}</span></summary><ul class="list">${faites.map(tacheHtml).join('')}</ul></details>` : ''}</div>`;
 
-  const carte = p => {
-    const nt = data.taches.filter(t => t.projet === p.id && !t.fait).length;
-    const sous = [p.etape && `Prochaine étape : ${p.etape}`, nt && `${nt} tâche${nt > 1 ? 's' : ''}`].filter(Boolean).join(' · ');
-    return `<li data-act="projet" data-id="${p.id}" role="button" tabindex="0"><div class="txt"><b>${esc(p.nom)}</b><small>${esc(sous || 'Pas encore de prochaine étape')}</small></div><span class="pill statut-${p.statut}">${STATUTS[p.statut]}</span></li>`;
-  };
-  for (const [type, titre] of actif('projets') ? [['projet', 'Projets'], ['divertissement', 'Divertissements']] : []) {
-    const ps = data.projets.filter(p => p.type === type && p.statut !== 'termine');
-    h += `<div class="sec"><h2>${titre} <button class="btn gris petit" data-act="nouveau-projet" data-type="${type}">Nouveau</button></h2>${ps.length ? `<ul class="list">${ps.map(carte).join('')}</ul>` : `<p class="vide">Aucun ${type} en cours.</p>`}</div>`;
-  }
-  const termines = data.projets.filter(p => p.statut === 'termine');
-  if (termines.length && actif('projets')) h += `<details class="liste" data-id="termines" ${ui.ouvertes.has('termines') ? 'open' : ''}><summary>Terminés<span class="pill">${termines.length}</span></summary><ul class="list">${termines.map(carte).join('')}</ul></details>`;
-
+  if (actif('habitudes')) h += `<div class="sec"><h2>Habitudes</h2>${data.habitudes.length ? `<div class="regs">${data.habitudes.map(hb => `<div class="card"><button class="kv" data-act="editer-habitude" data-id="${hb.id}"><b>${esc(hb.nom)}</b><small class="muted">${hb.freq === 'jour' ? 'chaque jour' : `${L.faitsSemaine(hb, lundiH)}/${hb.freq} cette sem.`}</small></button>${regulariteHtml(hb, lundiH)}</div>`).join('')}</div>` : ''}
+    <form class="ajout" data-form="habitude"><input name="txt" placeholder="Nouvelle habitude" aria-label="Nouvelle habitude" autocomplete="off"><select name="freq" aria-label="Fréquence">${Object.entries(FREQS).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select><button aria-label="Ajouter">${I.plus}</button></form></div>`;
   if (actif('objectifs')) h += `<div class="sec"><h2>Objectifs de la semaine</h2>${os.length ? `<div class="card"><div class="goal-head"><b>${faits} sur ${os.length} atteints</b><span class="num">${Math.round(faits / os.length * 100)} %</span></div><div class="bar"><i style="width:${faits / os.length * 100}%"></i></div></div>` : ''}${objectifsHtml('semaine', pS, true)}</div>`;
   if (actif('objectifs')) h += `<div class="sec"><h2>Objectifs du mois <span>${now.toLocaleDateString('fr-FR', { month: 'long' })}</span></h2>${objectifsHtml('mois', pM, true)}</div>`;
   if (actif('objectifs')) h += `<div class="sec"><h2>Objectifs de l’année <span>${pA.replace('-', '–')}</span></h2>${objectifsHtml('annee', pA, true)}</div>`;
@@ -650,7 +637,6 @@ function editerTache(t, defaut = {}) {
       <label class="champ">Répéter<select name="recurrence"><option value="">Non</option>${JOURS.map((n, j) => `<option value="${j}" ${v.recurrence === j ? 'selected' : ''}>Chaque ${n}</option>`).join('')}</select></label>
     </div>
     <div class="champ">Priorité${radios('priorite', { 1: 'Haute', 2: 'Normale', 3: 'Basse' }, v.priorite || 2)}</div>
-    <label class="champ">Projet ou divertissement<select name="projet"><option value="">Aucun</option>${data.projets.filter(p => p.statut !== 'termine').map(p => `<option value="${p.id}" ${v.projet === p.id ? 'selected' : ''}>${esc(p.nom)}</option>`).join('')}</select></label>
     ${data.profil.etudes === false && !v.fac ? '' : `<label class="coche"><input type="checkbox" class="chk" name="fac" ${v.fac ? 'checked' : ''}>Rendu ou partiel de fac (compte à rebours)</label>`}
     ${actif('travail') ? `<label class="coche"><input type="checkbox" class="chk" name="travail" ${v.travail ? 'checked' : ''}>Tâche du travail</label>` : ''}
     <div class="champ">Étapes<div class="etapes">${(v.sous || []).map(etapeHtml).join('')}</div>
@@ -661,7 +647,7 @@ function editerTache(t, defaut = {}) {
     if (choix === 'suppr') { data.taches = data.taches.filter(x => x !== t); maj(); dire('Tâche supprimée'); return; }
     const faits = new Set(f.getAll('sf'));
     const champs = { titre: f.get('titre').trim(), echeance: f.get('echeance') || null, priorite: +f.get('priorite') || 2, fac: !!f.get('fac'), travail: !!f.get('travail'),
-      recurrence: f.get('recurrence') === '' ? null : +f.get('recurrence'), projet: f.get('projet') || null,
+      recurrence: f.get('recurrence') === '' ? null : +f.get('recurrence'), projet: v.projet || null,
       sous: f.getAll('st').map((txt, i) => ({ txt: txt.trim(), fait: faits.has(String(i)) })).filter(s => s.txt) };
     if (!champs.titre) { dire('Donne un titre à la tâche.'); return false; }
     if (champs.recurrence !== null && !champs.echeance) {
@@ -684,39 +670,6 @@ function editerTache(t, defaut = {}) {
   };
   dlg.querySelector('[data-ajout-etape]').addEventListener('click', ajouter);
   champ.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ajouter(); } });
-}
-
-function editerProjet(p, type = 'projet') {
-  const neuf = !p;
-  const v = p || { nom: '', type, statut: 'en-cours', etape: '', notes: '' };
-  const taches = p ? data.taches.filter(t => t.projet === p.id && !t.fait) : [];
-  ouvrirDlg(`<form><h2>${neuf ? (type === 'projet' ? 'Nouveau projet' : 'Nouveau divertissement') : esc(v.nom)}</h2>
-    <label class="champ">Nom<input name="nom" value="${esc(v.nom)}" autocomplete="off"></label>
-    <div class="champ">Type${radios('type', { projet: 'Projet', divertissement: 'Divertissement' }, v.type)}</div>
-    <div class="champ">Statut${radios('statut', STATUTS, v.statut)}</div>
-    <label class="champ">Prochaine étape<input name="etape" value="${esc(v.etape)}" autocomplete="off"></label>
-    <label class="champ">Notes<textarea name="notes">${esc(v.notes)}</textarea></label>
-    ${taches.length ? `<div class="champ">Tâches<div class="liens">${taches.map(t => `<button type="button" data-act="editer-tache" data-id="${t.id}">${esc(t.titre)}</button>`).join('')}</div></div>` : ''}
-    ${neuf ? '' : `<div class="rangee"><button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button><button type="button" class="btn gris" data-choix="monter">Monter dans la liste</button>${v.statut === 'termine' ? '' : '<button type="button" class="btn gris" data-choix="termine">Terminé !</button>'}</div>`}
-    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div>
-  </form>`, (choix, f) => {
-    if (choix === 'suppr') {
-      data.projets = data.projets.filter(x => x !== p);
-      data.taches.forEach(t => { if (t.projet === p.id) t.projet = null; });
-      maj(); dire('Supprimé'); return;
-    }
-    const champs = { nom: f.get('nom').trim(), type: f.get('type'), statut: choix === 'termine' ? 'termine' : f.get('statut'), etape: f.get('etape').trim(), notes: f.get('notes').trim() };
-    if (!champs.nom) { dire('Donne-lui un nom.'); return false; }
-    if (neuf) data.projets.push({ id: L.uid(), ...champs }); else Object.assign(p, champs);
-    noterUsage('projets');
-    if (choix === 'monter') {
-      const i = data.projets.indexOf(p);
-      const j = data.projets.slice(0, i).map(x => x.type === p.type && x.statut !== 'termine').lastIndexOf(true);
-      if (j >= 0) [data.projets[j], data.projets[i]] = [data.projets[i], data.projets[j]];
-    }
-    if (choix === 'termine') { dire(`${champs.nom} : terminé, bravo !`); feter(); }
-    maj();
-  });
 }
 
 function editerListe(l) {
@@ -782,8 +735,6 @@ function vueSport() {
       : p && !p.club ? '<p class="muted">Pas de séance prévue sur ce créneau : touche-le dans Semaine pour en choisir une.</p>' : ''}
     <button class="btn plein" data-act="seance" data-seance="${st ? st.id : ''}" data-slot="${p && p.j === j ? p.id : ''}">${st ? 'Commencer cette séance' : 'Commencer une séance libre'}</button></div></div>`;
 
-  if (actif('habitudes')) html += `<div class="sec"><h2>Habitudes</h2>${data.habitudes.length ? `<div class="regs">${data.habitudes.map(hb => `<div class="card"><button class="kv" data-act="editer-habitude" data-id="${hb.id}"><b>${esc(hb.nom)}</b><small class="muted">${hb.freq === 'jour' ? 'chaque jour' : `${L.faitsSemaine(hb, lundi)}/${hb.freq} cette sem.`}</small></button>${regulariteHtml(hb, lundi)}</div>`).join('')}</div>` : ''}
-    <form class="ajout" data-form="habitude"><input name="txt" placeholder="Nouvelle habitude" aria-label="Nouvelle habitude" autocomplete="off"><select name="freq" aria-label="Fréquence">${Object.entries(FREQS).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select><button aria-label="Ajouter">${I.plus}</button></form></div>`;
 
   const avecProg = data.exos.filter(e => L.progression(data.journal, e.id, e.type).length);
   if (avecProg.length && actif('sport')) {
@@ -1000,18 +951,18 @@ function appliquerTheme() {
   if (t && t[3]) document.documentElement.style.setProperty('--teinte', t[3]); else document.documentElement.style.removeProperty('--teinte');
 }
 const SOURCES = { creneaux: ['Créneaux', '#35C6DF'], taches: ['Tâches', '#EC4A46'], sport: ['Sport', '#B5DF2B'],
-  habitudes: ['Habitudes', '#FF8AC1'], objectifs: ['Objectifs et projets', '#6766F0'], bonus: ['Journées et bilans', '#FFD447'] };
+  habitudes: ['Habitudes', '#FF8AC1'], objectifs: ['Objectifs', '#6766F0'], bonus: ['Journées et bilans', '#FFD447'] };
 const SUCCES = [
   ['Première journée validée', 'joursValides', 1], ['7 jours d’affilée', 'record', 7], ['30 jours d’affilée', 'record', 30],
   ['Première semaine complète', 'semainesCompletes', 1], ['10 séances de sport', 'seances', 10], ['50 séances de sport', 'seances', 50],
-  ['10 tâches faites', 'taches', 10], ['100 tâches faites', 'taches', 100], ['Premier projet terminé', 'projets', 1],
+  ['10 tâches faites', 'taches', 10], ['100 tâches faites', 'taches', 100],
   ['5 objectifs de semaine atteints', 'objSemaine', 5], ['Une habitude tenue 21 jours', 'habitudeMax', 21], ['4 bilans de la semaine', 'bilans', 4],
   ['10 entraînements du club', 'entrainements', 10], ['Première compétition', 'competitions', 1], ['Un record battu', 'records', 1],
 ];
 const RARETE = { commune: 'Commune', rare: 'Rare', legendaire: 'Légendaire' };
 const slug = t => String(t || '').toLowerCase().normalize('NFD').replace(/[^a-z]+/g, '-');
 const creaHtml = (c, sport) => `<div class="crea forme-${c.forme} ${c.rarete}${sport ? ` acc acc-${slug(sport)}` : ''}" style="--c:${c.couleur}"${sport ? ` title="Version ${esc(sport)}"` : ''}><i></i></div>`;
-const FLAMME = '<svg viewBox="0 0 24 24" fill="#EC4A46" aria-hidden="true"><path d="M12 22c-4 0-7-2.7-7-6.6 0-3.3 2.1-5.3 3.4-8.6.9 1.7 2 2.6 3.2 2.9-.3-2.7.9-5.2 3-7.2.3 3.7 4.4 6.4 4.4 11.1 0 4.6-3 8.4-7 8.4z"/></svg>';
+const FLAMME = '<svg class="flamme" viewBox="0 0 24 24" fill="#EC4A46" aria-hidden="true"><path d="M12 22c-4 0-7-2.7-7-6.6 0-3.3 2.1-5.3 3.4-8.6.9 1.7 2 2.6 3.2 2.9-.3-2.7.9-5.2 3-7.2.3 3.7 4.4 6.4 4.4 11.1 0 4.6-3 8.4-7 8.4z"/></svg>';
 
 // Le bilan est dû le dimanche dès 16 h, et encore le lundi et le mardi pour la semaine passée.
 function bilanAFaire() {
@@ -1036,7 +987,7 @@ function vueProfil() {
   const sources = Object.entries(st.sources).filter(([, v]) => v);
   const obtenus = SUCCES.filter(([, k, c]) => st[k] >= c).length;
   $('#profil').innerHTML = `<header class="top"><div><h1>${esc(data.profil.prenom || 'Profil')}</h1><p>Ta progression</p></div>
-      <button class="chip reglages-bouton" data-act="reglages" aria-label="Réglages">${ENGRENAGE}Réglages</button></header>
+      <button class="chip reglages-bouton" data-act="reglages" aria-label="Réglages">${ENGRENAGE}</button></header>
     <div class="card niveau" data-module="motivation">
       <div class="kv"><span class="num big">Niveau ${nv.n}</span><span class="num">${st.total - nv.de} / ${nv.a - nv.de} XP</span></div>
       <div class="xp"><div style="width:${(st.total - nv.de) / (nv.a - nv.de) * 100}%">${sources.map(([k, v]) => `<i style="--c:${SOURCES[k][1]};flex:${v}"></i>`).join('')}</div></div>
@@ -1048,7 +999,7 @@ function vueProfil() {
     <div class="sec" data-module="motivation"><h2>Collection <span>${possedes.size} sur ${L.CREATURES.length}</span></h2>
       ${droits.length ? `<button class="btn plein" data-act="tirage">Ouvrir ${droits.length > 1 ? `tes ${droits.length} tirages` : 'ton tirage'}</button>` : ''}
       <div class="collec">${L.CREATURES.map(c => possedes.has(c.id) ? `<button class="fig" data-act="creature" data-id="${c.id}">${creaHtml(c, data.collection.find(x => x.id === c.id).sport)}<span>${esc(c.nom)}</span></button>` : '<div class="fig"><div class="crea lock">?</div><span>À gagner</span></div>').join('')}</div>
-      <p class="aide">Un tirage à chaque niveau, à chaque tâche importante ou de fac faite, à chaque projet terminé, et pour chaque semaine avec au moins 5 journées validées.</p></div>
+      <p class="aide">Un tirage à chaque niveau, à chaque tâche importante ou de fac faite, et pour chaque semaine avec au moins 5 journées validées.</p></div>
     <details class="liste" data-id="succes" data-module="motivation" ${ui.ouvertes.has('succes') ? 'open' : ''}><summary>Succès<span class="pill">${obtenus} sur ${SUCCES.length}</span></summary><ul class="list">${SUCCES.map(([nom, k, cible]) => {
       const ok = st[k] >= cible;
       return `<li><span class="medal${ok ? '' : ' en-cours'}">${ok ? I.check : `${st[k]}/${cible}`}</span><div class="txt"><b>${nom}</b>${ok ? '<small>Obtenu</small>' : ''}</div></li>`;
@@ -1084,11 +1035,11 @@ function vueReglages() {
       `<div class="cats">${THEMES.map(([id, nom, n, c]) => n > nv.n ? `<span class="theme verrou">${nom} · niv. ${n}</span>`
         : `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${data.theme === id}" style="--c:${c || 'var(--ink)'}">${nom}</button>`).join('')}</div>
        <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label>`) : ''}
-    ${groupe('edt', 'Emploi du temps', `De ${L.hhmm(data.plage[0])} à ${L.hhmm(data.plage[1])} · ${data.types.length} semaine${data.types.length > 1 ? 's' : ''} type${data.types.length > 1 ? 's' : ''} · ${data.cats.length} catégories`,
-      `<div class="champ">Plage horaire<div class="reglage"><span>De</span><select data-act="plage" data-i="0" aria-label="Début">${opt([5, 6, 7, 8, 9], data.plage[0])}</select><span>à</span><select data-act="plage" data-i="1" aria-label="Fin">${opt([22, 23, 24, 25], data.plage[1])}</select></div></div>
-       <div class="champ">Semaines types<ul class="list">${data.types.map(t => `<li class="reglage"><input type="text" value="${esc(t.nom)}" data-act="type-nom" data-id="${t.id}" aria-label="Nom de la semaine type"><button class="btn ${t.id === defaut ? 'plein' : 'gris'} petit" data-act="type-defaut" data-id="${t.id}" aria-pressed="${t.id === defaut}">Par défaut</button><button class="x" data-act="suppr-type" data-id="${t.id}" aria-label="Supprimer ${esc(t.nom)}">${I.x}</button></li>`).join('')}</ul>
+    ${groupe('edt', 'Grille de la semaine', 'Heures affichées, couleurs des catégories, semaines types',
+      `<div class="champ">Heures affichées dans la grille<div class="reglage"><span>De</span><select data-act="plage" data-i="0" aria-label="Début">${opt([5, 6, 7, 8, 9], data.plage[0])}</select><span>à</span><select data-act="plage" data-i="1" aria-label="Fin">${opt([22, 23, 24, 25], data.plage[1])}</select></div></div>
+       <div class="champ">Semaines types<p class="aide">Des modèles de semaine : par exemple une semaine de cours et une semaine de vacances.</p><ul class="list">${data.types.map(t => `<li class="reglage"><input type="text" value="${esc(t.nom)}" data-act="type-nom" data-id="${t.id}" aria-label="Nom de la semaine type"><button class="btn ${t.id === defaut ? 'plein' : 'gris'} petit" data-act="type-defaut" data-id="${t.id}" aria-pressed="${t.id === defaut}">Par défaut</button><button class="x" data-act="suppr-type" data-id="${t.id}" aria-label="Supprimer ${esc(t.nom)}">${I.x}</button></li>`).join('')}</ul>
          <p class="aide">La semaine type par défaut remplit chaque nouvelle semaine. Pour en créer une : Semaine › Modifier.</p></div>
-       <div class="champ">Catégories<ul class="list">${data.cats.map(c => `<li class="reglage"><input type="color" value="${L.couleurSure(c.couleur)}" data-act="cat-couleur" data-id="${c.id}" aria-label="Couleur de ${esc(c.nom)}"><input type="text" value="${esc(c.nom)}" data-act="cat-nom" data-id="${c.id}" aria-label="Nom de la catégorie"><button class="x" data-act="suppr-cat" data-id="${c.id}" aria-label="Supprimer ${esc(c.nom)}">${I.x}</button></li>`).join('')}</ul>
+       <div class="champ">Catégories<p class="aide">La couleur et le nom de chaque sorte de créneau (cours, sport, repas…).</p><ul class="list">${data.cats.map(c => `<li class="reglage"><input type="color" value="${L.couleurSure(c.couleur)}" data-act="cat-couleur" data-id="${c.id}" aria-label="Couleur de ${esc(c.nom)}"><input type="text" value="${esc(c.nom)}" data-act="cat-nom" data-id="${c.id}" aria-label="Nom de la catégorie"><button class="x" data-act="suppr-cat" data-id="${c.id}" aria-label="Supprimer ${esc(c.nom)}">${I.x}</button></li>`).join('')}</ul>
          <form class="ajout" data-form="cat"><input name="nom" placeholder="Nouvelle catégorie" aria-label="Nouvelle catégorie" autocomplete="off"><button aria-label="Ajouter">${I.plus}</button></form></div>`)}
     ${groupe('modules', 'Modules', `${MODULES.filter(([id]) => actif(id)).length} sur ${MODULES.length} affichés`,
       `<ul class="list">${MODULES.map(([id, nom]) => `<li><label class="coche" style="flex:1"><input type="checkbox" class="chk" data-act="module" data-id="${id}" ${actif(id) ? 'checked' : ''}>${nom}</label></li>`).join('')}</ul>
@@ -1184,7 +1135,7 @@ function voirCreature(c) {
 // Ce que le bilan relève, module par module (V1.3.1).
 const SERVI = [['creneau-ajout', 'Créneaux ajoutés'], ['creneau-deplace', 'Créneaux déplacés'], ['creneau-corrige', 'Créneaux corrigés'],
   ['creneau-decoche', 'Créneaux décochés'], ['creneau-valide', 'Créneaux validés dans la journée'], ['tache-planifiee', 'Tâches planifiées'],
-  ['taches', 'Tâches'], ['projets', 'Projets et divertissements'], ['objectifs', 'Objectifs'], ['listes', 'Listes'], ['notes', 'Notes libres'],
+  ['taches', 'Tâches'], ['objectifs', 'Objectifs'], ['listes', 'Listes'], ['notes', 'Notes libres'],
   ['seances', 'Séances de sport'], ['sport', 'Exercices ajoutés'], ['habitudes', 'Habitudes']];
 function faireBilan(cle) {
   cle = cle || bilanAFaire() || cleSem(L.momentLogique(new Date()).date);
@@ -1469,7 +1420,7 @@ function plus() {
 }
 
 // Un onglet dont tous les modules sont masqués disparaît de la barre.
-const ONGLETS_MODULES = { notes: ['taches', 'projets', 'objectifs', 'listes', 'notes'], sport: ['sport', 'habitudes'] };
+const ONGLETS_MODULES = { notes: ['taches', 'habitudes', 'objectifs', 'listes', 'notes'], sport: ['sport'] };
 const ongletVisible = v => !ONGLETS_MODULES[v] || ONGLETS_MODULES[v].some(actif);
 function majOnglets() {
   document.querySelectorAll('.tab').forEach(t => { t.hidden = !ongletVisible(t.dataset.v); });
@@ -1519,8 +1470,6 @@ document.addEventListener('click', e => {
     case 'bilan': return faireBilan(el.dataset.cle);
     case 'theme': data.theme = id; return maj();
     case 'editer-tache': return editerTache(data.taches.find(t => t.id === id));
-    case 'projet': return editerProjet(data.projets.find(p => p.id === id));
-    case 'nouveau-projet': return editerProjet(null, el.dataset.type);
     case 'habitude': {
       const hb = data.habitudes.find(x => x.id === id), jour = el.dataset.jour;
       hb.faits = hb.faits.includes(jour) ? hb.faits.filter(d => d !== jour) : [...hb.faits, jour].sort();

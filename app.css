@@ -216,8 +216,6 @@ dialog form { display: flex; flex-direction: column; gap: 14px; }
 /* V1.2 : tâches, projets, habitudes, sport */
 .pill.retard { background: color-mix(in srgb, var(--danger) 16%, var(--surface)); color: var(--danger); }
 .prio { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--danger); margin-right: 6px; vertical-align: middle; }
-.pill.statut-en-cours { background: var(--ink); color: var(--on-ink); }
-.pill.statut-pause, .pill.statut-termine { color: var(--ink-2); }
 .ajout input[type="date"] { flex: 0 0 auto; width: 8.6em; font-size: 15px; }
 dialog .ajout input, dialog .ajout select { background: var(--surface-2); }
 .habits { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -336,7 +334,7 @@ dialog .list { background: var(--surface-2); }
 .version { text-align: center; margin-top: 8px; }
 .toast { position: fixed; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 20; background: var(--ink); color: var(--on-ink); padding: 10px 16px; border-radius: 999px; font-weight: 650; font-size: 14px; box-shadow: var(--shadow); max-width: calc(100% - 32px); text-align: center; animation: monte .25s ease-out; }
 @keyframes monte { from { transform: translate(-50%, 10px); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
 /* V1.4 : assistant, questionnaire, avis */
 .etape-q { border: 0; margin: 0; padding: 14px; border-radius: var(--r); background: var(--surface-2); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -382,8 +380,8 @@ textarea.copie { width: 100%; min-height: 160px; border: 0; border-radius: 12px;
 .jour-edt .blk .valid[aria-pressed="true"] { border-style: solid; background: color-mix(in srgb, var(--t) 22%, transparent); color: var(--t); opacity: 1; }
 
 /* V1.9 : Réglages à part, rangés en groupes repliables */
-.reglages-bouton { gap: 6px; font-family: var(--f-body); font-size: 14px; font-weight: 650; }
-.reglages-bouton svg { width: 18px; height: 18px; }
+.reglages-bouton { width: 40px; height: 40px; padding: 0; justify-content: center; }
+.reglages-bouton svg { width: 22px; height: 22px; }
 .retour { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2); font-weight: 600; font-size: 15px; margin-bottom: 4px; }
 .retour svg { width: 18px; height: 18px; }
 details.groupe summary { align-items: center; }
@@ -392,3 +390,15 @@ details.groupe summary .txt small { font-weight: 500; }
 .groupe-corps .list { background: var(--surface-2); }
 .groupe-corps .reglage input[type="text"], .groupe-corps .reglage select { background: var(--surface); }
 .groupe-corps .ajout input { background: var(--surface-2); }
+
+/* V1.9.2 : petites animations (coupées si l'iPhone demande moins d'animations, voir plus haut) */
+.flamme { transform-origin: 50% 90%; animation: flamme 1.6s ease-in-out infinite; }
+@keyframes flamme { 0%, 100% { transform: scale(1) rotate(0); } 30% { transform: scale(1.06, .95) rotate(-3deg); } 60% { transform: scale(.96, 1.07) rotate(2deg); } }
+.compagnon .crea { animation: respire 3.2s ease-in-out infinite; transform-origin: 50% 100%; }
+@keyframes respire { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(-4%) scale(1.03, .97); } }
+.crea i::before, .crea i::after { animation: cligne 5s infinite; }
+@keyframes cligne { 0%, 95%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+button, .chip, .btn, [role="button"] { transition: transform .12s ease, background-color .2s; }
+button:active, .chip:active, [role="button"]:active { transform: scale(.95); }
+.jour-edt .blk .valid:active { transform: translateY(-50%) scale(.9); }
+.reglages-bouton:active svg { transform: rotate(60deg); transition: transform .3s; }
