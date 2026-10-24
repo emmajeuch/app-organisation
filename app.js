@@ -218,10 +218,9 @@ dlg.addEventListener('click', e => {
 dlg.addEventListener('cancel', e => { if (dlg.dataset.collant) e.preventDefault(); });
 
 const bienvenue = () => `<div class="card bientot"><b>Bienvenue</b>
-  <p>Réponds à quelques questions et l’app se construit avec toi. Tu peux aussi importer un profil préparé à l’avance, ou partir d’un exemple.</p>
+  <p>Réponds à quelques questions et l’app se construit avec toi. Tu peux aussi partir d’une semaine d’exemple, ou de zéro.</p>
   <button class="btn plein" data-act="assistant">Construire mon app</button>
-  <div class="rangee"><button class="btn gris" data-act="importer">Importer un profil</button><button class="btn gris" data-act="depart-exemple">Semaine d’exemple</button></div>
-  <button class="btn gris" data-act="depart-vide">Partir de zéro</button>
+  <div class="rangee"><button class="btn gris" data-act="depart-exemple">Semaine d’exemple</button><button class="btn gris" data-act="depart-vide">Partir de zéro</button></div>
   ${L.sauvegardePossible() && !sauvAuto() ? '<button class="btn gris" data-act="connexion">J’ai déjà un compte</button>' : ''}</div>`;
 
 // ---------- Aujourd'hui ----------
@@ -294,7 +293,9 @@ function vueAujourdhui() {
     : '<p class="vide">Rien de prévu aujourd’hui. Ajoute un créneau avec le bouton +.</p>';
   // Dès l'heure du bilan (avant le dîner, sinon 20 h), la relecture : chaque créneau se coche un par un.
   const iso = L.isoJour(date), servi = L.utiliseEnJournee(data, iso);
-  if (L.journeeValidee(slots)) {
+  if (L.rienACocher(slots)) {
+    html += '<p class="vide">Rien à cocher aujourd’hui : sommeil, cours et repas se valident tout seuls, et la journée aussi.</p>';
+  } else if (L.journeeValidee(slots)) {
     html += `<p class="vide">${servi ? `Journée validée, elle compte dans l’essai${actif('motivation') ? ` : +${L.XP.jour} XP de bonus` : ''}.` : 'Journée validée, mais elle ne compte pas dans l’essai : aucun créneau touché pendant la journée.'}</p>`;
   } else if (h >= hBilan && slots.some(x => !L.auto(x))) {
     html += `<button class="btn plein" data-act="relecture" data-jour="${iso}">Relire et valider la journée</button>`;
@@ -1255,11 +1256,14 @@ function proposerProfil(p, titre = 'Importer ce profil ?') {
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Ajouter</button></div></form>`, () => {
     garderAvant();
     L.appliquerProfil(data, p);
+    marquerDebut();
     noterUsage('profil');
     maj(); dire('Profil ajouté'); feter();
     if (premier) tutoApresDepart();
   });
 }
+// Le premier jour d'usage : avant le lendemain, sommeil, cours et repas ne comptent pas tout seuls dans les heures.
+function marquerDebut() { if (!data.debut) data.debut = L.isoJour(L.momentLogique(new Date()).date); }
 // Juste après avoir construit son app, le tutoriel (une seule fois), le temps de voir sa semaine.
 function tutoApresDepart() { if (!data.tutoVu && data.types.length) setTimeout(() => { if (!dlg.open) tutoriel(); }, 2000); }
 
@@ -1586,6 +1590,7 @@ document.addEventListener('click', e => {
     case 'depart-exemple': case 'depart-vide': {
       const t = { id: L.uid(), nom: act === 'depart-exemple' ? 'Semaine d’exemple' : 'Ma semaine', slots: act === 'depart-exemple' ? L.slotsExemple() : [], ...(act === 'depart-exemple' ? { exemple: true } : {}) };
       data.types.push(t); data.typeDefaut = t.id;
+      marquerDebut();
       maj();
       tutoApresDepart();
       return dire(act === 'depart-exemple' ? 'Semaine d’exemple prête : modifie-la dans Semaine' : 'C’est parti : remplis ta semaine');

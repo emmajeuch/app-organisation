@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.9.10';
+export const VERSION = '1.9.11';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -107,7 +107,7 @@ const NUM_OU_VIDE = v => v === '' ? '' : NUM(v);
 const SLOT = { id: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID, titre: TXT, salle: TXT, affaires: TXT, notes: TXT,
   fait: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT };
 const SCHEMA = {
-  version: UN_DE(1), plage: [ENTRE(0, 26)], typeDefaut: ID, dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
+  version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID, dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
   bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
   cats: [{ id: ID, nom: TXT, couleur: TXT }],
   types: [{ id: ID, nom: TXT, exemple: BOOL, slots: [SLOT] }],
@@ -373,14 +373,28 @@ export const faitsSemaine = (h, lundi) => {
 // Sommeil, cours (trajets compris) et repas se valident tout seuls (Emma, 24/10) : seuls les autres créneaux se cochent.
 export const AUTO = ['sommeil', 'cours', 'repas'];
 export const auto = x => AUTO.includes(x.cat);
-// ponytail: une journée faite seulement de créneaux automatiques ne se valide jamais ; à revoir si ça arrive.
 export const journeeValidee = slots => { const v = slots.filter(x => !auto(x)); return v.length > 0 && v.every(x => x.fait); };
+// Une journée faite seulement de sommeil, cours et repas n'a rien à cocher : elle se valide toute seule une fois passée (Emma, 24/10).
+export const rienACocher = slots => slots.length > 0 && slots.every(auto);
+// Le premier jour d'usage (posé quand on construit son app ; sinon le premier jour où l'app a servi).
+// Ce jour-là et avant, rien ne se fait tout seul : pas d'heures « réalisées » ni de journée validée d'office.
+export const debutDe = data => data.debut || Object.keys(data.usage || {}).sort()[0] || null;
+const apresDebut = (data, iso) => { const d = debutDe(data); return !!d && iso > d; };
+// Un créneau automatique compte comme fait une fois terminé, à partir du lendemain du premier jour d'usage.
+export function autoFait(data, iso, x, maintenant = new Date()) {
+  if (!auto(x) || !apresDebut(data, iso)) return false;
+  const { date, h } = momentLogique(maintenant), auj = isoJour(date);
+  return iso < auj || (iso === auj && x.e <= h);
+}
 // Le bilan du soir : 15 min avant le dîner (le premier repas qui commence à 17 h ou après), sinon 20 h.
 export const heureBilan = slots => { const d = slots.filter(x => x.cat === 'repas' && x.s >= 17).sort((a, b) => a.s - b.s)[0]; return d ? d.s - .25 : 20; };
-export function joursValides(data) {
-  const v = new Set();
+export function joursValides(data, maintenant = new Date()) {
+  const v = new Set(), auj = isoJour(momentLogique(maintenant).date);
   for (const [cle, s] of Object.entries(data.semaines)) {
-    for (let j = 0; j < 7; j++) if (journeeValidee(s.slots.filter(x => x.j === j))) v.add(isoJour(ajouterJours(deIso(cle), j)));
+    for (let j = 0; j < 7; j++) {
+      const iso = isoJour(ajouterJours(deIso(cle), j)), du = s.slots.filter(x => x.j === j);
+      if (journeeValidee(du) || (rienACocher(du) && iso < auj && apresDebut(data, iso))) v.add(iso);
+    }
   }
   return v;
 }
@@ -415,7 +429,7 @@ const important = t => t.priorite === 1 || t.fac;
 
 export function stats(data, auj) {
   const slots = Object.values(data.semaines).flatMap(s => s.slots);
-  const valides = joursValides(data);
+  const valides = joursValides(data, auj);
   const cles = Object.keys(data.semaines).sort();
   const se = cles.length ? serie(valides, auj, deIso(cles[0])) : { serie: 0, jokers: 0, record: 0 };
   const club = slots.filter(x => x.club && x.fait).length;
@@ -562,13 +576,13 @@ export function recordsBattus(data) {
 }
 
 // Heures prévues et réalisées, jour par jour, entre deux dates (incluses), sans dépasser aujourd'hui.
-export function heuresPeriode(data, de, a, auj = new Date()) {
+export function heuresPeriode(data, de, a, auj = new Date(), maintenant = new Date()) {
   const fin = [isoJour(a), isoJour(auj)].sort()[0], prevu = {}, fait = {};
   for (let d = new Date(de.getFullYear(), de.getMonth(), de.getDate()); isoJour(d) <= fin; d = ajouterJours(d, 1)) {
     const sem = data.semaines[isoJour(lundiDe(d))];
     for (const x of sem ? sem.slots.filter(y => y.j === jourSemaine(d)) : []) {
       prevu[x.cat] = (prevu[x.cat] || 0) + x.e - x.s;
-      if (x.fait || auto(x)) fait[x.cat] = (fait[x.cat] || 0) + x.e - x.s;
+      if (x.fait || autoFait(data, isoJour(d), x, maintenant)) fait[x.cat] = (fait[x.cat] || 0) + x.e - x.s;
     }
   }
   return { prevu, fait };

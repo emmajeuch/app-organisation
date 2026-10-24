@@ -6,8 +6,6 @@ téléphone** ; avec un compte, une copie chiffrée que personne d'autre que toi
 
 **L'app : https://emmajeuch.github.io/app-organisation/**
 
-**Préparer son app avant de l'installer : https://emmajeuch.github.io/app-organisation/questionnaire.html**
-— tu réponds à quelques questions, tu enregistres le fichier obtenu, puis dans l'app, à la première ouverture : Importer un profil.
 
 ## L'installer
 

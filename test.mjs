@@ -305,6 +305,32 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   await assert.rejects(L.dechiffrerCopie(`${iv}\n${chiffre}`, await L.clesDuCompte('emma', 'un autre mot de passe')));
 }
 
+// Sommeil, cours et repas : comptés comme faits seulement après le premier jour d'usage, et une fois terminés.
+// Une journée qui n'a que ça se valide toute seule une fois passée (Emma, 24/10).
+{
+  const d = L.vide(), lundi = '2026-10-26';
+  d.semaines[lundi] = { slots: [
+    { j: 0, s: 8, e: 12, cat: 'cours', titre: 'Cours' }, { j: 0, s: 12, e: 13, cat: 'repas', titre: 'Déjeuner' },
+    { j: 1, s: 8, e: 17, cat: 'cours', titre: 'Cours' }, { j: 1, s: 17, e: 18, cat: 'sport', titre: 'Renfo' },
+    { j: 2, s: 8, e: 12, cat: 'cours', titre: 'Cours' }, { j: 3, s: 8, e: 12, cat: 'cours', titre: 'Cours' }] };
+  const mer = new Date(2026, 9, 28, 10, 0), lun = new Date(2026, 9, 26), dim = new Date(2026, 10, 1);
+  // sans premier jour d'usage : rien ne compte tout seul (l'ami qui vient d'installer)
+  assert.equal(L.heuresPeriode(d, lun, dim, mer, mer).fait.cours, undefined);
+  assert.equal(L.joursValides(d, mer).size, 0);
+  // premier jour d'usage le lundi : le lundi lui-même ne compte pas, le mardi oui, le mercredi seulement ce qui est fini à 10 h
+  d.debut = '2026-10-26';
+  assert.equal(L.heuresPeriode(d, lun, dim, mer, mer).fait.cours, 9);
+  assert.equal(L.heuresPeriode(d, lun, dim, new Date(2026, 9, 28, 13), new Date(2026, 9, 28, 13)).fait.cours, 13);
+  // mardi a un créneau à cocher : pas validé tout seul ; jeudi (que des cours) pas encore passé
+  assert.deepEqual([...L.joursValides(d, mer)], []);
+  assert.deepEqual([...L.joursValides(d, new Date(2026, 9, 30, 9))], ['2026-10-28', '2026-10-29']);
+  assert.ok(L.rienACocher(d.semaines[lundi].slots.filter(x => x.j === 2)) && !L.rienACocher([]));
+  // sans « debut », le premier jour où l'app a servi en tient lieu ; « debut » survit à une sauvegarde
+  const e = L.vide(); e.usage['2026-10-27'] = { notes: 1 };
+  assert.equal(L.debutDe(e), '2026-10-27');
+  assert.equal(L.validerImport({ ...d }).debut, '2026-10-26');
+}
+
 // Mot de passe trop simple : peu de caractères différents, ou l'identifiant dedans.
 {
   assert.ok(L.mdpTropSimple('aaaaaaaaaa', 'lea') && L.mdpTropSimple('1212121212', 'lea') && L.mdpTropSimple('Camille2026!', 'camille'));
