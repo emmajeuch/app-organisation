@@ -1071,7 +1071,11 @@ function editerHabitude(hb, neuf = false) {
 const THEMES = [['classique', 'Automatique', '#15171C', '#FFFFFF'], ['nuit', 'Nuit', '#F1F3F7', '#0B0D11'],
   ['bonbon', 'Bonbon', '#C8006A', '#FFDCEE'], ['lagon', 'Lagon', '#00796D', '#CDF5EF'], ['soleil', 'Soleil', '#FF7A00', '#FFEDA8'],
   ['lavande', 'Lavande', '#6236E8', '#E6DEFF'], ['menthe', 'Menthe', '#0B7F3D', '#D3F7E0'],
-  ['neon', 'Néon', '#39FF6A', '#07070D'], ['electrique', 'Électrique', '#00E0FF', '#050A24'], ['volcan', 'Volcan', '#FF5A1F', '#130705']];
+  ['neon', 'Néon', '#39FF6A', '#07070D'], ['electrique', 'Électrique', '#00E0FF', '#050A24'], ['volcan', 'Volcan', '#FF5A1F', '#130705'],
+  ['minuit', 'Minuit', '#B388FF', '#0D0A1F'], ['galaxie', 'Galaxie', '#FF7AE6', '#0A0716'], ['ocean', 'Océan', '#2EE6C9', '#041419'],
+  ['foret', 'Forêt', '#A6E35F', '#06120B'], ['rubis', 'Rubis', '#FF4D8D', '#16060C'], ['ambre', 'Ambre', '#FFB020', '#110C04'],
+  ['arcade', 'Arcade', '#FFE14D', '#1B0B33'], ['contraste', 'Contraste fort', '#FFE600', '#000000'],
+  ['papier', 'Papier', '#C0321B', '#EFE5D3'], ['glace', 'Glace', '#1D4FE0', '#D6E7FF'], ['pasteque', 'Pastèque', '#16804A', '#FFDDE3']];
 // Les thèmes d'avant la 1.9.12 retombent sur le plus proche.
 const ANCIENS_THEMES = { ardoise: 'electrique', corail: 'volcan', or: 'soleil' };
 function appliquerTheme() {
@@ -1160,7 +1164,7 @@ function vueReglages() {
        <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>`)}
     ${groupe('apparence', 'Apparence et son', `Thème ${THEMES.find(t => t[0] === (ANCIENS_THEMES[data.theme] || data.theme))?.[1] || 'Automatique'}`,
       `<div class="cats">${THEMES.map(([id, nom, c, fond]) => `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${(ANCIENS_THEMES[data.theme] || data.theme) === id}" style="--c:${c};--fond:${fond}">${nom}</button>`).join('')}</div>
-       <p class="aide">Automatique suit l’iPhone (clair le jour, sombre si tu l’as réglé). Nuit, Néon, Électrique et Volcan sont sombres.</p>
+       <p class="aide">Automatique suit l’iPhone (clair le jour, sombre si tu l’as réglé). Thèmes clairs : Bonbon, Lagon, Soleil, Lavande, Menthe, Papier, Glace, Pastèque. Tous les autres sont sombres ; Contraste fort est le plus lisible.</p>
        <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label>`)}
     ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, notice, conditions',
       `<div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
