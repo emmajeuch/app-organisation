@@ -225,7 +225,7 @@ assert.equal(rs[0].corps, '08:30 · B');
 assert.ok(rs.some(x => x.titre === 'Bilan de ta journée' && x.t === new Date(2026, 9, 26, 20, 0).getTime() / 1000));   // pas de dîner prévu : 20 h
 assert.ok(!rs.some(x => /Trajet|Déjeuner/.test(x.titre)));
 assert.ok(rs.every(x => x.t > lundi7h / 1000));
-assert.equal(L.calculerRappels(rp, new Date(2026, 9, 26, 9, 0).getTime(), { ...L.REGLAGES_RAPPELS, soir: false, bilan: false, sauvegardeAuto: true }).length, 0);
+assert.equal(L.calculerRappels(rp, new Date(2026, 9, 26, 9, 0).getTime(), { ...L.REGLAGES_RAPPELS, soir: false, bilan: false }).length, 0);
 // Une sauvegarde importée ne garde pas l'abonnement d'un autre téléphone.
 assert.equal(L.validerImport({ ...JSON.parse(JSON.stringify(L.vide())), notifs: { actif: true, id: 'x' } }).notifs.actif, false);
 
@@ -289,22 +289,20 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   assert.equal(b.corps, 'Validé : Révisions · À valider : Renfo');
 }
 
-// Sauvegarde chiffrée : le code donne toujours le même identifiant, la copie se relit, un autre code échoue.
+// Compte : identifiant et mot de passe donnent toujours le même identifiant de copie ; un autre mot de passe ne lit rien.
 {
-  const code = L.nouveauCode();
-  assert.match(code, /^[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){3}$/);
-  assert.equal(L.normCode(code.toLowerCase().replace(/-/g, ' ')), code.replace(/-/g, ''));
+  const c1 = await L.clesDuCompte(' Emma ', 'un mot de passe long'), c2 = await L.clesDuCompte('emma', 'un mot de passe long');
+  assert.deepEqual(c1, c2);
+  assert.notEqual((await L.clesDuCompte('emma', 'un autre mot de passe')).id, c1.id);
+  assert.notEqual((await L.clesDuCompte('lea', 'un mot de passe long')).id, c1.id);
+  assert.ok(L.identValide('emma.j') && !L.identValide('a') && !L.identValide('emma jeu'));
   const d = L.vide(); d.notes.push({ id: 'n1', titre: 'Secret', texte: 'à ne pas lire' });
-  const corps = await L.chiffrerCopie(d, code);
+  const corps = await L.chiffrerCopie(d, c1);
   const [id, iv, chiffre] = corps.split('\n');
-  assert.equal(id, await L.idDuCode(code));
+  assert.equal(id, c1.id);
   assert.ok(!atob(chiffre).includes('Secret'));
-  assert.deepEqual((await L.dechiffrerCopie(`${iv}\n${chiffre}`, code)).notes, d.notes);
-  await assert.rejects(L.dechiffrerCopie(`${iv}\n${chiffre}`, L.nouveauCode()));
-  // Le rappel du dimanche : seulement sans sauvegarde automatique.
-  const rs = r => L.calculerRappels(L.vide(), new Date(2026, 9, 24, 12).getTime(), { ...L.REGLAGES_RAPPELS, ...r }).filter(x => x.lien === '#sauvegarde');
-  assert.equal(rs({}).length, 1);
-  assert.equal(rs({ sauvegardeAuto: true }).length, 0);
+  assert.deepEqual((await L.dechiffrerCopie(`${iv}\n${chiffre}`, c1)).notes, d.notes);
+  await assert.rejects(L.dechiffrerCopie(`${iv}\n${chiffre}`, await L.clesDuCompte('emma', 'un autre mot de passe')));
 }
 
 console.log('ok');

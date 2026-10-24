@@ -1,13 +1,13 @@
 # App d'organisation
 
 Un organisateur personnel pour téléphone : emploi du temps par demi-heure, tâches, notes,
-sport, objectifs et motivation. Gratuit, sans compte : **tes données restent sur ton
+sport, objectifs et motivation. Gratuit, compte facultatif : **tes données restent sur ton
 téléphone**, rien n'est envoyé nulle part.
 
 **L'app : https://emmajeuch.github.io/app-organisation/**
 
 **Préparer son app avant de l'installer : https://emmajeuch.github.io/app-organisation/questionnaire.html**
-— tu réponds à quelques questions, tu enregistres le fichier obtenu, puis dans l'app : Profil › ⚙ › Sauvegarde › Importer.
+— tu réponds à quelques questions, tu enregistres le fichier obtenu, puis dans l'app, à la première ouverture : Importer un profil.
 
 ## L'installer
 
@@ -44,15 +44,15 @@ Chrome peut aussi proposer de lui-même une petite bannière pour installer l'ap
 - **Supprimer l'icône peut effacer tes données.** Pour la ranger, déplace-la plutôt dans un
   dossier ou sur une page de l'écran d'accueil que tu masques.
 - Le téléphone peut aussi effacer les données d'une web app quand il manque de place.
-- **Active la sauvegarde automatique** (Profil › ⚙ › Sauvegarde) : une copie chiffrée part toute seule,
-  et ton code de récupération la remet en place sur un nouveau téléphone. Ou bien **exporte** : Profil › ⚙ › Sauvegarde › Exporter, puis range le
-  fichier dans Fichiers (iCloud Drive) ou Google Drive. Profil › ⚙ › Sauvegarde › Importer la remet en place.
+- **Crée un compte** (à la première ouverture, ou Profil › ⚙ › Compte et sauvegarde) : une copie chiffrée part
+  toute seule, et ton identifiant et ton mot de passe la remettent en place sur un nouveau téléphone.
+  Sans compte, tu peux encore télécharger une copie de tes données (Profil › ⚙ › Aide et avis).
 
 ## Confidentialité
 
 Ce que tu écris ne quitte pas ton téléphone : pas de compte, pas de cookie, pas de publicité, pas de mesure d'audience.
-Si tu actives les rappels, seules leurs heures partent vers le serveur. Si tu actives la sauvegarde automatique,
-une copie chiffrée y part, que seul ton code de récupération permet de relire.
+Si tu actives les rappels, seules leurs heures partent vers le serveur. Avec un compte,
+une copie chiffrée y part, que seuls ton identifiant et ton mot de passe permettent de relire.
 Détail et mentions légales : https://emmajeuch.github.io/app-organisation/confidentialite.html
 
 ## Les mises à jour

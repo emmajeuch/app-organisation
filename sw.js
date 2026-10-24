@@ -1,5 +1,5 @@
 // Hors ligne : réseau d'abord (pour recevoir les mises à jour), copie en cache si pas de réseau.
-const CACHE = 'orga-1.9.7';
+const CACHE = 'orga-1.9.8';
 const FICHIERS = ['./', 'index.html', 'app.css', 'app.js', 'logique.js', 'assistant.js', 'questionnaire.html', 'questionnaire.js', 'confidentialite.html', 'conditions.html', 'installer.html', 'manifest.json', 'icone-180.png', 'icone-512.png'];
 
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FICHIERS)).then(() => self.skipWaiting())));
@@ -27,14 +27,13 @@ self.addEventListener('push', e => e.waitUntil((async () => {
     const liste = await (await (await caches.open('orga-rappels')).match('rappels.json'))?.json();
     r = (liste || []).find(x => t !== null && Math.abs(x.t - t) <= 180);
   } catch {}
-  await self.registration.showNotification(r ? r.titre : 'Rappel', { body: r ? r.corps : 'Ouvre ton app d’organisation.', icon: 'icone-180.png', tag: 'orga-' + (t || Date.now()), data: { lien: r?.lien || '' } });
+  await self.registration.showNotification(r ? r.titre : 'Rappel', { body: r ? r.corps : 'Ouvre ton app d’organisation.', icon: 'icone-180.png', tag: 'orga-' + (t || Date.now()) });
 })()));
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   e.waitUntil((async () => {
-    const lien = e.notification.data?.lien === '#sauvegarde' ? '#sauvegarde' : '';
     const fenetres = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    if (fenetres.length) { await fenetres[0].focus(); if (lien) await fenetres[0].navigate('./' + lien).catch(() => {}); return; }
-    return self.clients.openWindow('./' + lien);
+    if (fenetres.length) return fenetres[0].focus();
+    return self.clients.openWindow('./');
   })());
 });

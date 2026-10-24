@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.9.7';
+export const VERSION = '1.9.8';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -596,10 +596,10 @@ const CATS_RAPPEL = ['cours', 'sport', 'job'];
 // le serveur ; les textes restent sur le téléphone, qui les affiche quand la notification arrive.
 export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
   const out = [], s = Math.floor(maintenant / 1000);
-  const ajout = (t, titre, corps, lien) => {
+  const ajout = (t, titre, corps) => {
     if (t <= s) return;
     const meme = out.find(x => x.t === t);
-    if (!meme) out.push({ t, titre, corps, ...(lien ? { lien } : {}) });
+    if (!meme) out.push({ t, titre, corps });
     else if (!meme.titre.includes(titre)) meme.titre += ` · ${titre}`;
   };
   const auj = new Date(maintenant);
@@ -624,39 +624,36 @@ export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
       const resume = [ok.length && `Validé : ${ok.join(', ')}`, reste.length && `À valider : ${reste.join(', ')}`].filter(Boolean).join(' · ');
       ajout(a(hb), 'Bilan de ta journée', i === 0 && resume ? resume.slice(0, 180) : 'Avant de manger, valide ce que tu as fait aujourd’hui.');
     }
-    if (!r.sauvegardeAuto && jourSemaine(d) === 6) ajout(a(18), 'Pense à ta sauvegarde', 'Un tap pour exporter tes données.', '#sauvegarde');
     if (r.bilan && jourSemaine(d) === 6) ajout(a(17), 'C’est l’heure du bilan', 'Objectifs, tâches à reporter, heures de la semaine.');
   }
   return out.sort((x, y) => x.t - y.t).slice(0, 300);
 }
 
-// ---------- Sauvegarde automatique chiffrée (V1.9.7) ----------
-// Un code de récupération de 20 caractères (100 bits au hasard) donne deux choses : l'identifiant de la copie
-// sur le serveur et la clé AES-GCM qui la chiffre. Le code ne quitte jamais le téléphone ; le serveur ne voit
-// que l'identifiant et des octets illisibles.
-const ALPHA = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';   // base 32 de Crockford : ni I, ni L, ni O, ni U
-export const nouveauCode = () => [...crypto.getRandomValues(new Uint8Array(20))].map(x => ALPHA[x % 32]).join('').match(/.{5}/g).join('-');
-export const normCode = s => [...String(s || '').toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1')].filter(c => ALPHA.includes(c)).join('');
+// ---------- Compte et sauvegarde chiffrée (V1.9.8) ----------
+// L'identifiant et le mot de passe, choisis par l'utilisatrice, donnent sur le téléphone (PBKDF2, 600 000 tours)
+// deux choses : l'identifiant de la copie sur le serveur et la clé AES-GCM qui la chiffre. Le mot de passe ne
+// quitte jamais le téléphone et n'y est pas gardé ; seule la clé l'est, pour les copies automatiques.
+export const MDP_MIN = 10;
+export const normIdent = s => String(s || '').trim().toLowerCase().normalize('NFC');
+export const identValide = s => /^[\p{L}\p{N}._-]{3,40}$/u.test(normIdent(s));
 export const sauvegardePossible = () => typeof CompressionStream === 'function' && !!globalThis.crypto?.subtle;
 const enc = new TextEncoder();
 const versB64 = u => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
 const deB64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const gzip = async (u, compresser) => new Uint8Array(await new Response(new Blob([u]).stream().pipeThrough(compresser ? new CompressionStream('gzip') : new DecompressionStream('gzip'))).arrayBuffer());
-async function clesDe(code) {
-  const base = await crypto.subtle.importKey('raw', enc.encode(normCode(code)), 'HKDF', false, ['deriveBits', 'deriveKey']);
-  const p = info => ({ name: 'HKDF', hash: 'SHA-256', salt: enc.encode('orga-sauvegarde-v1'), info: enc.encode(info) });
-  const id = versB64(new Uint8Array(await crypto.subtle.deriveBits(p('id'), base, 256))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const cle = await crypto.subtle.deriveKey(p('cle'), base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-  return { id, cle };
+export async function clesDuCompte(ident, mdp) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(String(mdp).normalize('NFC')), 'PBKDF2', false, ['deriveBits']);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode('orga-compte-v1:' + normIdent(ident)), iterations: 600_000 }, base, 512));
+  return { id: versB64(bits.slice(0, 32)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''), cle: versB64(bits.slice(32)) };
 }
-export const idDuCode = async code => (await clesDe(code)).id;
-export async function chiffrerCopie(data, code) {
-  const { id, cle } = await clesDe(code), iv = crypto.getRandomValues(new Uint8Array(12));
-  const c = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cle, await gzip(enc.encode(JSON.stringify(data)), true)));
-  return `${id}\n${versB64(iv)}\n${versB64(c)}`;
+const cleAes = cle => crypto.subtle.importKey('raw', deB64(cle), 'AES-GCM', false, ['encrypt', 'decrypt']);
+export async function chiffrerCopie(data, compte) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const c = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await cleAes(compte.cle), await gzip(enc.encode(JSON.stringify(data)), true)));
+  return `${compte.id}\n${versB64(iv)}\n${versB64(c)}`;
 }
-export async function dechiffrerCopie(texte, code) {
-  const [iv, d] = texte.split('\n'), { cle } = await clesDe(code);
-  const clair = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: deB64(iv) }, cle, deB64(d)));
+export async function dechiffrerCopie(texte, compte) {
+  const [iv, d] = texte.split('\n');
+  const clair = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: deB64(iv) }, await cleAes(compte.cle), deB64(d)));
   return JSON.parse(new TextDecoder().decode(await gzip(clair, false)));
 }

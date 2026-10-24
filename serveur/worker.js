@@ -2,8 +2,8 @@
 // Il ne connaît que deux choses par appareil : l'adresse d'abonnement fournie par le service de
 // notifications (Apple, Google…) et les HEURES des rappels à venir. Jamais le titre d'un cours, une
 // salle ou un texte : c'est le téléphone qui écrit la notification au moment de l'afficher.
-// La sauvegarde automatique, si on l'active, est chiffrée sur le téléphone avec une clé tirée du code de
-// récupération ; le serveur ne garde que la dernière copie, illisible pour lui, sous l'empreinte d'un identifiant.
+// Avec un compte, une copie est chiffrée sur le téléphone avec une clé tirée de l'identifiant et du mot de passe ;
+// le serveur ne garde que la dernière copie, illisible pour lui, sous l'empreinte d'un identifiant dérivé.
 import { envoyer } from './webpush.js';
 
 const ORIGINE = 'https://emmajeuch.github.io';
@@ -48,11 +48,14 @@ export async function traiter(req, env, maintenant = Date.now()) {
   const texte = await req.text();
   // La copie chiffrée arrive en texte brut, « identifiant, vecteur, données » sur trois lignes : pas de JSON à
   // analyser (l'offre gratuite donne 10 ms de calcul par requête). Elle est rangée telle quelle, jamais lue.
-  if (chemin === '/sauvegarde') {
+  if (chemin === '/sauvegarde' || chemin === '/compte-creer') {
     if (texte.length > SAUV_MAX) return repondre(413);
     const [id, iv, d, reste] = texte.split('\n');
     if (!idValide(id) || !iv || iv.length > 32 || !B64.test(iv) || !d || reste !== undefined) return repondre(422);
-    await env.RAPPELS.put(await cleDe(id, 's:'), `${iv}\n${d}`, { expirationTtl: GARDE_SAUV });
+    const cle = await cleDe(id, 's:');
+    // ponytail: lire puis écrire n'est pas atomique ; deux créations à la même seconde avec les mêmes identifiant et mot de passe passeraient.
+    if (chemin === '/compte-creer' && await env.RAPPELS.get(cle) !== null) return repondre(409);
+    await env.RAPPELS.put(cle, `${iv}\n${d}`, { expirationTtl: GARDE_SAUV });
     return repondre(204);
   }
   if (texte.length > TAILLE_MAX) return repondre(413);

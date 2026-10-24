@@ -65,6 +65,8 @@ assert.equal(stock.size, 0);
   assert.equal((await traiter(brut('/sauvegarde', `${id}\nAAAA\nQkJCQg==`, 'https://pirate.exemple'), env, T0)).status, 403);
   assert.equal((await traiter(brut('/sauvegarde', `court\nAAAA\nQkJCQg==`), env, T0)).status, 422);
   assert.equal((await traiter(brut('/sauvegarde', `${id}\nAAAA\nQkJCQg==\nen trop`), env, T0)).status, 422);
+  assert.equal((await traiter(brut('/compte-creer', `${id}\nAAAA\nQkJCQg==`), env, T0)).status, 204);
+  assert.equal((await traiter(brut('/compte-creer', `${id}\nBBBB\nQkJCQg==`), env, T0)).status, 409);   // existe déjà : refusé, rien d'écrasé
   assert.equal((await traiter(brut('/sauvegarde', `${id}\nAAAA\nQkJCQg==`), env, T0)).status, 204);
   const cleS = [...stock.keys()].find(k => k.startsWith('s:'));
   assert.ok(cleS && !cleS.includes(id));
