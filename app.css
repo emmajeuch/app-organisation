@@ -14,6 +14,7 @@
   --on-accent: var(--on-ink);
   --accent-txt: var(--ink);
   --danger: #C42B27;
+  --flamme: #FF9600;   /* l'orange de la flamme, quand le thème est automatique */
   --shadow: 0 8px 24px rgb(21 23 28 / .18);
   --t-dark: #15171C;
   --t-light: #FFFFFF;
@@ -30,28 +31,8 @@
     --line: #4A5263; --on-ink: #0B0D11; --danger: #FF6B66; --shadow: 0 8px 24px rgb(0 0 0 / .5); color-scheme: dark;
   }
 }
-/* Thèmes (Réglages › Apparence), tous libres. Chaque thème fixe ses couleurs, clair ou sombre, quel que soit
-   le réglage de l'iPhone. Contrastes vérifiés : textes au moins 4,5:1 sur le fond, les cartes et les zones grises. */
-:root[data-theme="nuit"] { --bg: #0B0D11; --surface: #282B31; --surface-2: #3C414B; --ink: #F1F3F7; --ink-2: #AEB5C2; --line: #565B66; --on-ink: #0B0D11; --danger: #FF6B66; --shadow: 0 8px 24px rgb(0 0 0 / .5); color-scheme: dark; }
-:root[data-theme="bonbon"] { --bg: #FFDCEE; --surface: #FFFFFF; --surface-2: #FFC7E2; --ink: #2A0F1E; --ink-2: #7A2F57; --line: #F4A6CB; --on-ink: #FFFFFF; --accent: #C8006A; --on-accent: #FFFFFF; --accent-txt: #C8006A; --danger: #B3261E; color-scheme: light; }
-:root[data-theme="lagon"] { --bg: #CDF5EF; --surface: #FFFFFF; --surface-2: #AEEBE2; --ink: #062A27; --ink-2: #21605A; --line: #86D8CC; --on-ink: #FFFFFF; --accent: #00796D; --on-accent: #FFFFFF; --accent-txt: #00796D; --danger: #B3261E; color-scheme: light; }
-:root[data-theme="soleil"] { --bg: #FFEDA8; --surface: #FFFCF0; --surface-2: #FFDE73; --ink: #2B1D00; --ink-2: #674B00; --line: #EDC54A; --on-ink: #FFFFFF; --accent: #FF7A00; --on-accent: #1A0E00; --accent-txt: #9A4500; --danger: #B3261E; color-scheme: light; }
-:root[data-theme="lavande"] { --bg: #E6DEFF; --surface: #FFFFFF; --surface-2: #D3C6FF; --ink: #1B1235; --ink-2: #523F87; --line: #B9A6F7; --on-ink: #FFFFFF; --accent: #6236E8; --on-accent: #FFFFFF; --accent-txt: #6236E8; --danger: #B3261E; color-scheme: light; }
-:root[data-theme="menthe"] { --bg: #D3F7E0; --surface: #FFFFFF; --surface-2: #B5EFC9; --ink: #0B2414; --ink-2: #2E6142; --line: #8FDDAA; --on-ink: #FFFFFF; --accent: #0B7F3D; --on-accent: #FFFFFF; --accent-txt: #0B7F3D; --danger: #B3261E; color-scheme: light; }
-:root[data-theme="neon"] { --bg: #07070D; --surface: #242433; --surface-2: #35354D; --ink: #F4F4FF; --ink-2: #ADADCC; --line: #505071; --on-ink: #07070D; --accent: #39FF6A; --on-accent: #04140A; --accent-txt: #39FF6A; --danger: #FF6B8A; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="electrique"] { --bg: #050A24; --surface: #1D2751; --surface-2: #2D3972; --ink: #EEF3FF; --ink-2: #A9B7EB; --line: #4A5699; --on-ink: #050A24; --accent: #00E0FF; --on-accent: #001A20; --accent-txt: #00E0FF; --danger: #FF7A8A; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="volcan"] { --bg: #130705; --surface: #33201B; --surface-2: #4A2D26; --ink: #FFF1EC; --ink-2: #D9AE9F; --line: #6A463D; --on-ink: #130705; --accent: #FF5A1F; --on-accent: #1A0500; --accent-txt: #FF7A45; --danger: #FF8A80; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="minuit"] { --bg: #0D0A1F; --surface: #28233F; --surface-2: #3B355E; --ink: #F3F0FF; --ink-2: #B9B0E0; --line: #585088; --on-ink: #0D0A1F; --accent: #B388FF; --on-accent: #12062B; --accent-txt: #B388FF; --danger: #FF7A8A; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="galaxie"] { --bg: #0A0716; --surface: #261F3B; --surface-2: #382E57; --ink: #F7F1FF; --ink-2: #C2B2E6; --line: #56497B; --on-ink: #0A0716; --accent: #FF7AE6; --on-accent: #2A0024; --accent-txt: #FF7AE6; --danger: #FF8A80; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="ocean"] { --bg: #041419; --surface: #1A323A; --surface-2: #264851; --ink: #ECFAFC; --ink-2: #9ECBD3; --line: #3E6670; --on-ink: #041419; --accent: #2EE6C9; --on-accent: #00201B; --accent-txt: #2EE6C9; --danger: #FF8A80; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="foret"] { --bg: #06120B; --surface: #1F3128; --surface-2: #2E4839; --ink: #EEF8F1; --ink-2: #A8C9B4; --line: #4A6856; --on-ink: #06120B; --accent: #A6E35F; --on-accent: #0B1A04; --accent-txt: #A6E35F; --danger: #FF8A80; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="rubis"] { --bg: #16060C; --surface: #361D26; --surface-2: #4E2A37; --ink: #FFEEF3; --ink-2: #E0A9B9; --line: #714152; --on-ink: #16060C; --accent: #FF4D8D; --on-accent: #1F0010; --accent-txt: #FF4D8D; --danger: #FFB4A9; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="ambre"] { --bg: #110C04; --surface: #302718; --surface-2: #473A23; --ink: #FFF6E5; --ink-2: #DCC28F; --line: #685637; --on-ink: #110C04; --accent: #FFB020; --on-accent: #1F1400; --accent-txt: #FFB020; --danger: #FF8A80; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="contraste"] { --bg: #000000; --surface: #141414; --surface-2: #2A2A2A; --ink: #FFFFFF; --ink-2: #D6D6D6; --line: #6B6B6B; --on-ink: #000000; --accent: #FFE600; --on-accent: #000000; --accent-txt: #FFE600; --danger: #FF6B66; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="papier"] { --bg: #EFE5D3; --surface: #FFFCF5; --surface-2: #E3D4BA; --ink: #1E1A14; --ink-2: #574A36; --line: #BFAE8E; --on-ink: #FFFFFF; --accent: #C0321B; --on-accent: #FFFFFF; --accent-txt: #C0321B; --danger: #B3261E; color-scheme: light; }
-:root[data-theme="glace"] { --bg: #D6E7FF; --surface: #FFFFFF; --surface-2: #BCD6FF; --ink: #0A1A33; --ink-2: #2F4C76; --line: #8FB4EC; --on-ink: #FFFFFF; --accent: #1D4FE0; --on-accent: #FFFFFF; --accent-txt: #1D4FE0; --danger: #B3261E; color-scheme: light; }
-:root[data-theme="arcade"] { --bg: #1B0B33; --surface: #301657; --surface-2: #472376; --ink: #FFF7FF; --ink-2: #DCC6F5; --line: #6C42A3; --on-ink: #1B0B33; --accent: #FFE14D; --on-accent: #241000; --accent-txt: #FFE14D; --danger: #FF8A80; --shadow: 0 8px 24px rgb(0 0 0 / .6); color-scheme: dark; }
-:root[data-theme="pasteque"] { --bg: #FFDDE3; --surface: #FFFFFF; --surface-2: #FFC2CD; --ink: #2B0A10; --ink-2: #7A2A3A; --line: #F09AAB; --on-ink: #FFFFFF; --accent: #16804A; --on-accent: #FFFFFF; --accent-txt: #0F6B3C; --danger: #B3261E; color-scheme: light; }
+/* Thème à deux couleurs (Réglages › Apparence) : les variables sont posées par appliquerTheme() à partir de
+   paletteTheme() (logique.js), qui vérifie les contrastes. */
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -419,8 +400,18 @@ details.groupe summary .txt small { font-weight: 500; }
 .groupe-corps .ajout input { background: var(--surface-2); }
 
 /* V1.9.2 : petites animations (coupées si l'iPhone demande moins d'animations, voir plus haut) */
-.flamme { transform-origin: 50% 90%; animation: flamme 1.6s ease-in-out infinite; }
-@keyframes flamme { 0%, 100% { transform: scale(1) rotate(0); } 30% { transform: scale(1.06, .95) rotate(-3deg); } 60% { transform: scale(.96, 1.07) rotate(2deg); } }
+/* La flamme façon Duolingo : une flamme vive dans une autre qui ondule ; grise tant que la journée n'est pas validée */
+.flamme { overflow: visible; }
+.flamme path { transform-box: fill-box; transform-origin: 50% 100%; }
+.flamme .f-ext { fill: var(--flamme); animation: flamme-ext 1.9s ease-in-out infinite; }
+.flamme .f-int { fill: color-mix(in srgb, var(--flamme) 35%, #FFE15A); animation: flamme-int 1.3s ease-in-out infinite; }
+.flamme.eteinte .f-ext { fill: var(--surface-2); }
+.flamme.eteinte .f-int { fill: var(--line); }
+.flamme.eteinte path { animation: none; }
+.flamme.allume { animation: allumage .9s cubic-bezier(.3, 1.6, .5, 1); filter: drop-shadow(0 0 6px var(--flamme)); }
+@keyframes flamme-ext { 0%, 100% { transform: scale(1, 1) skewX(0); } 25% { transform: scale(1.04, .96) skewX(-3deg); } 50% { transform: scale(.97, 1.05) skewX(0); } 75% { transform: scale(1.03, .97) skewX(3deg); } }
+@keyframes flamme-int { 0%, 100% { transform: scale(1, 1) translateY(0); } 50% { transform: scale(.88, 1.12) translateY(-6%); } }
+@keyframes allumage { 0% { transform: scale(.5); } 55% { transform: scale(1.35) rotate(-8deg); } 80% { transform: scale(.95) rotate(3deg); } }
 .compagnon .crea { animation: respire 3.2s ease-in-out infinite; transform-origin: 50% 100%; }
 @keyframes respire { 0%, 100% { transform: translateY(0) scale(1, 1); } 50% { transform: translateY(-4%) scale(1.03, .97); } }
 .crea i::before, .crea i::after { animation: cligne 5s infinite; }
@@ -489,3 +480,20 @@ button:active, .chip:active, [role="button"]:active { transform: scale(.95); }
 .card, .list, details.liste, .wk, .search, .note, .navsem button, .chip, .habit, .tags button, .theme { box-shadow: inset 0 0 0 1px var(--line); }
 dialog .list, .groupe-corps .list { box-shadow: none; }
 .btn.gris { box-shadow: inset 0 0 0 1px var(--line); }
+
+/* V1.10.2 : quelques animations de plus, courtes ; coupées si l'iPhone demande moins d'animations */
+.view.apparait { animation: apparait .28s ease-out; }
+@keyframes apparait { from { opacity: 0; transform: translateY(10px); } }
+.view.apparait .bar i, .view.apparait .xp > div { animation: remplit .7s cubic-bezier(.2, .8, .2, 1) both; transform-origin: left; }
+@keyframes remplit { from { transform: scaleX(0); } }
+dialog[open] { animation: monte-dlg .3s cubic-bezier(.2, .9, .3, 1); }
+dialog[open]::backdrop { animation: fondu .3s ease-out; }
+@keyframes monte-dlg { from { transform: translateY(60px); opacity: .4; } }
+@keyframes fondu { from { opacity: 0; } }
+.tape { animation: tape .4s cubic-bezier(.3, 1.6, .5, 1); }
+.jour-edt .blk .valid.tape { animation: tape-v .4s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes tape { 40% { transform: scale(1.2); } }
+@keyframes tape-v { 0%, 100% { transform: translateY(-50%) scale(1); } 40% { transform: translateY(-50%) scale(1.3); } }
+.tab[aria-selected="true"] svg { animation: tape .35s ease-out; }
+.couleurs-theme { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.couleurs-theme input[type="color"] { width: 100%; height: 48px; padding: 4px; border-radius: 12px; border: 0; background: var(--surface-2); }

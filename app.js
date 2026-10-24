@@ -60,6 +60,8 @@ function maj() {
     son();
     if (st.niveau.n > dernier.niveau.n) { feter(); setTimeout(() => dire(`Niveau ${st.niveau.n} ! Un tirage t’attend dans Profil`), 2300); }
   }
+  if (dernier && !dernier.valides.has(aujIso()) && st.valides.has(aujIso())) document.querySelectorAll('.flamme').forEach(f => f.classList.add('allume'));
+  if (tape) { document.querySelectorAll(`[data-act="${tape[0]}"][data-id="${CSS.escape(tape[1])}"]`).forEach(x => x.classList.add('tape')); tape = null; }
   dernier = st;
   planifierSynchro();
   planifierSauvegarde();
@@ -248,7 +250,7 @@ function vueAujourdhui() {
   const { date, h } = L.momentLogique(new Date());
   const st = L.stats(data, new Date());
   let html = `<header class="top"><div><h1>Aujourd’hui</h1><p>${date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p></div>
-    ${actif('motivation') ? `<div class="chips"><button class="chip" data-act="ouvrir-profil" aria-label="Série de ${st.serie} jours">${FLAMME}${st.serie}</button><button class="chip" data-act="ouvrir-profil" aria-label="Niveau ${st.niveau.n}">Niv. ${st.niveau.n}</button></div>` : ''}</header>`;
+    ${actif('motivation') ? `<div class="chips"><button class="chip" data-act="ouvrir-profil" aria-label="Série de ${st.serie} jours">${flamme(st.valides.has(aujIso()))}${st.serie}</button><button class="chip" data-act="ouvrir-profil" aria-label="Niveau ${st.niveau.n}">Niv. ${st.niveau.n}</button></div>` : ''}</header>`;
   const jExport = joursDepuisExport();
   if (jExport === null || jExport > 7) {
     if (sauvAuto()) html += `<div class="card type alerte-export"><div class="txt"><b>Dernière sauvegarde il y a ${jExport} jours</b><small>La copie automatique n’a pas pu partir : ouvre l’app avec du réseau.</small></div></div>`;
@@ -1078,13 +1080,19 @@ const THEMES = [['classique', 'Automatique', '#15171C', '#FFFFFF'], ['nuit', 'Nu
   ['papier', 'Papier', '#C0321B', '#EFE5D3'], ['glace', 'Glace', '#1D4FE0', '#D6E7FF'], ['pasteque', 'Pastèque', '#16804A', '#FFDDE3']];
 // Les thèmes d'avant la 1.9.12 retombent sur le plus proche.
 const ANCIENS_THEMES = { ardoise: 'electrique', corail: 'volcan', or: 'soleil' };
-function appliquerTheme() {
-  const id = ANCIENS_THEMES[data.theme] || data.theme, t = THEMES.find(x => x[0] === id && id !== 'classique');
-  const r = document.documentElement;
-  if (t) r.dataset.theme = t[0]; else delete r.dataset.theme;
+// Les deux couleurs du thème ; un ancien thème (avant la 1.10.2) donne les siennes. Rien : automatique.
+const couleursTheme = () => {
+  if (data.couleurs?.fond) return data.couleurs;
+  const t = THEMES.find(x => x[0] === (ANCIENS_THEMES[data.theme] || data.theme) && x[0] !== 'classique');
+  return t ? { fond: t[3], accent: t[2] } : null;
+};
+function appliquerTheme(c = couleursTheme()) {
+  const r = document.documentElement, p = c && L.paletteTheme(c.fond, c.accent);
+  delete r.dataset.theme;
+  r.removeAttribute('style');
+  if (p) for (const [k, v] of Object.entries(p)) r.style.setProperty(k, v);
   // La barre d'état de l'iPhone prend la couleur du fond du thème.
-  const fond = getComputedStyle(r).getPropertyValue('--bg').trim();
-  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { if (t) m.content = fond; else m.content = m.media.includes('dark') ? '#0B0D11' : '#E8EAF0'; });
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = p ? p['--bg'] : m.media.includes('dark') ? '#0B0D11' : '#E8EAF0'; });
 }
 const SOURCES = { creneaux: ['Créneaux', '#35C6DF'], taches: ['Tâches', '#EC4A46'], sport: ['Sport', '#B5DF2B'],
   habitudes: ['Habitudes', '#FF8AC1'], objectifs: ['Objectifs', '#6766F0'], bonus: ['Journées et bilans', '#FFD447'] };
@@ -1098,7 +1106,7 @@ const SUCCES = [
 const RARETE = { commune: 'Commune', rare: 'Rare', legendaire: 'Légendaire' };
 const slug = t => String(t || '').toLowerCase().normalize('NFD').replace(/[^a-z]+/g, '-');
 const creaHtml = (c, sport) => `<div class="crea forme-${c.forme} ${c.rarete}${sport ? ` acc acc-${slug(sport)}` : ''}" style="--c:${c.couleur}"${sport ? ` title="Version ${esc(sport)}"` : ''}><i></i></div>`;
-const FLAMME = '<svg class="flamme" viewBox="0 0 24 24" fill="#EC4A46" aria-hidden="true"><path d="M12 22c-4 0-7-2.7-7-6.6 0-3.3 2.1-5.3 3.4-8.6.9 1.7 2 2.6 3.2 2.9-.3-2.7.9-5.2 3-7.2.3 3.7 4.4 6.4 4.4 11.1 0 4.6-3 8.4-7 8.4z"/></svg>';
+const flamme = allumee => `<svg class="flamme${allumee ? '' : ' eteinte'}" viewBox="0 0 24 24" aria-hidden="true"><path class="f-ext" d="M12 1.8c.7 2.9 2.6 4.6 4.3 6.5 1.9 2.1 3.7 4.2 3.7 7.4 0 4.3-3.5 7-8 7s-8-2.7-8-7c0-2.8 1.3-4.9 2.9-6.4.3 1.5 1.2 2.6 2.4 3-.5-3.9.8-7.5 2.7-10.5z"/><path class="f-int" d="M12.2 11.2c.4 1.6 1.5 2.6 2.4 3.6 1 1.1 1.6 2 1.6 3.4 0 2.2-1.8 3.5-4.2 3.5S7.8 20.4 7.8 18.2c0-1.6.8-2.8 1.9-3.6.1.9.6 1.5 1.3 1.7-.2-1.9.3-3.6 1.2-5.1z"/></svg>`;
 
 // Le bilan est dû le dimanche dès 16 h, et encore le lundi et le mardi pour la semaine passée.
 function bilanAFaire() {
@@ -1126,7 +1134,7 @@ function vueProfil() {
       <div class="xp"><div style="width:${(st.total - nv.de) / (nv.a - nv.de) * 100}%">${sources.map(([k, v]) => `<i style="--c:${SOURCES[k][1]};flex:${v}"></i>`).join('')}</div></div>
       ${sources.length ? `<div class="xp-leg">${sources.map(([k, v]) => `<span><i style="--c:${SOURCES[k][1]}"></i>${SOURCES[k][0]} ${v}</span>`).join('')}</div>` : '<p class="muted">L’XP se gagne en validant tes créneaux, tes tâches, tes séances, tes habitudes et tes objectifs.</p>'}
       <small class="muted">${st.total} XP au total</small></div>
-    <div class="card serie" data-module="motivation">${FLAMME}<div><span class="num">${st.serie} jour${st.serie > 1 ? 's' : ''}</span><br><small class="muted">de journées validées · record ${st.record}</small></div><div class="jokers"><b>${st.jokers}</b>joker${st.jokers > 1 ? 's' : ''}</div></div>
+    <div class="card serie" data-module="motivation">${flamme(st.valides.has(aujIso()))}<div><span class="num">${st.serie} jour${st.serie > 1 ? 's' : ''}</span><br><small class="muted">de journées validées · record ${st.record}</small></div><div class="jokers"><b>${st.jokers}</b>joker${st.jokers > 1 ? 's' : ''}</div></div>
     ${aBilan ? `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>` : ''}
     ${compagnonHtml(st)}
     ${droits.length ? `<button class="btn plein" data-act="tirage" data-module="motivation">Ouvrir ${droits.length > 1 ? `tes ${droits.length} tirages` : 'ton tirage'}</button>` : ''}
@@ -1162,9 +1170,12 @@ function vueReglages() {
        : '<p>Pas possible sur ce téléphone (iPhone : iOS 16.4 ou plus).</p>'}
        ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}
        <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>`)}
-    ${groupe('apparence', 'Apparence et son', `Thème ${THEMES.find(t => t[0] === (ANCIENS_THEMES[data.theme] || data.theme))?.[1] || 'Automatique'}`,
-      `<div class="cats">${THEMES.map(([id, nom, c, fond]) => `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${(ANCIENS_THEMES[data.theme] || data.theme) === id}" style="--c:${c};--fond:${fond}">${nom}</button>`).join('')}</div>
-       <p class="aide">Automatique suit l’iPhone (clair le jour, sombre si tu l’as réglé). Thèmes clairs : Bonbon, Lagon, Soleil, Lavande, Menthe, Papier, Glace, Pastèque. Tous les autres sont sombres ; Contraste fort est le plus lisible.</p>
+    ${groupe('apparence', 'Apparence et son', couleursTheme() ? 'Tes deux couleurs' : 'Automatique',
+      `<div class="couleurs-theme"><label class="champ">Fond et bulles<input type="color" data-act="couleur" data-id="fond" value="${couleursTheme()?.fond || '#E8EAF0'}"></label>
+         <label class="champ">Boutons et flamme<input type="color" data-act="couleur" data-id="accent" value="${couleursTheme()?.accent || '#FF9600'}"></label></div>
+       <p class="aide">Les textes s’ajustent tout seuls pour rester lisibles. Des idées pour commencer :</p>
+       <div class="cats">${THEMES.map(([id, nom, c, fond]) => `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${id === 'classique' ? !couleursTheme() : couleursTheme()?.fond === fond && couleursTheme()?.accent === c}" style="--c:${c};--fond:${fond}">${nom}</button>`).join('')}</div>
+       <p class="aide">Automatique suit l’iPhone : clair le jour, sombre si tu l’as réglé.</p>
        <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label>`)}
     ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, notice, conditions',
       `<div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
@@ -1771,6 +1782,9 @@ function ouvrir(id) {
   ui.onglet = id;
   document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', t.dataset.v === id));
   document.querySelectorAll('main > .view').forEach(v => v.hidden = v.id !== id);
+  const v = document.getElementById(id);
+  v.classList.remove('apparait'); void v.offsetWidth; v.classList.add('apparait');
+  clearTimeout(ouvrir.fin); ouvrir.fin = setTimeout(() => v.classList.remove('apparait'), 700);
   scrollTo(0, 0);
   try { localStorage.setItem('orga-onglet', id); } catch {}
 }
@@ -1788,6 +1802,10 @@ function majBalade() {
   if (el.dataset.cle !== cle) { el.innerHTML = `<div class="pas">${compagnonFig(c, data.compagnon.stade || 0)}</div>`; el.dataset.cle = cle; }
 }
 
+// Ce qu'on vient de cocher, pour le faire rebondir une fois redessiné.
+let tape = null;
+const REBONDS = ['valider', 'habitude', 'tache', 'item', 'objectif'];
+document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el && REBONDS.includes(el.dataset.act) && el.dataset.id) tape = [el.dataset.act, el.dataset.id]; }, true);
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (!el || el.matches('input, select')) return;
@@ -1822,7 +1840,7 @@ document.addEventListener('click', e => {
     case 'tirage': return ouvrirTirage();
     case 'creature': return voirCreature(L.CREATURES.find(c => c.id === id));
     case 'bilan': return faireBilan(el.dataset.cle);
-    case 'theme': data.theme = id; return maj();
+    case 'theme': { const t = THEMES.find(x => x[0] === id); data.theme = id; data.couleurs = id === 'classique' || !t ? null : { fond: t[3], accent: t[2] }; return maj(); }
     case 'editer-tache': return editerTache(data.taches.find(t => t.id === id));
     case 'habitude': {
       const hb = data.habitudes.find(x => x.id === id), jour = el.dataset.jour;
@@ -1903,6 +1921,7 @@ document.addEventListener('change', e => {
     if (t.checked) cocherTache(x); else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); }
   }
   if (act === 'son') data.son = t.checked;
+  if (act === 'couleur') { data.couleurs = { fond: '#E8EAF0', accent: '#FF9600', ...couleursTheme(), [id]: t.value }; data.theme = 'perso'; }
   if (act === 'rappel') data.notifs[id] = t.type === 'checkbox' ? t.checked : +t.value;
   if (act === 'taux') data.taux = Math.max(0, parseFloat(t.value.replace(',', '.')) || 0);
   if (act === 'module') data.modules[id] = t.checked;
@@ -1940,7 +1959,11 @@ document.addEventListener('submit', e => {
   document.querySelector(sel)?.focus();
 });
 
-document.addEventListener('input', e => { if (e.target.id === 'recherche') { ui.q = e.target.value; corpsNotes(); } });
+document.addEventListener('input', e => {
+  if (e.target.id === 'recherche') { ui.q = e.target.value; corpsNotes(); }
+  // Aperçu en direct pendant qu'on choisit une couleur ; enregistrée au « change ».
+  if (e.target.dataset.act === 'couleur') appliquerTheme({ fond: '#E8EAF0', accent: '#FF9600', ...couleursTheme(), [e.target.dataset.id]: e.target.value });
+});
 document.addEventListener('toggle', e => {
   if (!e.target.matches?.('details.liste')) return;
   ui.ouvertes[e.target.open ? 'add' : 'delete'](e.target.dataset.id);

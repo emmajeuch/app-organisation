@@ -416,4 +416,15 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   assert.notEqual(L.empreinte('abc'), L.empreinte('abd'));
 }
 
+// Thème à deux couleurs : quelles que soient les couleurs choisies, les textes restent lisibles.
+for (const [fond, accent] of [['#ffffff', '#ffff00'], ['#000000', '#000000'], ['#ff00ff', '#00ff00'], ['#808080', '#7f7f7f'], ['#1b0b33', '#ffe14d'], ['#ffdce3', '#16804a'], ['#00e0ff', '#ff5a1f']]) {
+  const p = L.paletteTheme(fond, accent);
+  for (const f of [p['--bg'], p['--surface'], p['--surface-2']]) {
+    assert.ok(L.contraste(p['--ink'], f) >= 4.5, `texte sur ${f} (${fond})`);
+    assert.ok(L.contraste(p['--ink-2'], f) >= 4.5, `texte gris sur ${f} (${fond})`);
+  }
+  for (const f of [p['--bg'], p['--surface']]) assert.ok(L.contraste(p['--accent-txt'], f) >= 4.5, `accent sur ${f} (${fond}, ${accent})`);
+  assert.ok(L.contraste(p['--on-accent'], p['--accent']) >= 4.5 || L.contraste(p['--on-accent'], p['--accent']) >= 3, `texte des boutons (${accent})`);
+}
+
 console.log('ok');
