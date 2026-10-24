@@ -61,6 +61,7 @@ function maj() {
   }
   dernier = st;
   planifierSynchro();
+  planifierSauvegarde();
 }
 
 const ui = { statsPer: 'semaine', onglet: 'aujourdhui', lundi: L.lundiDe(new Date()), seul: null, tag: null, q: '', ouvertes: new Set(), derniereCat: null };
@@ -100,7 +101,12 @@ function catTravail() {
   return c;
 }
 const sportsDuProfil = () => data.profil.sports || [];
-const joursDepuisExport = () => data.dernierExport ? Math.floor((Date.now() - new Date(data.dernierExport)) / 864e5) : null;
+// La dernière sauvegarde, fichier exporté ou copie automatique, la plus récente des deux.
+const joursDepuisExport = () => { const d = [data.dernierExport, sauvAuto()?.quand].filter(Boolean).sort().at(-1); return d ? Math.floor((Date.now() - new Date(d)) / 864e5) : null; };
+// Sauvegarde automatique : le code et la date de la dernière copie, à part des données (ils ne partent pas dans un export).
+const CLE_SAUV = KEY + '-sauvegarde';
+const sauvAuto = () => { try { return JSON.parse(localStorage.getItem(CLE_SAUV)); } catch { return null; } };
+const ecrireSauvAuto = s => { try { s ? localStorage.setItem(CLE_SAUV, JSON.stringify(s)) : localStorage.removeItem(CLE_SAUV); } catch {} };
 // Ce qui a servi aujourd'hui (jour logique : avant 1 h, c'est encore la veille).
 const aujIso = () => L.isoJour(L.momentLogique(new Date()).date);
 const noterUsage = cle => L.noter(data, aujIso(), cle);
@@ -213,7 +219,8 @@ const bienvenue = () => `<div class="card bientot"><b>Bienvenue</b>
   <p>Réponds à quelques questions et l’app se construit avec toi. Tu peux aussi importer un profil préparé à l’avance, ou partir d’un exemple.</p>
   <button class="btn plein" data-act="assistant">Construire mon app</button>
   <div class="rangee"><button class="btn gris" data-act="importer">Importer un profil</button><button class="btn gris" data-act="depart-exemple">Semaine d’exemple</button></div>
-  <button class="btn gris" data-act="depart-vide">Partir de zéro</button></div>`;
+  <button class="btn gris" data-act="depart-vide">Partir de zéro</button>
+  ${L.sauvegardePossible() ? '<button class="btn gris" data-act="sauv-recuperer">Récupérer ma sauvegarde</button>' : ''}</div>`;
 
 // ---------- Aujourd'hui ----------
 
@@ -224,7 +231,7 @@ function vueAujourdhui() {
     ${actif('motivation') ? `<div class="chips"><button class="chip" data-act="ouvrir-profil" aria-label="Série de ${st.serie} jours">${FLAMME}${st.serie}</button><button class="chip" data-act="ouvrir-profil" aria-label="Niveau ${st.niveau.n}">Niv. ${st.niveau.n}</button></div>` : ''}</header>`;
   const jExport = joursDepuisExport();
   if (jExport === null || jExport > 7) {
-    html += `<div class="card type alerte-export"><div class="txt"><b>${jExport === null ? 'Tes données n’ont jamais été exportées' : `Dernier export il y a ${jExport} jours`}</b><small>Elles ne sont que sur ce téléphone : exporte-les dans Fichiers.</small></div><button class="btn plein petit" data-act="exporter">Exporter</button></div>`;
+    html += `<div class="card type alerte-export"><div class="txt"><b>${jExport === null ? 'Tes données ne sont pas sauvegardées' : `Dernière sauvegarde il y a ${jExport} jours`}</b><small>${sauvAuto() ? 'La copie automatique n’a pas pu partir : ouvre l’app avec du réseau.' : 'Elles ne sont que sur ce téléphone : active la sauvegarde automatique.'}</small></div>${sauvAuto() || !L.sauvegardePossible() ? '<button class="btn plein petit" data-act="exporter">Exporter</button>' : '<button class="btn plein petit" data-act="sauv-activer">Activer</button>'}</div>`;
   }
   if (peutActiverRappels() && !data.notifs.plusTard) {
     html += `<div class="card type"><div class="txt"><b>Activer les rappels ?</b><small>Avant tes cours et tes séances, et avant le dîner pour le bilan de ta journée</small></div><div class="rangee" style="flex:0 0 auto"><button class="btn gris petit" data-act="rappels-plus-tard">Plus tard</button><button class="btn plein petit" data-act="rappels-activer">Activer</button></div></div>`;
@@ -1036,7 +1043,8 @@ function vueProfil() {
 function vueReglages() {
   const nv = L.stats(data, new Date()).niveau;
   const jours = joursDepuisExport();
-  const etat = jours === null ? 'Jamais exportée' : jours === 0 ? 'Exportée aujourd’hui' : `Dernier export il y a ${jours} jour${jours > 1 ? 's' : ''}`;
+  const sa = sauvAuto();
+  const etat = (sa ? 'Automatique · ' : '') + (jours === null ? 'Jamais sauvegardée' : jours === 0 ? 'Sauvegardée aujourd’hui' : `Dernière sauvegarde il y a ${jours} jour${jours > 1 ? 's' : ''}`);
   const defaut = data.typeDefaut || data.types[0]?.id;
   const opt = (vals, sel) => vals.map(x => `<option value="${x}" ${x === sel ? 'selected' : ''}>${L.hhmm(x)}</option>`).join('');
   const groupe = (id, titre, resume, corps) => `<details class="liste groupe" data-id="r-${id}" ${ui.ouvertes.has('r-' + id) ? 'open' : ''}><summary><span class="txt"><b>${titre}</b><small>${resume}</small></span></summary><div class="groupe-corps">${corps}</div></details>`;
@@ -1046,8 +1054,15 @@ function vueReglages() {
        <p class="aide">Pour un nouveau semestre, un nouveau job ou un nouveau sport : rien n’est effacé, tout s’ajoute.</p>`)}
     ${groupe('notifs', 'Notifications', data.notifs?.actif ? 'Activées' : 'Désactivées', rappelsHtml(true))}
     ${groupe('sauvegarde', 'Sauvegarde', `<span class="${jours === null || jours > 7 ? 'alerte' : ''}">${etat}</span>`,
-      `<p>Tes données ne sont que sur ce téléphone, et iOS peut les effacer s’il manque de place. Exporte-les chaque semaine dans Fichiers (iCloud Drive).</p>
-       <div class="rangee"><button class="btn plein" data-act="exporter">Exporter</button><button class="btn gris" data-act="importer">Importer</button></div>
+      `<p><b>Sauvegarde automatique</b></p>
+       ${sa ? `<p>Activée. Une copie chiffrée part toute seule quand tu utilises l’app, au plus une fois par heure. Seul ton code de récupération permet de la relire.${sa.quand ? ` Dernière copie : ${new Date(sa.quand).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}.` : ''}</p>
+         <div class="rangee"><button class="btn gris" data-act="sauv-code">Voir mon code</button><button class="btn gris" data-act="sauv-desactiver">Désactiver</button></div>`
+       : L.sauvegardePossible() ? `<p>Une copie chiffrée de tes données part toute seule vers le serveur. Seul ton code de récupération permet de la relire, sur ce téléphone ou sur un nouveau.</p>
+         <div class="rangee"><button class="btn plein" data-act="sauv-activer">Activer</button><button class="btn gris" data-act="sauv-recuperer">Récupérer avec un code</button></div>`
+       : '<p>Pas possible sur ce téléphone (iPhone : iOS 16.4 ou plus).</p>'}
+       <p><b>Fichier</b></p>
+       <p>Pour garder aussi une copie chez toi, dans Fichiers ou Google Drive. Le fichier s’appelle toujours orga-sauvegarde.json : enregistre-le au même endroit pour remplacer l’ancien.</p>
+       <div class="rangee"><button class="btn gris" data-act="exporter">Exporter</button><button class="btn gris" data-act="importer">Importer</button></div>
        ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}
        <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>`)}
     ${actif('motivation') ? groupe('apparence', 'Apparence et son', `Thème ${THEMES.find(t => t[0] === data.theme)?.[1] || 'Classique'}`,
@@ -1209,7 +1224,7 @@ function faireBilan(cle) {
 // ---------- Sauvegarde ----------
 
 async function exporter() {
-  const nom = `orga-sauvegarde-${L.isoJour(new Date())}.json`;
+  const nom = 'orga-sauvegarde.json';   // toujours le même nom : la nouvelle copie remplace l'ancienne
   const copie = { ...data, dernierExport: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(copie)], { type: 'application/json' });
   const fichier = new File([blob], nom, { type: 'application/json' });
@@ -1254,14 +1269,17 @@ $('#fichier').addEventListener('change', async e => {
   if (o && o.format === 'orga-profil') {
     try { return proposerProfil(L.lireProfil(o)); } catch (err) { return dire(err.message); }
   }
+  proposerSauvegarde(o);
+});
+function proposerSauvegarde(o, apres) {
   try { o = L.validerImport(o); } catch (err) { return dire(err.message); }
   const nb = Object.values(o.semaines).reduce((k, x) => k + x.slots.length, 0);
   ouvrirDlg(`<form><h2>Remplacer par cette sauvegarde ?</h2>
     <p class="muted">Sauvegarde${o.dernierExport ? ` du ${new Date(o.dernierExport).toLocaleDateString('fr-FR')}` : ''} : ${nb} créneaux, ${o.taches.length} tâches, ${o.notes.length} notes, ${o.journal.length} séances.
     Elle remplace les données actuelles, qui restent récupérables dans Profil › Réglages › Sauvegarde › Revenir à avant l’import.</p>
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Remplacer</button></div></form>`,
-  () => { garderAvant(); data = o; maj(); dire('Sauvegarde importée'); });
-});
+  () => { garderAvant(); data = o; apres?.(); maj(); dire('Sauvegarde importée'); });
+}
 
 // Droit à l'effacement : tout ce que l'app garde sur ce téléphone disparaît (données, copies, cache).
 function toutEffacer() {
@@ -1271,6 +1289,7 @@ function toutEffacer() {
     <button type="button" class="btn rouge" data-choix="effacer" data-confirmer="Oui, tout effacer">Effacer</button></form>`, async choix => {
     if (choix === 'exporter') { exporter(); return; }
     if (choix !== 'effacer') return;
+    await effacerCopie();
     try { Object.keys(localStorage).filter(k => k.startsWith('orga-')).forEach(k => localStorage.removeItem(k)); } catch {}
     try { for (const k of await caches.keys()) await caches.delete(k); } catch {}
     if (data.notifs?.actif) await desactiverRappels(true);
@@ -1278,6 +1297,77 @@ function toutEffacer() {
     location.reload();
   });
 }
+
+// ---------- Sauvegarde automatique chiffrée ----------
+// Au plus une copie par heure, quand l'app sert ; le code reste sur ce téléphone.
+let sauvEnCours = null;
+function planifierSauvegarde() {
+  const s = sauvAuto();
+  if (!s || !L.SERVEUR_RAPPELS || Date.now() - Date.parse(s.quand || 0) < 36e5) return;
+  clearTimeout(sauvEnCours);
+  sauvEnCours = setTimeout(() => sauvegarderAuto().catch(() => {}), 5000);
+}
+async function sauvegarderAuto() {
+  const s = sauvAuto();
+  if (!s) return;
+  const r = await fetch(L.SERVEUR_RAPPELS + '/sauvegarde', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: await L.chiffrerCopie(data, s.code) });
+  if (!r.ok) throw new Error('serveur ' + r.status);
+  ecrireSauvAuto({ ...s, quand: new Date().toISOString() });
+}
+async function effacerCopie() {
+  const s = sauvAuto();
+  if (!s) return;
+  try { await fetch(L.SERVEUR_RAPPELS + '/sauvegarde-effacer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: await L.idDuCode(s.code) }) }); } catch {}
+  ecrireSauvAuto(null);
+}
+const codeHtml = code => `<p class="code-recup">${esc(code)}</p>`;
+function activerSauvegarde() {
+  const code = L.nouveauCode();
+  ouvrirDlg(`<form><h2>Ton code de récupération</h2>${codeHtml(code)}
+    <p class="muted">Note-le maintenant : capture d’écran, carnet ou gestionnaire de mots de passe. C’est la seule clé de ta copie : sans lui, personne ne peut la relire, ni toi sur un nouveau téléphone, ni l’autrice de l’app.</p>
+    <label class="coche"><input type="checkbox" class="chk" name="note" required>J’ai noté mon code</label>
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Activer</button></div></form>`, () => {
+    ecrireSauvAuto({ code });
+    sauvegarderAuto().then(() => dire('Sauvegarde automatique activée'), () => dire('Activée : la première copie partira avec du réseau.')).finally(maj);
+    if (data.notifs?.actif) synchroRappels(true).catch(() => {});   // le rappel du dimanche n'a plus lieu d'être
+  });
+}
+function voirCode() {
+  ouvrirDlg(`<form><h2>Ton code de récupération</h2>${codeHtml(sauvAuto().code)}
+    <p class="muted">Il sert à récupérer ta copie sur un nouveau téléphone : Bienvenue › Récupérer ma sauvegarde.</p>
+    <button class="btn plein">Fermer</button></form>`, () => {});
+}
+function desactiverSauvegarde() {
+  ouvrirDlg(`<form><h2>Désactiver la sauvegarde automatique ?</h2>
+    <p class="muted">La copie chiffrée est effacée du serveur. Tes données restent sur ce téléphone.</p>
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn rouge">Désactiver</button></div></form>`, () => {
+    effacerCopie().then(() => { dire('Sauvegarde automatique désactivée, copie effacée'); maj(); });
+  });
+}
+function recupererSauvegarde() {
+  ouvrirDlg(`<form><h2>Récupérer ma sauvegarde</h2>
+    <p class="muted">Tape le code de récupération noté quand tu as activé la sauvegarde automatique.</p>
+    <label class="champ">Code<input name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX"></label>
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Récupérer</button></div></form>`, (choix, f) => {
+    const code = L.normCode(f.get('code'));
+    if (code.length !== 20) { dire('Le code fait 20 caractères'); return false; }
+    (async () => {
+      const r = await fetch(L.SERVEUR_RAPPELS + '/restauration', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: await L.idDuCode(code) }) });
+      if (r.status === 404) return dire('Aucune copie pour ce code');
+      if (!r.ok) throw new Error('serveur ' + r.status);
+      const o = await L.dechiffrerCopie(await r.text(), code);
+      proposerSauvegarde(o, () => ecrireSauvAuto({ code: code.match(/.{5}/g).join('-'), quand: new Date().toISOString() }));
+    })().catch(() => dire('Récupération impossible : vérifie le code et le réseau.'));
+  });
+}
+// Le rappel du dimanche ouvre l'app sur la sauvegarde.
+function allerSauvegarde() {
+  if (location.hash !== '#sauvegarde') return;
+  history.replaceState(null, '', location.pathname);
+  ui.reglages = true; ui.ouvertes.add('r-sauvegarde');
+  vueProfil(); ouvrir('profil');
+}
+addEventListener('hashchange', allerSauvegarde);
 
 // ---------- Rappels (notifications) ----------
 // Le serveur ne reçoit que l'adresse d'abonnement de ce téléphone et les heures des rappels ;
@@ -1335,7 +1425,7 @@ async function desactiverRappels(silencieux) {
 let synchroEnCours = null;
 async function synchroRappels(forcer, sub, essai) {
   if (!data.notifs?.actif || !L.SERVEUR_RAPPELS) return;
-  const rappels = L.calculerRappels(data, Date.now(), data.notifs);
+  const rappels = L.calculerRappels(data, Date.now(), { ...data.notifs, sauvegardeAuto: !!sauvAuto() });
   const empreinte = rappels.map(r => r.t).join(',');
   // Le rappel d'essai part au prochain passage du serveur (toutes les 2 minutes).
   if (essai) rappels.unshift({ t: Math.floor(Date.now() / 1000) + 30, titre: 'Les rappels marchent', corps: 'Tu recevras tes rappels ici.' });
@@ -1387,10 +1477,10 @@ const TUTO = [
   ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
 ];
 // Les conditions d'utilisation : acceptées une fois, et de nouveau quand leur version change.
-const CGU = 1;
+const CGU = 2;   // 2 : la sauvegarde automatique (24/10)
 function conditions() {
   ouvrirDlg(`<form><h2>Avant de commencer</h2>
-    <p>L’app est gratuite et sans compte. Ce que tu écris reste sur ton téléphone : personne ne peut le récupérer pour toi, alors exporte une sauvegarde chaque semaine. Les rappels peuvent arriver en retard ou pas du tout.</p>
+    <p>L’app est gratuite et sans compte. Ce que tu écris reste sur ton téléphone : active la sauvegarde automatique (chiffrée) ou exporte une sauvegarde chaque semaine. Les rappels peuvent arriver en retard ou pas du tout.</p>
     <p><a href="conditions.html">Conditions d’utilisation</a> · <a href="confidentialite.html">Confidentialité</a></p>
     <button class="btn plein">J’ai lu et j’accepte</button></form>`, () => {
     data.cgu = CGU; sauver();
@@ -1552,6 +1642,10 @@ document.addEventListener('click', e => {
     case 'rappels-activer': return activerRappels();
     case 'rappels-plus-tard': data.notifs.plusTard = true; return maj();
     case 'rappels-desactiver': return desactiverRappels();
+    case 'sauv-activer': return activerSauvegarde();
+    case 'sauv-code': return voirCode();
+    case 'sauv-desactiver': return desactiverSauvegarde();
+    case 'sauv-recuperer': return recupererSauvegarde();
     case 'rappels-essai': return synchroRappels(true, null, true).then(() => dire('Notification d’essai dans 2 minutes, même app fermée')).catch(() => dire('Envoi impossible : réessaie avec du réseau.'));
     case 'tout-effacer': return toutEffacer();
     case 'stats-per': ui.statsPer = id; return vueProfil();
@@ -1639,3 +1733,5 @@ dernier = L.stats(data, new Date());
 ouvrir(ui.onglet);
 if (data.cgu !== CGU) conditions(); else if (!data.tutoVu) tutoriel();
 if (data.notifs?.actif) synchroRappels(false);
+planifierSauvegarde();
+allerSauvegarde();

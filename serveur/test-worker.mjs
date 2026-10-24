@@ -59,4 +59,21 @@ assert.equal(stock.size, 0);
 await traiter(requete('/abonnement', { id, abonnement, rappels: [s0 + 7200] }), env, T0);
 assert.equal((await traiter(requete('/desabonnement', { id }), env, T0)).status, 204);
 assert.equal(stock.size, 0);
+// Sauvegarde chiffrée : rangée telle quelle sous l'empreinte, rendue au même identifiant, effacée à la demande.
+{
+  const brut = (chemin, corps, origine = 'https://emmajeuch.github.io') => new Request('https://orga-rappels.exemple.workers.dev' + chemin, { method: 'POST', headers: { Origin: origine, 'Content-Type': 'text/plain' }, body: corps });
+  assert.equal((await traiter(brut('/sauvegarde', `${id}\nAAAA\nQkJCQg==`, 'https://pirate.exemple'), env, T0)).status, 403);
+  assert.equal((await traiter(brut('/sauvegarde', `court\nAAAA\nQkJCQg==`), env, T0)).status, 422);
+  assert.equal((await traiter(brut('/sauvegarde', `${id}\nAAAA\nQkJCQg==\nen trop`), env, T0)).status, 422);
+  assert.equal((await traiter(brut('/sauvegarde', `${id}\nAAAA\nQkJCQg==`), env, T0)).status, 204);
+  const cleS = [...stock.keys()].find(k => k.startsWith('s:'));
+  assert.ok(cleS && !cleS.includes(id));
+  const r = await traiter(requete('/restauration', { id }), env, T0);
+  assert.equal(r.status, 200);
+  assert.equal(await r.text(), 'AAAA\nQkJCQg==');
+  assert.equal((await traiter(requete('/restauration', { id: 'zyxwvutsrqponmlkjihgfedcba543210' }), env, T0)).status, 404);
+  assert.equal((await traiter(requete('/sauvegarde-effacer', { id }), env, T0)).status, 204);
+  assert.equal((await traiter(requete('/restauration', { id }), env, T0)).status, 404);
+}
+
 console.log('ok');

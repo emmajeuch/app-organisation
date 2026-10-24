@@ -413,3 +413,6 @@ button:active, .chip:active, [role="button"]:active { transform: scale(.95); }
 .jours-choix span { display: grid; place-items: center; height: 40px; border-radius: 12px; background: var(--surface); font-weight: 650; text-transform: capitalize; }
 .jours-choix input:checked + span { background: var(--ink); color: var(--on-ink); }
 .jours-choix input:focus-visible + span { outline: 2px solid var(--ink); }
+
+/* Code de récupération de la sauvegarde automatique */
+.code-recup { font-family: ui-monospace, Menlo, monospace; font-size: 20px; font-weight: 700; letter-spacing: .04em; text-align: center; padding: 14px; border-radius: 14px; background: var(--surface); user-select: all; -webkit-user-select: all; }

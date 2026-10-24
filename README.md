@@ -44,13 +44,15 @@ Chrome peut aussi proposer de lui-même une petite bannière pour installer l'ap
 - **Supprimer l'icône peut effacer tes données.** Pour la ranger, déplace-la plutôt dans un
   dossier ou sur une page de l'écran d'accueil que tu masques.
 - Le téléphone peut aussi effacer les données d'une web app quand il manque de place.
-- **Fais une sauvegarde chaque semaine** : Profil › ⚙ › Sauvegarde › Exporter, puis range le
+- **Active la sauvegarde automatique** (Profil › ⚙ › Sauvegarde) : une copie chiffrée part toute seule,
+  et ton code de récupération la remet en place sur un nouveau téléphone. Ou bien **exporte** : Profil › ⚙ › Sauvegarde › Exporter, puis range le
   fichier dans Fichiers (iCloud Drive) ou Google Drive. Profil › ⚙ › Sauvegarde › Importer la remet en place.
 
 ## Confidentialité
 
 Ce que tu écris ne quitte pas ton téléphone : pas de compte, pas de cookie, pas de publicité, pas de mesure d'audience.
-Si tu actives les rappels, seules leurs heures partent vers le serveur des rappels.
+Si tu actives les rappels, seules leurs heures partent vers le serveur. Si tu actives la sauvegarde automatique,
+une copie chiffrée y part, que seul ton code de récupération permet de relire.
 Détail et mentions légales : https://emmajeuch.github.io/app-organisation/confidentialite.html
 
 ## Les mises à jour
