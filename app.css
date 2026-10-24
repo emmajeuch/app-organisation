@@ -460,14 +460,15 @@ button:active, .chip:active, [role="button"]:active { transform: scale(.95); }
 .etoiles[data-note="1"] label:nth-child(-n+1) span, .etoiles[data-note="2"] label:nth-child(-n+2) span, .etoiles[data-note="3"] label:nth-child(-n+3) span,
 .etoiles[data-note="4"] label:nth-child(-n+4) span, .etoiles[data-note="5"] label:nth-child(-n+5) span { background: #FFD447; color: #15171C; }
 /* Changer de semaine en glissant */
-.wk.vient-droite { animation: vient-droite .22s ease-out; }
-.wk.vient-gauche { animation: vient-gauche .22s ease-out; }
-@keyframes vient-droite { from { transform: translateX(28px); opacity: .3; } }
-@keyframes vient-gauche { from { transform: translateX(-28px); opacity: .3; } }
+.wk.vient-droite { animation: vient-droite .26s cubic-bezier(.2, .9, .3, 1); }
+.wk.vient-gauche { animation: vient-gauche .26s cubic-bezier(.2, .9, .3, 1); }
+@keyframes vient-droite { from { transform: translateX(70%); opacity: 0; } }
+@keyframes vient-gauche { from { transform: translateX(-70%); opacity: 0; } }
+#semaine { overflow-x: hidden; }
 /* Le compagnon qui se promène, au-dessus des onglets ; il ne bloque aucun tap */
 /* V1.10.5 : plus gros, et chaque créature a son comportement (animerBalade dans app.js choisit l'action) */
-.balade { position: fixed; left: 0; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); width: 68px; z-index: 4; pointer-events: none; }
-.balade .compagnon { width: 68px; }
+.balade { position: fixed; left: 0; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); width: 96px; z-index: 4; pointer-events: none; }
+.balade .compagnon { width: 96px; }
 .balade .sens { transform: scaleX(var(--sens, 1)); transition: transform .2s; }
 .balade .bulle { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--ink-2); animation: bulle 1.8s ease-in-out infinite; }
 .balade .bulle:empty { display: none; }
@@ -544,3 +545,14 @@ dialog[open]::backdrop { animation: fondu .3s ease-out; }
 .jours-type { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 4px 0 8px; }
 .jours-type button { height: 38px; border-radius: 10px; background: var(--surface-2); font-weight: 700; text-transform: capitalize; font-size: 13px; }
 .jours-type button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+
+/* V1.10.6 : un + par rubrique dans Notes, à la place du gros + */
+body[data-onglet="notes"] .fab { display: none; }
+.plus-sec { display: inline-grid; place-items: center; width: 30px; height: 30px; margin-left: 8px; border-radius: 50%; background: var(--accent); color: var(--on-accent); vertical-align: middle; }
+.plus-sec svg { width: 18px; height: 18px; }
+/* Le spectre des couleurs du thème */
+.rangee-titre { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.spectre { position: relative; height: 140px; border-radius: 14px; touch-action: none; cursor: crosshair; margin-top: 6px;
+  background: linear-gradient(to bottom, #fff 0%, rgb(255 255 255 / 0) 50%, rgb(0 0 0 / 0) 50%, #000 100%),
+              linear-gradient(to right, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00); box-shadow: inset 0 0 0 1px var(--line); }
+.spectre i { position: absolute; left: var(--x); top: var(--y); width: 26px; height: 26px; border-radius: 50%; transform: translate(-50%, -50%); background: var(--c); box-shadow: 0 0 0 3px #fff, 0 0 0 4px rgb(0 0 0 / .4), 0 2px 8px rgb(0 0 0 / .4); pointer-events: none; }

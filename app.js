@@ -282,11 +282,7 @@ function vueAujourdhui() {
   }
   const aBilan = bilanAFaire();
   if (aBilan) html += `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>`;
-  if (actif('compagnon') && data.compagnon?.id) {
-    const c = L.CREATURES.find(x => x.id === data.compagnon.id);
-    if (c) html += `<button class="card compagnon-carte petit" data-act="ouvrir-profil">${compagnonFig(c, data.compagnon.stade || 0)}<span class="txt"><b>${esc(c.nom)}</b><small>Stade ${data.compagnon.stade || 0} sur 4</small></span></button>`;
-  }
-
+  // V1.10.6 : plus de carte du compagnon dans Aujourd'hui ; il se promène en bas de l'écran.
   const j = L.jourSemaine(date);
   const slots = semaineDe(cleSem(date)).slots.filter(x => x.j === j);
   const duJour = [...(data.plage[0] > 1 ? [{ s: 1, e: data.plage[0], cat: 'sommeil', titre: 'Nuit' }] : []), ...slots];
@@ -555,18 +551,18 @@ const joursChoix = (nom, sel = []) => `<div class="jours-choix">${JOURS.map((n, 
 // Un créneau type : ce qui revient chaque semaine, les jours cochés.
 function editerRecurrent(r, jt = null) {
   const neuf = !r, v = r || { titre: '', cat: ui.derniereCat || data.cats[0]?.id, s: 8, e: 9, jours: [jt ?? L.jourSemaine(new Date())], salle: '', affaires: '' };
+  // Depuis une journée type (V1.10.6) : seul ce jour change ; un créneau type commun à plusieurs jours se sépare.
   const separable = !neuf && jt !== null && r.jours.length > 1;
   ouvrirDlg(`<form><h2>${neuf ? (jt !== null ? `Nouveau, le ${JOURS[jt]}` : 'Nouveau créneau type') : 'Créneau type'}</h2>
     <p class="muted">Il revient chaque semaine, les jours cochés. Le changer met à jour ta semaine à partir d’aujourd’hui ; le passé et ce qui est déjà validé ne bougent pas.</p>
     <label class="champ">Titre<input name="titre" value="${esc(v.titre)}" placeholder="${esc(cat(v.cat).nom)}" autocomplete="off"></label>
     <div class="cats" role="radiogroup" aria-label="Catégorie">${data.cats.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${c.id === v.cat ? 'checked' : ''}><span style="${teinte(c.id)}">${esc(c.nom)}</span></label>`).join('')}</div>
-    <div class="champ">Jours${joursChoix('jours', v.jours)}</div>
+    ${jt === null ? `<div class="champ">Jours${joursChoix('jours', v.jours)}</div>` : `<p class="aide">Seulement le ${JOURS[jt]} type. Pour le reprendre un autre jour : « Copier le ${JOURS[jt]} type ».</p>`}
     <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Début<input type="time" name="s" value="${L.hhmm(v.s)}" step="300" required></label><label class="champ">Fin<input type="time" name="e" value="${L.hhmm(v.e)}" step="300" required></label></div>
     <label class="champ">Salle, lieu<input name="salle" value="${esc(v.salle)}" autocomplete="off"></label>
     <label class="champ">Affaires à prendre<input name="affaires" value="${esc(v.affaires)}" autocomplete="off"></label>
-    ${separable ? `<label class="coche"><input type="checkbox" class="chk" name="seul" checked>Seulement le ${JOURS[jt]} (les autres jours ne changent pas)</label>` : ''}
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
-    const seul = separable && !!f.get('seul');
+    const seul = separable;
     if (choix === 'suppr' && seul) {
       r.jours = r.jours.filter(j => j !== jt);
       L.regenerer(data); L.propager(data, [r.id]);
@@ -578,7 +574,7 @@ function editerRecurrent(r, jt = null) {
       maj(); dire('Créneau type supprimé, à partir d’aujourd’hui'); return;
     }
     const p0 = data.plage[0];
-    const c = { cat: f.get('cat') || v.cat, s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), jours: seul ? [jt] : f.getAll('jours').map(Number), salle: f.get('salle').trim(), affaires: f.get('affaires').trim() };
+    const c = { cat: f.get('cat') || v.cat, s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), jours: jt !== null ? [jt] : f.getAll('jours').map(Number), salle: f.get('salle').trim(), affaires: f.get('affaires').trim() };
     c.titre = f.get('titre').trim() || cat(c.cat).nom;
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
     if (!c.jours.length) { dire('Coche au moins un jour.'); return false; }
@@ -673,13 +669,32 @@ vueSem.addEventListener('touchstart', e => {
   if (e.touches.length !== 1) { glisse = null; return; }
   glisse = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
 }, { passive: true });
+// V1.10.6 : la semaine suit le doigt pendant le glissement, puis part d'un côté (ou revient si le geste est trop court).
+vueSem.addEventListener('touchmove', e => {
+  if (!glisse || (geste && geste.mode !== 'attente') || e.target.closest('input, select, textarea, .groupe')) return;
+  const t = e.touches[0], dx = t.clientX - glisse.x, dy = t.clientY - glisse.y;
+  if (glisse.horizontal === undefined && Math.hypot(dx, dy) > 10) glisse.horizontal = Math.abs(dx) > Math.abs(dy) * 1.3;
+  const wk = glisse.horizontal && $('#semaine .wk');
+  if (!wk) return;
+  wk.style.transition = 'none';
+  wk.style.transform = `translateX(${dx}px)`;
+  wk.style.opacity = 1 - Math.min(Math.abs(dx) / 700, .35);
+}, { passive: true });
 vueSem.addEventListener('touchend', e => {
   if (!glisse) return;
-  const t = e.changedTouches[0], dx = t.clientX - glisse.x, dy = t.clientY - glisse.y, duree = Date.now() - glisse.t;
+  const t = e.changedTouches[0], dx = t.clientX - glisse.x, vite = Math.abs(dx) / (Date.now() - glisse.t) > .5;
+  const horizontal = glisse.horizontal;
   glisse = null;
-  if ((geste && geste.mode !== 'attente') || Date.now() - finDernierGeste < 400) return;
-  if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * .6 || duree > 700 || e.target.closest('input, select, textarea, .groupe')) return;
-  changerSemaine(dx < 0 ? 1 : -1);
+  const wk = $('#semaine .wk');
+  if (!horizontal || !wk || (geste && geste.mode !== 'attente') || Date.now() - finDernierGeste < 400) return;
+  if (Math.abs(dx) > 70 || (vite && Math.abs(dx) > 30)) {
+    wk.style.transition = 'transform .16s ease-in, opacity .16s';
+    wk.style.transform = `translateX(${dx < 0 ? -110 : 110}%)`; wk.style.opacity = '0';
+    setTimeout(() => changerSemaine(dx < 0 ? 1 : -1), 150);
+  } else {
+    wk.style.transition = 'transform .22s cubic-bezier(.2, .9, .3, 1.2), opacity .22s';
+    wk.style.transform = ''; wk.style.opacity = '';
+  }
 });
 function changerSemaine(sens) {
   ui.lundi = L.ajouterJours(ui.lundi, 7 * sens);
@@ -749,23 +764,23 @@ function corpsNotes() {
 
   const ouvertes = data.taches.filter(t => !t.fait).sort((a, b) => (a.echeance || '9999').localeCompare(b.echeance || '9999') || (a.heure ?? 99) - (b.heure ?? 99) || (a.priorite || 2) - (b.priorite || 2));
   const faites = data.taches.filter(t => t.fait).sort((a, b) => (b.faitLe || '').localeCompare(a.faitLe || '')).slice(0, 20);
-  if (actif('taches')) h += `<div class="sec"><h2>Tâches <span>${pl(ouvertes.length, 'à faire', 'à faire')}</span></h2>${ouvertes.length ? `<ul class="list">${ouvertes.map(tacheHtml).join('')}</ul>` : '<p class="vide">Aucune tâche. Ajoute-en avec le bouton +.</p>'}
+  if (actif('taches')) h += `<div class="sec"><h2>Tâches <span>${pl(ouvertes.length, 'à faire', 'à faire')}<button class="plus-sec" data-act="ajouter" data-id="tache" aria-label="Ajouter une tâche">${I.plus}</button></span></h2>${ouvertes.length ? `<ul class="list">${ouvertes.map(tacheHtml).join('')}</ul>` : '<p class="vide">Aucune tâche. Ajoute-en avec le + à côté du titre.</p>'}
     ${faites.length ? `<details class="liste" data-id="faites" ${ui.ouvertes.has('faites') ? 'open' : ''}><summary>Faites récemment<span class="pill">${faites.length}</span></summary><ul class="list">${faites.map(tacheHtml).join('')}</ul></details>` : ''}</div>`;
 
-  if (actif('habitudes')) h += `<div class="sec"><h2>Habitudes <span>cette semaine</span></h2>${data.habitudes.length ? `<ul class="list">${data.habitudes.map(hb => `<li class="colonne">
+  if (actif('habitudes')) h += `<div class="sec"><h2>Habitudes <span>cette semaine<button class="plus-sec" data-act="ajouter" data-id="habitude" aria-label="Ajouter une habitude">${I.plus}</button></span></h2>${data.habitudes.length ? `<ul class="list">${data.habitudes.map(hb => `<li class="colonne">
       <div class="txt" data-act="editer-habitude" data-id="${hb.id}" role="button" tabindex="0"><b>${esc(hb.nom)}</b><small>${esc([hb.freq === 'jour' ? 'Chaque jour' : `${L.faitsSemaine(hb, lundiH)}/${hb.freq} cette semaine`, L.horairesTexte(hb.horaires)].filter(Boolean).join(' · '))}</small></div>
-      ${regulariteHtml(hb, lundiH)}</li>`).join('')}</ul>` : '<p class="vide">Aucune habitude. Ajoute-en avec le bouton +.</p>'}</div>`;
+      ${regulariteHtml(hb, lundiH)}</li>`).join('')}</ul>` : '<p class="vide">Aucune habitude. Ajoute-en avec le + à côté du titre.</p>'}</div>`;
 
   if (actif('objectifs')) {
     const om = objectifs('mois', pM), oa = objectifs('annee', pA);
-    h += `<div class="sec"><h2>Objectifs de la semaine ${os.length ? `<span>${faits} sur ${os.length}</span>` : ''}</h2>
-      ${os.length ? `<div class="card"><div class="goal-head"><b>${faits} sur ${os.length} atteints</b><span class="num">${Math.round(faits / os.length * 100)} %</span></div><div class="bar"><i style="width:${faits / os.length * 100}%"></i></div></div>${objectifsHtml('semaine', pS, true)}` : '<p class="vide">Aucun objectif cette semaine. Ajoute-en avec le bouton +.</p>'}
+    h += `<div class="sec"><h2>Objectifs <span><button class="plus-sec" data-act="ajouter" data-id="objectif" aria-label="Ajouter un objectif">${I.plus}</button></span></h2>
+      ${groupe('obj-semaine', 'Objectifs de la semaine', `${faits} sur ${os.length} atteints`, os.length ? `<div class="bar"><i style="width:${faits / os.length * 100}%"></i></div>${objectifsHtml('semaine', pS, true)}` : '<p class="vide">Aucun pour cette semaine.</p>')}
       ${groupe('obj-mois', 'Objectifs du mois', `${now.toLocaleDateString('fr-FR', { month: 'long' })} · ${om.filter(o => o.fait).length} sur ${om.length}`, om.length ? objectifsHtml('mois', pM, true) : '<p class="vide">Aucun pour ce mois.</p>')}
       ${groupe('obj-annee', 'Objectifs de l’année', `${pA.replace('-', '–')} · ${oa.filter(o => o.fait).length} sur ${oa.length}`, oa.length ? objectifsHtml('annee', pA, true) : '<p class="vide">Aucun pour cette année.</p>')}</div>`;
   }
-  if (actif('listes')) h += `<div class="sec"><h2>Listes</h2>${data.listes.filter(garde).map(listeHtml).join('') || '<p class="vide">Aucune liste. Ajoute-en avec le bouton +.</p>'}</div>`;
+  if (actif('listes')) h += `<div class="sec"><h2>Listes <span><button class="plus-sec" data-act="ajouter" data-id="liste" aria-label="Ajouter une liste">${I.plus}</button></span></h2>${data.listes.filter(garde).map(listeHtml).join('') || '<p class="vide">Aucune liste. Ajoute-en avec le + à côté du titre.</p>'}</div>`;
   const notes = data.notes.filter(garde).sort((a, b) => (b.epingle ? 1 : 0) - (a.epingle ? 1 : 0) || (b.maj || 0) - (a.maj || 0));
-  if (actif('notes')) h += `<div class="sec"><h2>Notes libres</h2>${notes.length ? `<div class="notes">${notes.map(noteHtml).join('')}</div>` : '<p class="vide">Aucune note. Ajoute-en avec le bouton +.</p>'}</div>`;
+  if (actif('notes')) h += `<div class="sec"><h2>Notes libres <span><button class="plus-sec" data-act="ajouter" data-id="note" aria-label="Ajouter une note">${I.plus}</button></span></h2>${notes.length ? `<div class="notes">${notes.map(noteHtml).join('')}</div>` : '<p class="vide">Aucune note. Ajoute-en avec le + à côté du titre.</p>'}</div>`;
   // Les modules : ce que l'app affiche (déplacés ici depuis les Réglages, retour des testeurs, 24/10).
   h += `<div class="sec">${groupe('modules', 'Modules', `${MODULES.filter(([id]) => actif(id)).length} sur ${MODULES.length} affichés · ce que l’app montre`,
     `<ul class="list">${MODULES.map(([id, nom]) => `<li><label class="coche" style="flex:1"><input type="checkbox" class="chk" data-act="module" data-id="${id}" ${actif(id) ? 'checked' : ''}>${nom}</label></li>`).join('')}</ul>
@@ -1143,8 +1158,8 @@ const ACCENTS = [['#FF9600', 'Orange'], ['#EC4A46', 'Rouge'], ['#FF4D8D', 'Rose'
   ['#00B3C7', 'Turquoise'], ['#16A34A', 'Vert'], ['#A6E35F', 'Citron'], ['#FFD447', 'Jaune'], ['#8B5E3C', 'Brun'], ['#9AA1AE', 'Gris']];
 // Les anciens thèmes (avant la 1.10.5) donnent leurs couleurs : clair et sombre deviennent un fond.
 const couleursTheme = () => data.couleurs || (data.theme === 'nuit' ? { fond: '#0B0D11' } : data.theme === 'clair' ? { fond: '#F4F5F8' } : {});
-function appliquerTheme() {
-  const r = document.documentElement, c = couleursTheme(), p = c.fond && L.paletteTheme(c.fond, c.accent || '#FF9600');
+function appliquerTheme(c = couleursTheme()) {
+  const r = document.documentElement, p = c.fond && L.paletteTheme(c.fond, c.accent || '#FF9600');
   r.removeAttribute('style'); delete r.dataset.theme;
   if (p) for (const [k, v] of Object.entries(p)) r.style.setProperty(k, v);
   else if (c.accent) {
@@ -1154,6 +1169,39 @@ function appliquerTheme() {
   // La barre d'état de l'iPhone prend la couleur du fond.
   document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = p ? p['--bg'] : m.media.includes('dark') ? '#0B0D11' : '#E8EAF0'; });
 }
+// Le spectre : la teinte de gauche à droite, du clair (en haut) au foncé (en bas) ; le rond montre la couleur choisie.
+const versHsl = hex => {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255), max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  const h = !d ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, l];
+};
+const depuisHsl = (h, l) => {
+  const k = n => (n + h / 30) % 12, a = Math.min(l, 1 - l);
+  return '#' + [0, 8, 4].map(n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))).toString(16).padStart(2, '0')).join('');
+};
+const spectre = (id, val) => { const [h, l] = val ? versHsl(L.couleurSure(val)) : [30, .5]; return `<div class="spectre" data-spectre="${id}" style="--x:${h / 3.6}%;--y:${(1 - l) * 100}%;--c:${val || 'transparent'}"><i></i></div>`; };
+document.addEventListener('pointerdown', e => {
+  const sp = e.target.closest('[data-spectre]');
+  if (!sp) return;
+  e.preventDefault();
+  try { sp.setPointerCapture(e.pointerId); } catch {}
+  const id = sp.dataset.spectre;
+  let couleur = null;
+  const bouge = ev => {
+    const r = sp.getBoundingClientRect(), x = Math.min(Math.max((ev.clientX - r.left) / r.width, 0), 1), y = Math.min(Math.max((ev.clientY - r.top) / r.height, 0), 1);
+    couleur = depuisHsl(x * 360, 1 - y);
+    sp.style.setProperty('--x', x * 100 + '%'); sp.style.setProperty('--y', y * 100 + '%'); sp.style.setProperty('--c', couleur);
+    appliquerTheme({ ...couleursTheme(), [id]: couleur });   // aperçu en direct, rien n'est redessiné pendant le geste
+  };
+  const fin = () => {
+    sp.removeEventListener('pointermove', bouge);
+    if (couleur) { data.couleurs = { ...couleursTheme(), [id]: couleur }; data.theme = 'perso'; maj(); }
+  };
+  bouge(e);
+  sp.addEventListener('pointermove', bouge);
+  sp.addEventListener('pointerup', fin, { once: true });
+  sp.addEventListener('pointercancel', fin, { once: true });
+});
 const pastilles = (id, liste, sel, auto) => `<div class="pastilles">${auto ? `<button class="pastille-c auto" data-act="couleur" data-id="${id}" data-c="" aria-pressed="${!sel}" aria-label="Automatique">Auto</button>` : ''}${liste.map(([c, nom]) => `<button class="pastille-c" data-act="couleur" data-id="${id}" data-c="${c}" aria-pressed="${sel?.toLowerCase() === c.toLowerCase()}" aria-label="${nom}" style="background:${c}"></button>`).join('')}</div>`;
 const SOURCES = { creneaux: ['Créneaux', '#35C6DF'], taches: ['Tâches', '#EC4A46'], sport: ['Sport', '#B5DF2B'],
   habitudes: ['Habitudes', '#FF8AC1'], objectifs: ['Objectifs', '#6766F0'], bonus: ['Journées et bilans', '#FFD447'] };
@@ -1225,9 +1273,9 @@ function vueReglages() {
        ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}
        <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>`)}
     ${groupe('apparence', 'Apparence et son', couleursTheme().fond ? (FONDS.find(f => f[0].toLowerCase() === couleursTheme().fond.toLowerCase())?.[1] || 'Tes couleurs') : 'Automatique',
-      `<div class="champ">Fond et bulles${pastilles('fond', FONDS, couleursTheme().fond, true)}</div>
-       <div class="champ">Boutons et flamme${pastilles('accent', ACCENTS, couleursTheme().accent || (couleursTheme().fond ? '#FF9600' : ''), false)}</div>
-       <p class="aide">Auto suit l’iPhone : clair le jour, sombre si tu l’as réglé. Les textes s’ajustent tout seuls pour rester lisibles.</p>
+      `<div class="champ"><span class="rangee-titre">Fond et bulles <button type="button" class="btn gris petit" data-act="couleur" data-id="fond" data-c="" aria-pressed="${!couleursTheme().fond}">Auto</button></span>${spectre('fond', couleursTheme().fond)}</div>
+       <div class="champ"><span class="rangee-titre">Boutons et flamme <button type="button" class="btn gris petit" data-act="couleur" data-id="accent" data-c="" aria-pressed="${!couleursTheme().accent}">Par défaut</button></span>${spectre('accent', couleursTheme().accent || '#FF9600')}</div>
+       <p class="aide">Glisse le doigt sur le spectre : la couleur change en direct. Auto suit l’iPhone (clair le jour, sombre si tu l’as réglé). Les textes s’ajustent tout seuls pour rester lisibles.</p>
        <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label>`)}
     ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, notice, conditions',
       `<div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
@@ -1871,6 +1919,7 @@ function majOnglets() {
 function ouvrir(id) {
   if (!ongletVisible(id)) id = 'aujourdhui';
   ui.onglet = id;
+  document.body.dataset.onglet = id;
   document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', t.dataset.v === id));
   document.querySelectorAll('main > .view').forEach(v => v.hidden = v.id !== id);
   const v = document.getElementById(id);
@@ -1923,7 +1972,9 @@ function animerBalade(el, c) {
     el.className = `balade ${action}`;
     el.querySelector('.bulle').textContent = BULLES[action] || '';
     if (v) {
-      const x1 = Math.round(10 + Math.random() * (Math.min(innerWidth, 440) - 90));
+      // Il reste sur les bords du téléphone, un peu caché, et ne traverse que de temps en temps (V1.10.6).
+      const w = innerWidth, bords = [-22, w - 74];
+      const x1 = Math.round(Math.random() < .8 ? bords[Math.random() < .5 ? 0 : 1] + (Math.random() * 30 - 15) : 20 + Math.random() * (w - 136));
       duree = Math.max(900, Math.abs(x1 - x) / v * 1000);
       el.style.setProperty('--sens', x1 < x ? -1 : 1);
       el.style.transition = `transform ${duree}ms linear`;
@@ -1946,6 +1997,8 @@ document.addEventListener('click', e => {
   const liste = () => data.listes.find(l => l.id === (el.dataset.liste || id));
   switch (act) {
     case 'plus': return plus();
+    case 'ajouter': return ({ tache: () => editerTache(), habitude: () => editerHabitude({ id: L.uid(), nom: '', freq: 'jour', faits: [], horaires: [] }, true),
+      objectif: () => editerObjectif(), liste: () => editerListe(), note: () => editerNote() })[id]?.();
     case 'depart-exemple': case 'depart-vide': {
       data.recurrents = act === 'depart-exemple' ? L.recurrentsExemple() : [];
       L.regenerer(data);
