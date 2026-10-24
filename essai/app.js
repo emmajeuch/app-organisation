@@ -1331,7 +1331,7 @@ function rappelsHtml(dansReglages) {
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="creneaux" ${n.creneaux ? 'checked' : ''}>Avant les cours, séances et services</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="soir" ${n.soir ? 'checked' : ''}>À 20 h 30, relire ma journée</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="bilan" ${n.bilan ? 'checked' : ''}>Le dimanche à 17 h, le bilan</label>
-    <button class="btn gris" data-act="rappels-desactiver">Désactiver les rappels</button>`;
+    <div class="rangee"><button class="btn gris" data-act="rappels-essai">Rappel d’essai</button><button class="btn gris" data-act="rappels-desactiver">Désactiver</button></div>`;
   const bas = `${corps}
     <p>Seules les heures des rappels partent vers le serveur, jamais le nom de tes cours ni tes salles. <a href="confidentialite.html">En savoir plus</a></p>`;
   return dansReglages ? bas : `<div class="sec"><h2>Notifications</h2><div class="card bientot">${bas}</div></div>`;
@@ -1344,9 +1344,9 @@ async function activerRappels() {
     const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: deB64url(L.VAPID_PUBLIQUE) });
     data.notifs.id ||= aleatoire();
     data.notifs.actif = true;
-    await synchroRappels(true, sub);
+    await synchroRappels(true, sub, true);
     noterUsage('notifications');
-    dire('Rappels activés');
+    dire('Rappels activés : une notification d’essai arrive dans 2 minutes');
     maj();
   } catch (e) { data.notifs.actif = false; dire('Activation impossible : réessaie avec du réseau.'); }
 }
@@ -1363,11 +1363,14 @@ async function desactiverRappels(silencieux) {
 
 // Recalcule les rappels ; n'écrit sur le serveur que si les heures ont changé (l'offre gratuite limite les écritures).
 let synchroEnCours = null;
-async function synchroRappels(forcer, sub) {
+async function synchroRappels(forcer, sub, essai) {
   if (!data.notifs?.actif || !L.SERVEUR_RAPPELS) return;
   const rappels = L.calculerRappels(data, Date.now(), data.notifs);
+  const empreinte = rappels.map(r => r.t).join(',');
+  // Le rappel d'essai part au prochain passage du serveur (toutes les 2 minutes).
+  if (essai) rappels.unshift({ t: Math.floor(Date.now() / 1000) + 30, titre: 'Les rappels marchent', corps: 'Tu recevras tes rappels ici.' });
   try { await (await caches.open('orga-rappels')).put('rappels.json', new Response(JSON.stringify(rappels), { headers: { 'Content-Type': 'application/json' } })); } catch {}
-  const heures = rappels.map(r => r.t), empreinte = heures.join(',');
+  const heures = rappels.map(r => r.t);
   if (!forcer && empreinte === data.notifs.dernier) return;
   sub ||= await (await navigator.serviceWorker.ready).pushManager.getSubscription();
   if (!sub) { data.notifs.actif = false; sauver(); return; }
@@ -1570,6 +1573,7 @@ document.addEventListener('click', e => {
     case 'rappels-activer': return activerRappels();
     case 'rappels-plus-tard': data.notifs.plusTard = true; return maj();
     case 'rappels-desactiver': return desactiverRappels();
+    case 'rappels-essai': return synchroRappels(true, null, true).then(() => dire('Notification d’essai dans 2 minutes, même app fermée')).catch(() => dire('Envoi impossible : réessaie avec du réseau.'));
     case 'tout-effacer': return toutEffacer();
     case 'stats-per': ui.statsPer = id; return vueProfil();
     case 'choisir-compagnon': if (!data.collection.some(x => x.id === id)) return; data.compagnon = L.grandir({ id, stade: 0 }, L.stats(data, new Date()).joursValides); noterUsage('compagnon'); return maj();
