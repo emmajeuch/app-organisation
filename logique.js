@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.9.3';
+export const VERSION = '1.9.4';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -583,23 +583,33 @@ export function grandir(compagnon, nbJours) {
 // Adresse du serveur des rappels et sa clé publique VAPID : vides tant que le serveur n'est pas en ligne.
 export const SERVEUR_RAPPELS = 'https://orga-rappels.orgadevie.workers.dev';
 export const VAPID_PUBLIQUE = 'BBdg9PHUm5_4LI9Vv8k4_zOLL8dEcvF3sfzBgkdqVoGQd2TXT4sz9F8rGsiA7TzcD5Et29wzK3UWe5AU8FejD7o';
-export const REGLAGES_RAPPELS = { actif: false, delai: 15, creneaux: true, soir: true, bilan: true };
+export const REGLAGES_RAPPELS = { actif: false, delai: 15, creneaux: true, habitudes: true, soir: true, bilan: true };
 const CATS_RAPPEL = ['cours', 'sport', 'job'];
 
 // Les rappels des 7 prochains jours, avec leur texte. Seules les heures (t, en secondes) partent vers
 // le serveur ; les textes restent sur le téléphone, qui les affiche quand la notification arrive.
 export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
   const out = [], s = Math.floor(maintenant / 1000);
-  const ajout = (t, titre, corps) => { if (t > s && !out.some(x => x.t === t)) out.push({ t, titre, corps }); };
+  const ajout = (t, titre, corps) => {
+    if (t <= s) return;
+    const meme = out.find(x => x.t === t);
+    if (!meme) out.push({ t, titre, corps });
+    else if (!meme.titre.includes(titre)) meme.titre += ` · ${titre}`;
+  };
   const auj = new Date(maintenant);
   for (let i = 0; i < 7; i++) {
     const d = ajouterJours(new Date(auj.getFullYear(), auj.getMonth(), auj.getDate()), i);
     const cle = isoJour(lundiDe(d));
     const t = data.types.find(x => x.id === data.typeDefaut) || data.types[0];
     const slots = (data.semaines[cle]?.slots || t?.slots || []).filter(x => x.j === jourSemaine(d));
-    const a = h => Math.floor(d.getTime() / 1000 + h * 3600);
+    // Heure locale du jour d, juste même les jours de changement d’heure (minuit + 17 h ne fait pas 17 h le 25/10).
+    const a = h => Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, Math.round(h * 60)).getTime() / 1000);
     if (r.creneaux) for (const x of slots) if (CATS_RAPPEL.includes(x.cat) && x.titre !== 'Trajet') {
       ajout(a(x.s) - r.delai * 60, `Dans ${r.delai} min : ${x.titre}`, [hhmm(x.s), x.salle, x.affaires].filter(Boolean).join(' · '));
+    }
+    // Les habitudes à heure, à leur heure exacte, sauf si elles sont déjà cochées ce jour-là ; réglage absent = activé.
+    if (r.habitudes !== false && data.modules?.habitudes !== false) for (const hb of habitudesAHeure(data.habitudes, jourSemaine(d))) {
+      if (!hb.faits.includes(isoJour(d))) ajout(a(hb.heure), hb.nom, 'C’est l’heure de ton habitude.');
     }
     if (r.soir && slots.length) ajout(a(20.5), 'Relis ta journée', 'Valide tes créneaux pour qu’elle compte et garder ta série.');
     if (r.bilan && jourSemaine(d) === 6) ajout(a(17), 'C’est l’heure du bilan', 'Objectifs, tâches à reporter, heures de la semaine.');

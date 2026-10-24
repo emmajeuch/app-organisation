@@ -1294,10 +1294,11 @@ function rappelsHtml(dansReglages) {
   let corps;
   if (!L.SERVEUR_RAPPELS) corps = '<p>Bientôt : le serveur des rappels n’est pas encore en ligne.</p>';
   else if (!pushPossible() || !enApp()) corps = '<p>Pour recevoir des rappels, ouvre l’app depuis son icône sur l’écran d’accueil (iPhone : iOS 16.4 ou plus).</p>';
-  else if (!n.actif) corps = `<p>Un rappel avant tes cours et tes séances, le soir pour relire ta journée, le dimanche pour le bilan.</p>
+  else if (!n.actif) corps = `<p>Un rappel avant tes cours et tes séances, à l’heure de tes habitudes, le soir pour relire ta journée, le dimanche pour le bilan.</p>
     <button class="btn plein" data-act="rappels-activer">Activer les rappels</button>`;
   else corps = `<label class="champ">Avant un cours, une séance ou un service<select data-act="rappel" data-id="delai">${[5, 10, 15, 20, 30, 45, 60].map(m => `<option value="${m}" ${m === n.delai ? 'selected' : ''}>${m} min avant</option>`).join('')}</select></label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="creneaux" ${n.creneaux ? 'checked' : ''}>Avant les cours, séances et services</label>
+    <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="habitudes" ${n.habitudes !== false ? 'checked' : ''}>À l’heure de mes habitudes</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="soir" ${n.soir ? 'checked' : ''}>À 20 h 30, relire ma journée</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="bilan" ${n.bilan ? 'checked' : ''}>Le dimanche à 17 h, le bilan</label>
     <div class="rangee"><button class="btn gris" data-act="rappels-essai">Rappel d’essai</button><button class="btn gris" data-act="rappels-desactiver">Désactiver</button></div>`;
@@ -1383,7 +1384,7 @@ const TUTO = [
   ['Le bouton +', 'Depuis n’importe quel écran, il ajoute un créneau, une tâche, une note ou un objectif.'],
   ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Le soir, à partir de 20 h, tu relis la journée et tu coches ce que tu as fait.'],
   ['Ta sauvegarde', 'Tes données ne sont que sur ce téléphone. Exporte-les chaque semaine (Profil › Réglages › Sauvegarde). Et ne supprime pas l’icône : ça peut effacer tes données.'],
-  ['Les rappels', 'Un rappel avant tes cours et tes séances, le soir pour relire ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
+  ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes, le soir pour relire ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
 ];
 function tutoriel(i = 0) {
   const [titre, texte] = TUTO[i];

@@ -254,4 +254,24 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   assert.deepEqual(L.habitudesAHeure(hs, 1).map(h => h.nom), ['Lire']);
 }
 
+// Rappels d'habitude : à l'heure exacte, pas si l'habitude est déjà cochée, fusionnés avec la relecture de 20 h 30.
+{
+  const d = L.vide();
+  d.habitudes = [{ id: 'h1', nom: 'Lire', freq: 'jour', faits: ['2026-10-27'], heure: 22, jours: [] }, { id: 'h2', nom: 'Étirements', freq: 'jour', faits: [], heure: 20.5, jours: [0] }];
+  d.semaines['2026-10-26'] = { slots: [{ j: 0, s: 9, e: 10, cat: 'repas', titre: 'Brunch' }] };
+  const rs = L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS });
+  const a = (j, h, m = 0) => new Date(2026, 9, j, h, m).getTime() / 1000;
+  assert.ok(rs.some(x => x.t === a(26, 22) && x.titre === 'Lire'));
+  assert.ok(!rs.some(x => x.t === a(27, 22)));                       // déjà cochée le 27
+  assert.equal(rs.find(x => x.t === a(26, 20, 30)).titre, 'Étirements · Relis ta journée');
+  assert.ok(!L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS, habitudes: false }).some(x => x.titre.includes('Lire')));
+}
+
+// Changement d'heure (dimanche 25/10/2026) : le bilan reste à 17 h, heure locale.
+{
+  const d = L.vide();
+  const rs = L.calculerRappels(d, new Date(2026, 9, 24, 12, 0).getTime(), { ...L.REGLAGES_RAPPELS });
+  assert.equal(rs.find(x => x.titre === 'C’est l’heure du bilan').t, new Date(2026, 9, 25, 17, 0).getTime() / 1000);
+}
+
 console.log('ok');
