@@ -576,3 +576,12 @@ body:not([data-onglet="aujourdhui"]):not([data-onglet="semaine"]) .fab { display
 @keyframes pousse { from { transform: rotate(0) translateX(0); } to { transform: rotate(12deg) translateX(8px); } }
 .bouscule { animation: bouscule .7s cubic-bezier(.3, 1.6, .5, 1); }
 @keyframes bouscule { 20% { transform: rotate(-14deg) scale(1.15); } 45% { transform: rotate(12deg) scale(1.1); } 70% { transform: rotate(-6deg); } }
+
+/* V1.10.8 : une pastille par couleur dans les réglages ; le choix s'ouvre dans une fenêtre */
+.ligne-couleur { display: flex; align-items: center; gap: 10px; }
+.pastille-couleur { flex: 1; display: flex; align-items: center; gap: 12px; text-align: left; min-height: 52px; }
+.pastille-couleur i { width: 40px; height: 40px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px var(--line); flex-shrink: 0; }
+.pastille-couleur span { display: flex; flex-direction: column; }
+.pastille-couleur small { color: var(--ink-2); }
+dialog .choix-couleur { padding: 14px 14px 4px; }
+dialog .choix-couleur .nuances { height: 200px; }

@@ -1172,6 +1172,16 @@ const versHsv = hex => {
   return [h * 60, max ? d / max : 0, max];
 };
 const depuisHsv = (h, s, v) => '#' + [5, 3, 1].map(n => { const k = (n + h / 60) % 6; return Math.round(255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1)))).toString(16).padStart(2, '0'); }).join('');
+// La fenêtre du choix de couleur : la couleur change en direct ; Annuler remet celle d'avant.
+function choisirCouleur(id) {
+  const avant = { ...couleursTheme() };
+  const val = avant[id] || (id === 'accent' ? '#FF9600' : matchMedia('(prefers-color-scheme: dark)').matches ? '#0B0D11' : '#E8EAF0');
+  ouvrirDlg(`<form><h2>${id === 'fond' ? 'Fond et bulles' : 'Boutons et flamme'}</h2>${choixCouleur(id, val)}
+    <p class="aide">La barre choisit la teinte, le carré la nuance : à gauche les gris, en haut le clair, en bas le foncé.</p>
+    <div class="rangee"><button type="button" class="btn gris" data-choix="annuler">Annuler</button><button class="btn plein">OK</button></div></form>`, choix => {
+    if (choix === 'annuler') { data.couleurs = avant; maj(); }
+  });
+}
 const choixCouleur = (id, val) => {
   const [h, s, v] = versHsv(L.couleurSure(val));
   return `<div class="choix-couleur" data-couleur="${id}" data-h="${h}" data-s="${s}" data-v="${v}" style="--h:${h};--sx:${s * 100}%;--vy:${(1 - v) * 100}%;--hx:${h / 3.6}%;--c:${val}">
@@ -1272,9 +1282,8 @@ function vueReglages() {
        ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}
        <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>`)}
     ${groupe('apparence', 'Apparence et son', couleursTheme().fond ? 'Tes couleurs' : 'Automatique',
-      `<div class="champ"><span class="rangee-titre">Fond et bulles <button type="button" class="btn gris petit" data-act="couleur" data-id="fond" data-c="" aria-pressed="${!couleursTheme().fond}">Auto</button></span>${choixCouleur('fond', couleursTheme().fond || (matchMedia('(prefers-color-scheme: dark)').matches ? '#0B0D11' : '#E8EAF0'))}</div>
-       <div class="champ"><span class="rangee-titre">Boutons et flamme <button type="button" class="btn gris petit" data-act="couleur" data-id="accent" data-c="" aria-pressed="${!couleursTheme().accent}">Par défaut</button></span>${choixCouleur('accent', couleursTheme().accent || '#FF9600')}</div>
-       <p class="aide">La barre choisit la teinte, le carré la nuance (à gauche les gris, en haut le clair, en bas le foncé). La couleur change en direct. Auto suit l’iPhone (clair le jour, sombre si tu l’as réglé). Les textes s’ajustent tout seuls pour rester lisibles.</p>
+      `<div class="ligne-couleur"><button type="button" class="pastille-couleur" data-act="choisir-couleur" data-id="fond" style="--c:${couleursTheme().fond || 'linear-gradient(135deg, #F4F5F8 50%, #0B0D11 50%)'}"><i></i><span><b>Fond et bulles</b><small>${couleursTheme().fond ? 'Toucher pour changer' : 'Auto : suit l’iPhone'}</small></span></button><button type="button" class="btn gris petit" data-act="couleur" data-id="fond" data-c="" aria-pressed="${!couleursTheme().fond}">Auto</button></div>
+       <div class="ligne-couleur"><button type="button" class="pastille-couleur" data-act="choisir-couleur" data-id="accent" style="--c:${couleursTheme().accent || '#FF9600'}"><i></i><span><b>Boutons et flamme</b><small>Toucher pour changer</small></span></button><button type="button" class="btn gris petit" data-act="couleur" data-id="accent" data-c="" aria-pressed="${!couleursTheme().accent}">Par défaut</button></div>
        <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label>`)}
     ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, notice, conditions',
       `<div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
@@ -2068,6 +2077,7 @@ document.addEventListener('click', e => {
     case 'tirage': return ouvrirTirage();
     case 'creature': return voirCreature(L.CREATURES.find(c => c.id === id));
     case 'bilan': return faireBilan(el.dataset.cle);
+    case 'choisir-couleur': return choisirCouleur(id);
     case 'couleur': data.couleurs = { ...couleursTheme(), [id]: el.dataset.c || null }; data.theme = 'perso'; return maj();
     case 'editer-tache': return editerTache(data.taches.find(t => t.id === id));
     case 'habitude': {
