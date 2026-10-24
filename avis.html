@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Les avis des testeurs</title>
+<meta name="robots" content="noindex">
+<!-- Page pour l'autrice seulement : les avis ne s'affichent qu'avec sa clé (secret Cloudflare AVIS_CLE). -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src https://orga-rappels.orgadevie.workers.dev; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<link rel="stylesheet" href="app.css">
+<style>
+  .texte { display: flex; flex-direction: column; gap: 14px; padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
+  .avis-liste { display: flex; flex-direction: column; gap: 10px; }
+  .avis-liste .card p { margin: 6px 0 0; white-space: pre-line; overflow-wrap: anywhere; }
+  .avis-liste small { color: var(--ink-2); }
+</style>
+</head>
+<body>
+<main class="app texte">
+  <header class="top"><div><h1>Les avis</h1><p>Envoyés depuis « Donner mon avis »</p></div></header>
+  <form id="f" class="ajout"><input type="password" name="cle" placeholder="Ta clé des avis" aria-label="Clé des avis" autocomplete="current-password" required><button aria-label="Lire">›</button></form>
+  <p id="etat" class="aide" role="status"></p>
+  <div id="liste" class="avis-liste"></div>
+</main>
+<script type="module" src="avis.js"></script>
+</body>
+</html>

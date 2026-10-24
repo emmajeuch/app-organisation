@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.9.11';
+export const VERSION = '1.10.0';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -62,6 +62,85 @@ export function placer(slots, c) {
 
 const copieDe = slots => slots.map(s => ({ ...s, id: uid(), src: s.id, fait: null }));
 
+// ---------- Créneaux types (V1.10) ----------
+// Ce qui revient chaque semaine (sommeil de 23 h à 7 h, repas, cours…) : data.recurrents, une ligne par créneau type
+// et ses jours. Ils forment le modèle (le seul « type », id « base ») qui remplit chaque nouvelle semaine.
+// Un créneau de semaine venu d'un créneau type garde son origine dans src : « <id du créneau type>-<jour> ».
+export const ID_BASE = 'base';
+const slotDe = (r, j) => ({ j, s: r.s, e: r.e, cat: r.cat, titre: r.titre, salle: r.salle || '', affaires: r.affaires || '', notes: '', ...(r.club ? { club: true } : {}) });
+export function modele(recurrents) {
+  let slots = [];
+  for (const r of recurrents) for (const j of [...new Set(r.jours)].sort()) slots = placer(slots, { id: `${r.id}-${j}`, ...slotDe(r, j) });
+  return slots;
+}
+export function regenerer(data) {
+  data.types = [{ id: ID_BASE, nom: 'Créneaux types', slots: modele(data.recurrents || []) }];
+  data.typeDefaut = ID_BASE;
+}
+export const recurrentDe = (data, src) => data.recurrents.find(r => String(src || '').startsWith(r.id + '-'));
+// Après un changement de créneaux types : les semaines déjà ouvertes suivent, à partir d'aujourd'hui.
+// Le passé ne bouge pas ; un créneau déjà validé non plus.
+export function propager(data, ids, maintenant = new Date()) {
+  const auj = momentLogique(maintenant).date, lundiAuj = isoJour(lundiDe(auj)), jAuj = jourSemaine(auj);
+  const de = (x, id) => String(x.src || '').startsWith(id + '-');
+  for (const [cle, sem] of Object.entries(data.semaines)) {
+    if (cle < lundiAuj) continue;
+    const ouvert = j => cle > lundiAuj || j >= jAuj;
+    let slots = sem.slots.filter(x => !(ouvert(x.j) && !x.fait && ids.some(id => de(x, id))));
+    for (const r of data.recurrents.filter(r => ids.includes(r.id))) for (const j of [...new Set(r.jours)].sort()) {
+      if (!ouvert(j) || slots.some(x => x.j === j && x.fait && de(x, r.id))) continue;
+      slots = placer(slots, { id: uid(), src: `${r.id}-${j}`, ...slotDe(r, j), fait: null });
+    }
+    sem.slots = slots;
+  }
+}
+// Des créneaux de semaine regroupés en créneaux types : même titre, catégorie, heures et salle = un créneau type et ses jours.
+export function recurrentsDepuis(slots, exemple = false) {
+  const groupes = new Map(), correspondance = {};
+  for (const x of slots) {
+    const k = [x.titre, x.cat, x.s, x.e, x.salle || '', x.affaires || '', !!x.club].join('|');
+    if (!groupes.has(k)) groupes.set(k, { id: uid(), titre: x.titre, cat: x.cat, s: x.s, e: x.e, jours: [], salle: x.salle || '', affaires: x.affaires || '', ...(x.club ? { club: true } : {}), ...(exemple ? { exemple: true } : {}) });
+    const r = groupes.get(k);
+    if (!r.jours.includes(x.j)) r.jours.push(x.j);
+    correspondance[x.id] = `${r.id}-${x.j}`;
+  }
+  return { recurrents: [...groupes.values()], correspondance };
+}
+// Construire son app par catégories : chaque catégorie réglée donne ses créneaux types (origine = la catégorie).
+// r = { sommeil: { coucher, lever, leverWe }, repas: { petitDej, dej: [s, e], diner: [s, e] }, cours: { jours, debut, fin, trajet },
+//       job: { jours, debut, fin }, sport: { nom, jours, heure, duree } } ; une rubrique absente n'est pas réglée.
+const TOUS = [0, 1, 2, 3, 4, 5, 6], SEMAINE = [0, 1, 2, 3, 4], WEEKEND = [5, 6];
+export function creneauxDeBase(r, catJob = 'job') {
+  const out = [], aj = (origine, cat, titre, s, e, jours, plus = {}) => { if (e > s && jours.length) out.push({ id: uid(), titre, cat, s, e, jours: [...jours], salle: '', affaires: '', origine, ...plus }); };
+  if (r.sommeil) {
+    const { coucher, lever, leverWe = lever } = r.sommeil;
+    if (lever > 6) aj('sommeil', 'sommeil', 'Sommeil', 6, lever, leverWe === lever ? TOUS : SEMAINE);
+    if (leverWe !== lever && leverWe > 6) aj('sommeil', 'sommeil', 'Sommeil', 6, leverWe, WEEKEND);
+    if (coucher < 25) aj('sommeil', 'sommeil', 'Sommeil', coucher, 25, TOUS);
+  }
+  if (r.cours?.jours?.length) {
+    const { jours, debut, fin, trajet = 0 } = r.cours, t = trajet / 60;
+    if (t) { aj('cours', 'cours', 'Trajet', debut - t, debut, jours); aj('cours', 'cours', 'Trajet', fin, fin + t, jours); }
+    aj('cours', 'cours', 'Cours', debut, fin, jours);
+  }
+  if (r.job?.jours?.length) aj('job', catJob, 'Travail', r.job.debut, r.job.fin, r.job.jours);
+  if (r.sport?.jours?.length) aj('sport', 'sport', `Entraînement · ${r.sport.nom || 'sport'}`, r.sport.heure, r.sport.heure + r.sport.duree, r.sport.jours, { club: true });
+  if (r.repas) {
+    const { petitDej, dej, diner } = r.repas;
+    if (petitDej != null) aj('repas', 'repas', 'Petit-déjeuner', petitDej, petitDej + .5, TOUS);
+    if (dej) aj('repas', 'repas', 'Déjeuner', dej[0], dej[1], TOUS);
+    if (diner) aj('repas', 'repas', 'Dîner', diner[0], diner[1], TOUS);
+  }
+  return out;
+}
+// Remplace les créneaux types des catégories réglées (et ceux de la semaine d'exemple), puis met les semaines à jour.
+export function appliquerBase(data, nouveaux, origines, maintenant = new Date()) {
+  const partent = data.recurrents.filter(r => r.exemple || origines.includes(r.origine)).map(r => r.id);
+  data.recurrents = [...data.recurrents.filter(r => !partent.includes(r.id)), ...nouveaux];
+  regenerer(data);
+  propager(data, [...partent, ...nouveaux.map(r => r.id)], maintenant);
+}
+
 // Une semaine pas encore ouverte reçoit une copie de la semaine type par défaut.
 export function semaine(data, cle) {
   if (!data.semaines[cle]) {
@@ -104,10 +183,12 @@ const BOOL = v => typeof v === 'boolean' ? v : undefined;
 const ENTRE = (a, b) => v => NUM(v) !== undefined && v >= a && v <= b ? v : undefined;
 const UN_DE = (...ok) => v => ok.includes(v) ? v : undefined;
 const NUM_OU_VIDE = v => v === '' ? '' : NUM(v);
+const HEURE_OU_RIEN = v => v === null ? null : ENTRE(0, 26)(v);
 const SLOT = { id: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID, titre: TXT, salle: TXT, affaires: TXT, notes: TXT,
   fait: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT };
 const SCHEMA = {
-  version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID, dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
+  version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID,
+  recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
   bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
   cats: [{ id: ID, nom: TXT, couleur: TXT }],
   types: [{ id: ID, nom: TXT, exemple: BOOL, slots: [SLOT] }],
@@ -115,14 +196,14 @@ const SCHEMA = {
   notes: [{ id: ID, titre: TXT, texte: TXT, couleur: TXT, epingle: BOOL, tags: [TXT], lien: TXT, maj: NUM }],
   listes: [{ id: ID, nom: TXT, tags: [TXT], items: [{ id: ID, txt: TXT, fait: BOOL }] }],
   objectifs: [{ id: ID, txt: TXT, horizon: UN_DE('semaine', 'mois', 'annee'), periode: DATE, fait: BOOL, parent: ID }],
-  taches: [{ id: ID, titre: TXT, echeance: DATE, priorite: UN_DE(1, 2, 3), fac: BOOL, travail: BOOL, recurrence: ENTRE(0, 6), projet: ID,
+  taches: [{ id: ID, titre: TXT, echeance: DATE, heure: ENTRE(0, 26), priorite: UN_DE(1, 2, 3), fac: BOOL, travail: BOOL, recurrence: ENTRE(0, 6), rep: [{ j: ENTRE(0, 6), h: HEURE_OU_RIEN }], projet: ID,
     sous: [{ txt: TXT, fait: BOOL }], fait: BOOL, faitLe: DATE, faits: [DATE] }],
   projets: [{ id: ID, nom: TXT, type: UN_DE('projet', 'divertissement'), statut: UN_DE('idee', 'en-cours', 'pause', 'termine'), etape: TXT, notes: TXT }],
   exos: [{ id: ID, nom: TXT, type: UN_DE('reps', 'duree', 'distance', 'charge'), notes: TXT, sport: TXT }],
   seances: [{ id: ID, nom: TXT, sport: TXT, exos: [{ exo: ID, series: ENTRE(1, 50), cible: NUM_OU_VIDE }] }],
   journal: [{ id: ID, date: DATE, seance: ID, nom: TXT, slot: ID, ressenti: ENTRE(1, 5), notes: TXT,
     series: [{ exo: ID, sets: [{ reps: NUM, sec: NUM, km: NUM, kg: NUM }] }] }],
-  habitudes: [{ id: ID, nom: TXT, freq: v => v === 'jour' ? v : ENTRE(1, 6)(v), faits: [DATE], heure: ENTRE(0, 26), duree: ENTRE(.25, 4), jours: [ENTRE(0, 6)] }],
+  habitudes: [{ id: ID, nom: TXT, freq: v => v === 'jour' ? v : ENTRE(1, 6)(v), faits: [DATE], horaires: [{ j: ENTRE(0, 6), h: HEURE_OU_RIEN }], heure: ENTRE(0, 26), duree: ENTRE(.25, 4), jours: [ENTRE(0, 6)] }],
   tirages: [TXT], collection: [{ id: ID, date: DATE, raison: TXT, sport: TXT }],
   bilans: { '*': { date: DATE, ailleurs: ENTRE(0, 7), ailleursNote: TXT, comptent: ENTRE(0, 7), validees: TXT, usage: { '*': NUM } } },
   usage: { '*': { '*': NUM } }, modules: { '*': BOOL },
@@ -233,7 +314,7 @@ export function appliquerProfil(data, p, auj = new Date()) {
     let d = new Date(auj.getFullYear(), auj.getMonth(), auj.getDate());
     const rec = t.jour ?? null;
     if (rec !== null) while (jourSemaine(d) !== rec) d = ajouterJours(d, 1);
-    data.taches.push({ id: uid(), titre: t.titre, echeance: rec !== null ? isoJour(d) : null, priorite: 2, fac: false, recurrence: rec, projet: null, sous: [], fait: false });
+    data.taches.push({ id: uid(), titre: t.titre, echeance: rec !== null ? isoJour(d) : null, priorite: 2, fac: false, rep: rec !== null ? [{ j: rec, h: null }] : [], projet: null, sous: [], fait: false });
     fait.push(`Tâche « ${t.titre} »${rec !== null ? ' chaque semaine' : ''}`);
   }
   for (const nom of p.listes || []) if (nom && !data.listes.some(l => meme(l.nom, nom))) { data.listes.push({ id: uid(), nom, tags: [], items: [] }); fait.push(`Liste « ${nom} »`); }
@@ -303,6 +384,20 @@ export function migrer(o) {
   // Rappels : réglages propres à ce téléphone (jamais importés d'une sauvegarde : l'abonnement est lié à l'appareil).
   if (!o.notifs || typeof o.notifs !== 'object') o.notifs = { ...REGLAGES_RAPPELS };
   if (o.club && !(o.profil.sports || []).length) o.profil.sports = [o.club];
+  // V1.10 : une tâche se répète sur plusieurs jours, chacun avec son heure ; une habitude aussi.
+  for (const t of o.taches) if (!Array.isArray(t.rep)) { t.rep = repDe(t); delete t.recurrence; }
+  for (const h of o.habitudes) if (!Array.isArray(h.horaires)) { h.horaires = horairesDe(h); delete h.heure; delete h.jours; }
+  // V1.10 : les semaines types deviennent des créneaux types (sommeil toujours de… à…, repas, cours…).
+  if (!Array.isArray(o.recurrents)) {
+    o.recurrents = [];
+    const t = Array.isArray(o.types) && (o.types.find(x => x.id === o.typeDefaut) || o.types[0]);
+    if (t) {
+      const { recurrents, correspondance } = recurrentsDepuis(t.slots || [], !!t.exemple);
+      o.recurrents = recurrents;
+      for (const sem of Object.values(o.semaines || {})) for (const x of sem.slots || []) if (x.src && correspondance[x.src]) x.src = correspondance[x.src];
+      regenerer(o);
+    }
+  }
   return o;
 }
 
@@ -332,18 +427,54 @@ export const joursAvant = (iso, auj) => Math.round((deIso(iso) - new Date(auj.ge
 
 // Cocher une tâche récurrente la repousse à sa prochaine date au lieu de la terminer.
 // Chaque fois qu'elle est faite, la date s'ajoute à t.faits : c'est ce qui compte pour l'XP.
+// Les jours (et heures) où une tâche revient ; les tâches d'avant la 1.10 n'avaient qu'un jour, sans heure.
+export const repDe = t => Array.isArray(t.rep) ? t.rep : Number.isInteger(t.recurrence) ? [{ j: t.recurrence, h: null }] : [];
+// Les jours et heures d'une habitude ; celles d'avant la 1.10 avaient une seule heure et des jours (aucun = tous).
+export const horairesDe = h => Array.isArray(h.horaires) ? h.horaires
+  : typeof h.heure === 'number' ? (h.jours?.length ? h.jours : [0, 1, 2, 3, 4, 5, 6]).map(j => ({ j, h: h.heure })) : [];
+const JOURS_COURTS = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+// « du lundi au vendredi », « le week-end », « tous les jours », ou « lun, mer, ven ».
+export function joursTexte(jours) {
+  const j = [...new Set(jours)].sort().join();
+  return j === '0,1,2,3,4,5,6' ? 'tous les jours' : j === '0,1,2,3,4' ? 'du lundi au vendredi' : j === '5,6' ? 'le week-end' : [...new Set(jours)].sort().map(x => JOURS_COURTS[x]).join(', ');
+}
+export const trierHoraires = l => [...l].sort((a, b) => a.j - b.j || (a.h ?? -1) - (b.h ?? -1));
+// « lun 10:00, jeu 18:00 », ou « chaque jour à 22:00 ».
+// Regroupé par heure : « tous les jours à 09:00 · lun à 15:00 », « du lundi au vendredi ».
+export function horairesTexte(l) {
+  if (!l?.length) return '';
+  const parHeure = new Map();
+  for (const x of l) parHeure.set(x.h ?? null, [...(parHeure.get(x.h ?? null) || []), x.j]);
+  return [...parHeure].sort((a, b) => (a[0] ?? -1) - (b[0] ?? -1)).map(([h, js]) => joursTexte(js) + (h != null ? ` à ${hhmm(h)}` : '')).join(' · ');
+}
+// La prochaine fois d'une répétition, après le moment (iso, h) ; « inclus » garde ce moment lui-même.
+// Une heure absente vaut le début de la journée.
+export function prochaineOccurrence(rep, apresIso, apresH, inclus = false) {
+  if (!rep?.length) return null;
+  const d0 = deIso(apresIso);
+  for (let k = 0; k < 15; k++) {
+    const d = ajouterJours(d0, k), iso = isoJour(d);
+    for (const x of trierHoraires(rep).filter(x => x.j === jourSemaine(d))) {
+      const h = x.h ?? -1;
+      if (iso > apresIso || h > apresH || (inclus && h === apresH)) return { iso, h: x.h ?? null };
+    }
+  }
+  return null;
+}
+// Cocher une tâche : finie, ou, si elle se répète, reportée à sa prochaine fois après celle-ci et après maintenant.
 export function cocher(t, auj) {
-  const faits = [...(t.faits || []), isoJour(auj)];
-  if (!t.recurrence && t.recurrence !== 0) return { ...t, fait: true, faitLe: isoJour(auj), faits };
-  let d = t.echeance ? deIso(t.echeance) : new Date(auj.getFullYear(), auj.getMonth(), auj.getDate());
-  do d = ajouterJours(d, 1); while (jourSemaine(d) !== t.recurrence || d <= auj);
-  return { ...t, fait: false, faits, echeance: isoJour(d), sous: (t.sous || []).map(s => ({ ...s, fait: false })) };
+  const faits = [...(t.faits || []), isoJour(auj)], rep = repDe(t);
+  if (!rep.length) return { ...t, fait: true, faitLe: isoJour(auj), faits };
+  const cur = [t.echeance || isoJour(auj), t.echeance ? t.heure ?? -1 : -1], now = [isoJour(auj), auj.getHours() + auj.getMinutes() / 60];
+  const [iso, h] = cur[0] > now[0] || (cur[0] === now[0] && cur[1] >= now[1]) ? cur : now;
+  const n = prochaineOccurrence(rep, iso, h);
+  return { ...t, fait: false, faits, echeance: n.iso, heure: n.h, sous: (t.sous || []).map(s => ({ ...s, fait: false })) };
 }
 
 // À faire bientôt : en retard, aujourd'hui, ou dans les 7 jours ; puis par date et priorité.
 export function aFaire(taches, auj, horizon = 7) {
   return taches.filter(t => !t.fait && t.echeance && joursAvant(t.echeance, auj) <= horizon)
-    .sort((a, b) => a.echeance.localeCompare(b.echeance) || (a.priorite || 2) - (b.priorite || 2));
+    .sort((a, b) => a.echeance.localeCompare(b.echeance) || (a.heure ?? 99) - (b.heure ?? 99) || (a.priorite || 2) - (b.priorite || 2));
 }
 
 // ---------- Sport ----------
@@ -359,8 +490,8 @@ export function progression(journal, exo, type) {
 }
 export const dernieresSeries = (journal, exo) => [...journal].sort((a, b) => b.date.localeCompare(a.date)).find(e => e.series?.some(x => x.exo === exo))?.series.find(x => x.exo === exo).sets;
 
-// Les habitudes qui ont une heure, posées sur le jour j (0 = lundi) ; sans jours choisis, tous les jours.
-export const habitudesAHeure = (habitudes, j) => habitudes.filter(h => typeof h.heure === 'number' && (!h.jours?.length || h.jours.includes(j)));
+// Les habitudes posées sur le jour j (0 = lundi), une fois par heure prévue ce jour-là.
+export const habitudesAHeure = (habitudes, j) => habitudes.flatMap(hb => horairesDe(hb).filter(x => x.j === j && typeof x.h === 'number').map(x => ({ ...hb, heure: x.h })));
 export const faitsSemaine = (h, lundi) => {
   const de = isoJour(lundi), a = isoJour(ajouterJours(lundi, 6));
   return h.faits.filter(d => d >= de && d <= a).length;
@@ -506,6 +637,9 @@ export const CONSEILS = {
   'Sabre laser': [['Fentes avant', 'reps', 10], ['Fentes arrière', 'reps', 10], ['Gainage', 'duree', 45], ['Rotations du tronc', 'reps', 15], ['Squats', 'reps', 15], ['Équilibre sur une jambe', 'duree', 30]],
 };
 
+// Les sports proposés à la saisie (n'importe quel autre se tape à la main).
+export const SPORTS = [...new Set(['Sabre laser', ...Object.keys(CONSEILS)])];
+
 export const CATS_DEPART = [
   ['cours', 'Transport et cours', '#EC4A46'], ['sommeil', 'Sommeil', '#FF9B3D'], ['detente', 'Détente', '#FFD447'],
   ['repas', 'Repas', '#34BD67'], ['travail', 'Travail perso', '#35C6DF'], ['loisirs', 'Loisirs', '#6261EE'],
@@ -518,7 +652,7 @@ export const vide = () => migrer({
   plage: [6, 25],
   types: [], typeDefaut: null, semaines: {},
   notes: [],
-  listes: ['Courses', 'À acheter', 'À regarder', 'À lire', 'Matériel'].map(nom => ({ id: uid(), nom, tags: [], items: [] })),
+  listes: [{ id: uid(), nom: 'Courses', tags: [], items: [] }],   // les autres listes se créent avec le bouton +
   objectifs: [],
   dernierExport: null,
 });
@@ -535,6 +669,8 @@ const EXEMPLE = [
   [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'menage', 'Courses et lessive'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 17, 'loisirs', 'Loisirs'], [17, 18, 'sport', 'Renfo'], [18, 19, 'detente', 'Pause'], ...soir],
   [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'detente', 'Balade'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 16, 'travail', 'Révisions'], [16, 16.5, 'travail', 'Bilan de la semaine'], [16.5, 19, 'loisirs', 'Loisirs'], ...soir],
 ];
+// La semaine d'exemple, en créneaux types marqués « exemple » : la construction par catégories les remplace.
+export const recurrentsExemple = () => recurrentsDepuis(slotsExemple(), true).recurrents;
 export const slotsExemple = () => EXEMPLE.flatMap((jour, j) => jour.map(([s, e, cat, titre, salle = '']) =>
   ({ id: uid(), j, s, e, cat, titre, salle, affaires: '', notes: '' })));
 
@@ -615,7 +751,7 @@ export function empreinte(texte) {
   for (let i = 0; i < texte.length; i++) { h ^= texte.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return (h >>> 0).toString(16);
 }
-export const REGLAGES_RAPPELS = { actif: false, delai: 15, creneaux: true, habitudes: true, soir: true, bilan: true };
+export const REGLAGES_RAPPELS = { actif: false, delai: 15, creneaux: true, habitudes: true, taches: true, soir: true, bilan: true };
 const CATS_RAPPEL = ['cours', 'sport', 'job'];
 
 // Les rappels des 7 prochains jours, avec leur texte. Seules les heures (t, en secondes) partent vers
@@ -651,6 +787,17 @@ export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
       ajout(a(hb), 'Bilan de ta journée', i === 0 && resume ? resume.slice(0, 180) : 'Avant de manger, valide ce que tu as fait aujourd’hui.');
     }
     if (r.bilan && jourSemaine(d) === 6) ajout(a(17), 'C’est l’heure du bilan', 'Objectifs, tâches à reporter, heures de la semaine.');
+  }
+  // Les tâches à heure : la prochaine fois, et pour une tâche qui se répète, les suivantes de la semaine.
+  if (r.taches !== false && data.modules?.taches !== false) {
+    const fin = isoJour(ajouterJours(auj, 6)), aIso = (iso, h) => { const d = deIso(iso); return Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, Math.round(h * 60)).getTime() / 1000); };
+    for (const t of data.taches) if (!t.fait && t.echeance && typeof t.heure === 'number') {
+      let o = { iso: t.echeance, h: t.heure };
+      for (let k = 0; o && o.iso <= fin && k < 30; k++) {
+        if (typeof o.h === 'number') ajout(aIso(o.iso, o.h), t.titre, 'Tâche à faire');
+        o = repDe(t).length ? prochaineOccurrence(repDe(t), o.iso, o.h ?? -1) : null;
+      }
+    }
   }
   return out.sort((x, y) => x.t - y.t).slice(0, 300);
 }

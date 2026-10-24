@@ -57,3 +57,9 @@ Détail et mentions légales : https://emmajeuch.github.io/app-organisation/conf
 
 Elles arrivent toutes seules : ferme complètement l'app puis rouvre-la avec du réseau.
 Tes données sont gardées. Le numéro de version est en bas de Profil › ⚙.
+
+## Les avis des testeurs
+
+« Donner mon avis » (Profil › ⚙ › Aide et avis) envoie une note de 1 à 5 et un texte au serveur, sans nom.
+Seule l'autrice les lit, sur `avis.html`, avec une clé gardée en secret chez Cloudflare (`AVIS_CLE`).
+

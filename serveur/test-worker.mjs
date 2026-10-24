@@ -104,4 +104,20 @@ assert.equal(stock.size, 0);
   assert.equal((await traiter(requete('/restauration', { id }), env, T0)).status, 404);
 }
 
+// Avis : une note et un texte gardés ; lus seulement avec la clé.
+{
+  const lire = (cle) => new Request('https://orga-rappels.exemple.workers.dev/avis-liste', { method: 'POST', headers: { Origin: 'https://emmajeuch.github.io', 'Content-Type': 'application/json', ...(cle ? { Authorization: `Bearer ${cle}` } : {}) }, body: '{}' });
+  assert.equal((await traiter(requete('/avis', { note: 4, texte: 'Super app', version: '1.10.0', nom: 'Léa' }), env, T0)).status, 204);
+  assert.equal((await traiter(requete('/avis', { note: null, texte: 'Sans note' }), env, T0 + 1000)).status, 204);
+  assert.equal((await traiter(requete('/avis', { note: 9, texte: 'x' }), env, T0)).status, 422);
+  assert.equal((await traiter(requete('/avis', { note: null, texte: '  ' }), env, T0)).status, 422);
+  assert.equal((await traiter(lire('mauvaise'), { ...env, AVIS_CLE: 'secret-avis' }, T0)).status, 401);
+  assert.equal((await traiter(lire(), { ...env, AVIS_CLE: 'secret-avis' }, T0)).status, 401);
+  assert.equal((await traiter(lire('x'), env, T0)).status, 503);
+  const r = await traiter(lire('secret-avis'), { ...env, AVIS_CLE: 'secret-avis' }, T0);
+  const avis = await r.json();
+  assert.deepEqual(avis.map(a => [a.note, a.texte]), [[null, 'Sans note'], [4, 'Super app']]);
+  assert.ok(!JSON.stringify(avis).includes('Léa'));
+}
+
 console.log('ok');

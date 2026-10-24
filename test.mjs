@@ -121,12 +121,12 @@ plein.semaines['2026-10-26'] = { type: 't1', slots: [sl] };
 plein.notes.push({ id: 'n1', titre: 'A', texte: 'B', couleur: '#FFD447', epingle: true, tags: ['Fac'], lien: 'TD', maj: 5 });
 plein.listes[0].items.push({ id: 'i1', txt: 'Lait', fait: true });
 plein.objectifs.push({ id: 'o1', txt: 'Lire', horizon: 'mois', periode: '2026-10', fait: true, parent: 'o0' });
-plein.taches.push({ id: 'k1', titre: 'Rendu', echeance: '2026-12-13', priorite: 1, fac: true, travail: false, recurrence: 3, projet: 'p1', sous: [{ txt: 'a', fait: true }], fait: false, faitLe: '2026-10-22', faits: ['2026-10-22'] });
+plein.taches.push({ id: 'k1', titre: 'Rendu', echeance: '2026-12-13', heure: 18, priorite: 1, fac: true, travail: false, rep: [{ j: 3, h: null }, { j: 5, h: 10.5 }], projet: 'p1', sous: [{ txt: 'a', fait: true }], fait: false, faitLe: '2026-10-22', faits: ['2026-10-22'] });
 plein.projets.push({ id: 'p1', nom: 'App', type: 'projet', statut: 'en-cours', etape: 'V1.4', notes: '' });
 plein.exos.push({ id: 'e1', nom: 'Gainage', type: 'duree', notes: '', sport: 'Basket' });
 plein.seances.push({ id: 'q1', nom: 'Renfo', sport: 'Basket', exos: [{ exo: 'e1', series: 3, cible: 45 }, { exo: 'e1', series: 2, cible: '' }] });
 plein.journal.push({ id: 'j1', date: '2026-10-22', seance: 'q1', nom: 'Renfo', slot: 's1', ressenti: 4, notes: 'ok', series: [{ exo: 'e1', sets: [{ sec: 40 }, { kg: 10, reps: 8 }] }] });
-plein.habitudes.push({ id: 'h1', nom: 'Lire', freq: 3, faits: ['2026-10-22'] });
+plein.habitudes.push({ id: 'h1', nom: 'Lire', freq: 3, faits: ['2026-10-22'], horaires: [{ j: 0, h: 22 }, { j: 3, h: 7.5 }], duree: .5 });
 plein.competitions.push({ id: 'c1', sport: 'Basket', nom: 'Tournoi', date: '2026-11-14', lieu: 'Gymnase', categorie: 'U21', resultat: '' });
 const copie = JSON.parse(JSON.stringify(plein));
 assert.deepEqual(L.validerImport(JSON.parse(JSON.stringify(plein))), copie);
@@ -329,6 +329,74 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   const e = L.vide(); e.usage['2026-10-27'] = { notes: 1 };
   assert.equal(L.debutDe(e), '2026-10-27');
   assert.equal(L.validerImport({ ...d }).debut, '2026-10-26');
+}
+
+// V1.10 : une tâche revient plusieurs fois par semaine, à des jours et heures différents.
+{
+  const rep = [{ j: 0, h: 10 }, { j: 3, h: 18 }, { j: 3, h: 8 }];          // lundi 10 h, jeudi 8 h et 18 h
+  assert.deepEqual(L.prochaineOccurrence(rep, '2026-10-26', 10), { iso: '2026-10-29', h: 8 });
+  assert.deepEqual(L.prochaineOccurrence(rep, '2026-10-29', 8), { iso: '2026-10-29', h: 18 });
+  assert.deepEqual(L.prochaineOccurrence(rep, '2026-10-29', 18), { iso: '2026-11-02', h: 10 });
+  assert.deepEqual(L.prochaineOccurrence(rep, '2026-10-26', -1, true), { iso: '2026-10-26', h: 10 });
+  // cochée le jeudi à 9 h pour la fois de 8 h : la suivante est jeudi 18 h ; en retard d'une semaine : pas avant maintenant
+  const t = { id: 't', titre: 'Sport', echeance: '2026-10-29', heure: 8, rep, fait: false, sous: [] };
+  assert.deepEqual([L.cocher(t, new Date(2026, 9, 29, 9)).echeance, L.cocher(t, new Date(2026, 9, 29, 9)).heure], ['2026-10-29', 18]);
+  assert.deepEqual([L.cocher(t, new Date(2026, 10, 5, 12)).echeance, L.cocher(t, new Date(2026, 10, 5, 12)).heure], ['2026-11-05', 18]);
+  assert.equal(L.horairesTexte(rep), 'jeu à 08:00 · lun à 10:00 · jeu à 18:00');
+  assert.equal(L.horairesTexte([0, 1, 2, 3, 4, 5, 6].map(j => ({ j, h: 22 })).concat({ j: 0, h: 7 })), 'lun à 07:00 · tous les jours à 22:00');
+  assert.equal(L.horairesTexte([{ j: 5, h: null }, { j: 6, h: null }]), 'le week-end');
+  // anciennes données : une seule journée de répétition, une habitude à heure unique
+  const m = L.migrer({ ...L.vide(), taches: [{ id: 'a', recurrence: 2 }], habitudes: [{ id: 'h', nom: 'Lire', heure: 22, jours: [0, 4], faits: [] }] });
+  assert.deepEqual(m.taches[0].rep, [{ j: 2, h: null }]);
+  assert.deepEqual(m.habitudes[0].horaires, [{ j: 0, h: 22 }, { j: 4, h: 22 }]);
+  assert.deepEqual(L.habitudesAHeure(m.habitudes, 4).map(h => h.heure), [22]);
+  // habitude à deux heures le même jour
+  assert.deepEqual(L.habitudesAHeure([{ id: 'x', nom: 'Eau', faits: [], horaires: [{ j: 1, h: 9 }, { j: 1, h: 15 }] }], 1).map(h => h.heure), [9, 15]);
+  // rappels : la prochaine fois d'une tâche à heure, et les suivantes de la semaine
+  const d = L.vide(); d.taches.push({ ...t, titre: 'Sport' });
+  const rr = L.calculerRappels(d, new Date(2026, 9, 26, 7).getTime(), { ...L.REGLAGES_RAPPELS, creneaux: false, soir: false, bilan: false });
+  assert.deepEqual(rr.map(x => new Date(x.t * 1000).getDate() + ' ' + new Date(x.t * 1000).getHours()), ['29 8', '29 18']);
+}
+
+// V1.10 : les créneaux types remplacent les semaines types.
+{
+  // migration : la semaine type par défaut devient des créneaux types, les semaines gardent le lien
+  const v = L.vide();
+  v.types = [{ id: 't1', nom: 'Cours', slots: [{ id: 'a', j: 0, s: 8, e: 10, cat: 'cours', titre: 'TD', salle: 'B' }, { id: 'b', j: 2, s: 8, e: 10, cat: 'cours', titre: 'TD', salle: 'B' }, { id: 'c', j: 1, s: 23, e: 25, cat: 'sommeil', titre: 'Sommeil' }] }];
+  v.typeDefaut = 't1';
+  v.semaines['2026-10-26'] = { type: 't1', slots: [{ id: 'w1', src: 'a', j: 0, s: 8, e: 10, cat: 'cours', titre: 'TD', salle: 'B' }] };
+  delete v.recurrents;
+  const m = L.migrer(v);
+  assert.equal(m.recurrents.length, 2);
+  const td = m.recurrents.find(r => r.titre === 'TD');
+  assert.deepEqual(td.jours, [0, 2]);
+  assert.equal(m.semaines['2026-10-26'].slots[0].src, `${td.id}-0`);
+  assert.deepEqual([m.types.length, m.typeDefaut, m.types[0].slots.length], [1, 'base', 3]);
+  // une nouvelle semaine se remplit des créneaux types
+  assert.equal(L.semaine(m, '2026-11-02').slots.length, 3);
+  // changer un créneau type : les semaines ouvertes suivent à partir d'aujourd'hui, le passé et le validé restent
+  const mer = new Date(2026, 9, 28, 12);
+  m.semaines['2026-10-26'] = { slots: [{ id: 'p', src: `${td.id}-0`, j: 0, s: 8, e: 10, cat: 'cours', titre: 'TD' }, { id: 'q', src: `${td.id}-2`, j: 2, s: 8, e: 10, cat: 'cours', titre: 'TD', fait: true }] };
+  td.s = 9; td.e = 11; td.jours = [0, 2, 4];
+  L.regenerer(m); L.propager(m, [td.id], mer);
+  const s1 = m.semaines['2026-10-26'].slots;
+  assert.deepEqual(s1.map(x => [x.j, x.s, !!x.fait]), [[0, 8, false], [2, 8, true], [4, 9, false]]);
+  assert.deepEqual(m.semaines['2026-11-02'].slots.filter(x => x.titre === 'TD').map(x => [x.j, x.s]), [[0, 9], [2, 9], [4, 9]]);
+  // construire par catégories : sommeil, cours avec trajets, repas qui coupent les cours, sport du club
+  const base = L.creneauxDeBase({ sommeil: { coucher: 23.5, lever: 7.5, leverWe: 9.5 }, cours: { jours: [0, 1, 2, 3, 4], debut: 8.5, fin: 17, trajet: 30 },
+    repas: { petitDej: 7.5, dej: [12, 13], diner: [19.5, 20.5] }, sport: { nom: 'Basket', jours: [1, 3], heure: 18, duree: 1.5 } });
+  const n = L.vide(); n.recurrents = L.recurrentsExemple(); L.regenerer(n);
+  L.appliquerBase(n, base, ['sommeil', 'cours', 'repas', 'sport'], mer);
+  assert.ok(n.recurrents.every(r => !r.exemple));
+  const lundi = L.semaine(n, '2026-11-02').slots.filter(x => x.j === 0).map(x => `${L.hhmm(x.s)} ${x.titre}`);
+  assert.deepEqual(lundi, ['06:00 Sommeil', '07:30 Petit-déjeuner', '08:00 Trajet', '08:30 Cours', '12:00 Déjeuner', '13:00 Cours', '17:00 Trajet', '19:30 Dîner', '23:30 Sommeil']);
+  assert.ok(L.semaine(n, '2026-11-02').slots.some(x => x.j === 1 && x.club && x.titre === 'Entraînement · Basket'));
+  // refaire une catégorie remplace seulement ses créneaux types
+  L.appliquerBase(n, L.creneauxDeBase({ sommeil: { coucher: 22, lever: 6.5 } }), ['sommeil'], mer);
+  assert.deepEqual(n.recurrents.filter(r => r.origine === 'sommeil').map(r => [r.s, r.e]), [[6, 6.5], [22, 25]]);
+  assert.equal(n.recurrents.filter(r => r.origine === 'cours').length, 3);
+  // les créneaux types survivent à une sauvegarde
+  assert.deepEqual(L.validerImport(JSON.parse(JSON.stringify(n))).recurrents, n.recurrents);
 }
 
 // Mot de passe trop simple : peu de caractères différents, ou l'identifiant dedans.

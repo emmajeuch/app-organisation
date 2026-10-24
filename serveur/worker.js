@@ -14,7 +14,8 @@ const TAILLE_MAX = 16_000, RAPPELS_MAX = 300, GARDE = 30 * 864e2; // 30 jours sa
 const SAUV_MAX = 4_000_000, GARDE_SAUV = 180 * 864e2;              // une copie de 4 Mo au plus, oubliée après 180 jours sans nouvelle
 const B64URL = /^[A-Za-z0-9_-]+$/;
 
-const cors = { 'Access-Control-Allow-Origin': ORIGINE, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400', Vary: 'Origin' };
+const cors = { 'Access-Control-Allow-Origin': ORIGINE, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Max-Age': '86400', Vary: 'Origin' };
+const GARDE_AVIS = 365 * 864e2;   // un avis est gardé un an
 const repondre = (statut, corps = '') => new Response(statut === 204 ? null : corps, { status: statut, headers: { ...cors, 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
 
 // La clé de stockage est l'empreinte de l'identifiant : même avec une copie du stockage, on ne peut pas se faire passer pour un appareil.
@@ -22,6 +23,8 @@ async function cleDe(id, prefixe = 'a:') {
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id)));
   return prefixe + [...h].map(x => x.toString(16).padStart(2, '0')).join('');
 }
+// Comparaison en temps constant, pour ne pas laisser deviner la clé des avis caractère par caractère.
+const egal = (a, b) => { if (a.length !== b.length) return false; let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 const idValide = id => typeof id === 'string' && id.length >= 22 && id.length <= 64 && B64URL.test(id);
 const B64 = /^[A-Za-z0-9+/=]+$/;
 
@@ -67,6 +70,27 @@ export async function traiter(req, env, maintenant = Date.now()) {
     if (chemin === '/sauvegarde-effacer') { await env.RAPPELS.delete(cle); return repondre(204); }
     const copie = await env.RAPPELS.get(cle);
     return copie === null ? repondre(404) : repondre(200, copie);
+  }
+  // Les avis des testeurs : une note de 1 à 5 et un texte, sans rien qui identifie la personne.
+  if (chemin === '/avis') {
+    const note = o.note === null || o.note === undefined ? null : Number.isInteger(o.note) && o.note >= 1 && o.note <= 5 ? o.note : undefined;
+    const texte = typeof o.texte === 'string' ? o.texte.slice(0, 2000) : '';
+    const version = typeof o.version === 'string' ? o.version.slice(0, 20) : '';
+    if (note === undefined || (note === null && !texte.trim())) return repondre(422);
+    const date = new Date(maintenant).toISOString();
+    await env.RAPPELS.put(`v:${date}:${crypto.randomUUID().slice(0, 8)}`, JSON.stringify({ date, note, texte, version }), { expirationTtl: GARDE_AVIS });
+    return repondre(204);
+  }
+  // Lire les avis : seulement avec la clé d'Emma (secret Cloudflare AVIS_CLE), jamais affichée dans le code.
+  if (chemin === '/avis-liste') {
+    const cle = env.AVIS_CLE?.trim();
+    if (!cle) return repondre(503, 'clé des avis absente : npx.cmd wrangler secret put AVIS_CLE');
+    if (!egal(req.headers.get('Authorization') || '', `Bearer ${cle}`)) return repondre(401);
+    const avis = [];
+    const page = await env.RAPPELS.list({ prefix: 'v:', limit: 1000 });
+    for (const { name } of page.keys) { const a = await env.RAPPELS.get(name, 'json'); if (a) avis.push(a); }
+    avis.sort((a, b) => b.date.localeCompare(a.date));
+    return new Response(JSON.stringify(avis), { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
   }
   if (chemin === '/abonnement') {
     const ins = lireInscription(o, maintenant);
