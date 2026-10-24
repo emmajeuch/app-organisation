@@ -1,6 +1,6 @@
 // Vérifie le serveur des rappels avec un faux stockage et un faux service de notifications : node serveur/test-worker.mjs
 import assert from 'node:assert/strict';
-import { traiter, tourner, lireInscription } from './worker.js';
+import { traiter, tourner, lireInscription, ENVOIS_MAX } from './worker.js';
 import { b64 } from './webpush.js';
 
 // Faux stockage KV de Cloudflare.
@@ -59,6 +59,32 @@ assert.equal(stock.size, 0);
 await traiter(requete('/abonnement', { id, abonnement, rappels: [s0 + 7200] }), env, T0);
 assert.equal((await traiter(requete('/desabonnement', { id }), env, T0)).status, 204);
 assert.equal(stock.size, 0);
+// Beaucoup de rappels à la même minute : au plus ENVOIS_MAX par passage, les autres au passage suivant, aucun en double.
+{
+  const ids = Array.from({ length: ENVOIS_MAX + 3 }, (_, i) => `appareil-numero-${String(i).padStart(10, '0')}`);
+  for (const x of ids) await traiter(requete('/abonnement', { id: x, abonnement, rappels: [s0 + 600] }), env, T0);
+  const vus = [];
+  const compte = async (url, init) => { vus.push(init.body); return { status: 201 }; };
+  assert.equal(await tourner(env, T0 + 600_000, compte), ENVOIS_MAX);
+  assert.equal(await tourner(env, T0 + 720_000, compte), 3);
+  assert.equal(await tourner(env, T0 + 840_000, compte), 0);
+  // Une écriture refusée (quota) : le rappel part une seule fois, au premier passage, puis plus jamais.
+  const kvPlein = { ...KV, put: async () => { throw new Error('quota'); } };
+  await traiter(requete('/abonnement', { id, abonnement, rappels: [s0 + 1800] }), env, T0);
+  let n = 0;
+  const un = async () => { n++; return { status: 201 }; };
+  await tourner({ ...env, RAPPELS: kvPlein }, T0 + 1800_000, un);
+  await tourner({ ...env, RAPPELS: kvPlein }, T0 + 1920_000, un);
+  assert.equal(n, 1);
+  // Un service qui plante n'empêche pas les autres de recevoir le leur.
+  await traiter(requete('/abonnement', { id: 'appareil-numero-0000000001', abonnement, rappels: [s0 + 3000] }), env, T0);
+  await traiter(requete('/abonnement', { id: 'appareil-numero-0000000002', abonnement, rappels: [s0 + 3000] }), env, T0);
+  let essais = 0;
+  const panne = async () => { if (essais++ === 0) throw new Error('réseau'); return { status: 201 }; };
+  assert.equal(await tourner(env, T0 + 3000_000, panne), 1);
+  stock.clear();
+}
+
 // Sauvegarde chiffrée : rangée telle quelle sous l'empreinte, rendue au même identifiant, effacée à la demande.
 {
   const brut = (chemin, corps, origine = 'https://emmajeuch.github.io') => new Request('https://orga-rappels.exemple.workers.dev' + chemin, { method: 'POST', headers: { Origin: origine, 'Content-Type': 'text/plain' }, body: corps });

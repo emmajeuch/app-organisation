@@ -1055,7 +1055,7 @@ function vueReglages() {
        <p class="aide">Pour un nouveau semestre, un nouveau job ou un nouveau sport : rien n’est effacé, tout s’ajoute.</p>`)}
     ${groupe('notifs', 'Notifications', data.notifs?.actif ? 'Activées' : 'Désactivées', rappelsHtml(true))}
     ${groupe('sauvegarde', 'Compte et sauvegarde', `<span class="${!sa || jours > 7 ? 'alerte' : ''}">${etat}</span>`,
-      `${sa ? `<p>Connectée en tant que <b>${esc(sa.ident)}</b>. Une copie chiffrée part toute seule quand tu utilises l’app, au plus une fois par heure.${sa.quand ? ` Dernière copie : ${new Date(sa.quand).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}.` : ''}</p>
+      `${sa ? `<p>Compte : <b>${esc(sa.ident)}</b>. Une copie chiffrée part toute seule quand tu utilises l’app, au plus une fois par heure.${sa.quand ? ` Dernière copie : ${new Date(sa.quand).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}.` : ''}</p>
          <button class="btn gris" data-act="deconnexion">Me déconnecter ou supprimer mon compte</button>`
        : L.sauvegardePossible() ? `<p>Avec un compte, tes données sont sauvegardées toutes seules, chiffrées : personne d’autre que toi ne peut les lire. Sur un nouveau téléphone, tu te connectes et tout revient.</p>
          <div class="rangee"><button class="btn plein" data-act="compte">Créer mon compte</button><button class="btn gris" data-act="connexion">Me connecter</button></div>`
@@ -1286,7 +1286,8 @@ function toutEffacer() {
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button></div>
     <button type="button" class="btn rouge" data-choix="effacer" data-confirmer="Oui, tout effacer">Effacer</button></form>`, async choix => {
     if (choix !== 'effacer') return;
-    await effacerCompte();
+    // Sans réseau, on n'efface rien : la clé du compte disparaîtrait avec le téléphone, et la copie resterait sur le serveur.
+    if (!(await effacerCompte())) { dire('Pas de réseau : rien n’a été effacé. Réessaie avec du réseau.'); return; }
     try { Object.keys(localStorage).filter(k => k.startsWith('orga-')).forEach(k => localStorage.removeItem(k)); } catch {}
     try { for (const k of await caches.keys()) await caches.delete(k); } catch {}
     if (data.notifs?.actif) await desactiverRappels(true);
@@ -1312,11 +1313,13 @@ async function sauvegarderAuto() {
   if (!r.ok) throw new Error('serveur ' + r.status);
   ecrireSauvAuto({ ...s, quand: new Date().toISOString() });
 }
+// Renvoie false si le serveur n'a pas confirmé : la clé est alors gardée, pour pouvoir réessayer avec du réseau.
 async function effacerCompte() {
   const s = sauvAuto();
-  if (!s?.cle) return;
-  try { await envoyer('/sauvegarde-effacer', JSON.stringify({ id: s.id }), 'application/json'); } catch {}
+  if (!s?.cle) return true;
+  try { if (!(await envoyer('/sauvegarde-effacer', JSON.stringify({ id: s.id }), 'application/json')).ok) return false; } catch { return false; }
   ecrireSauvAuto(null);
+  return true;
 }
 // Créer un compte ou s'y connecter : le même formulaire, deux boutons.
 function compte(mode = 'creer', apres) {
@@ -1357,7 +1360,7 @@ async function seConnecter(ident, mdp, apres) {
   const o = await L.dechiffrerCopie(await r.text(), cles);
   const lier = () => { ecrireSauvAuto({ ident, ...cles, quand: new Date().toISOString() }); apres?.(); };
   // Sur un téléphone vide, les données reviennent tout de suite ; sinon on demande avant de remplacer.
-  if (!data.types.length) { data = L.validerImport(o); lier(); maj(); dire('Connectée : tes données sont revenues'); }
+  if (!data.types.length) { data = L.validerImport(o); lier(); maj(); dire('Connexion réussie : tes données sont revenues'); }
   else proposerSauvegarde(o, lier);
 }
 function deconnecter() {
@@ -1365,8 +1368,8 @@ function deconnecter() {
     <p class="muted">Les copies automatiques s’arrêtent. Tes données restent sur ce téléphone, et ton compte sur le serveur.</p>
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Me déconnecter</button></div>
     <button type="button" class="btn rouge" data-choix="supprimer" data-confirmer="Oui, supprimer mon compte">Supprimer mon compte</button></form>`, choix => {
-    if (choix === 'supprimer') { effacerCompte().then(() => { dire('Compte supprimé du serveur'); maj(); }); return; }
-    ecrireSauvAuto(null); dire('Déconnectée'); maj();
+    if (choix === 'supprimer') { effacerCompte().then(ok => { dire(ok ? 'Compte supprimé du serveur' : 'Pas de réseau : ton compte n’est pas supprimé. Réessaie avec du réseau.'); maj(); }); return; }
+    ecrireSauvAuto(null); dire('Déconnexion faite'); maj();
   });
 }
 
@@ -1470,7 +1473,7 @@ function assistant() {
 }
 
 const TUTO = [
-  ['Bienvenue', 'Ton emploi du temps à la minute près, tes tâches, tes notes et ton sport, au même endroit. Tout reste sur ton téléphone.'],
+  ['Bienvenue', 'Ton emploi du temps à la minute près, tes tâches, tes notes et ton sport, au même endroit. Tout reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire.'],
   ['Les onglets', 'Aujourd’hui : le créneau en cours et ta journée. Semaine : la grille, à remplir au doigt (appui long puis glisser). Notes, Sport et Profil pour le reste.'],
   ['Le bouton +', 'Depuis n’importe quel écran, il ajoute un créneau, une tâche, une note ou un objectif.'],
   ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Sommeil, cours et repas se valident tout seuls. Avant le dîner, une notification fait le bilan : tu relis la journée et tu coches ce que tu as fait.'],
@@ -1481,7 +1484,7 @@ const TUTO = [
 const CGU = 3;   // 2 : la sauvegarde automatique ; 3 : le compte (24/10)
 function conditions() {
   ouvrirDlg(`<form><h2>Avant de commencer</h2>
-    <p>L’app est gratuite. Ce que tu écris reste sur ton téléphone ; avec un compte, une copie chiffrée que toi seule peux lire est gardée sur le serveur. Si tu oublies ton mot de passe, personne ne peut la récupérer. Les rappels peuvent arriver en retard ou pas du tout.</p>
+    <p>L’app est gratuite. Ce que tu écris reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire est gardée sur le serveur. Si tu oublies ton mot de passe, personne ne peut la récupérer. Les rappels peuvent arriver en retard ou pas du tout.</p>
     <p><a href="conditions.html">Conditions d’utilisation</a> · <a href="confidentialite.html">Confidentialité</a></p>
     <button class="btn plein">J’ai lu et j’accepte</button></form>`, () => {
     data.cgu = CGU; sauver();

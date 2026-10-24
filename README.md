@@ -2,7 +2,7 @@
 
 Un organisateur personnel pour téléphone : emploi du temps par demi-heure, tâches, notes,
 sport, objectifs et motivation. Gratuit, compte facultatif : **tes données restent sur ton
-téléphone**, rien n'est envoyé nulle part.
+téléphone** ; avec un compte, une copie chiffrée que personne d'autre que toi ne peut lire.
 
 **L'app : https://emmajeuch.github.io/app-organisation/**
 
@@ -50,12 +50,12 @@ Chrome peut aussi proposer de lui-même une petite bannière pour installer l'ap
 
 ## Confidentialité
 
-Ce que tu écris ne quitte pas ton téléphone : pas de compte, pas de cookie, pas de publicité, pas de mesure d'audience.
+Ce que tu écris reste sur ton téléphone : pas de cookie, pas de publicité, pas de mesure d'audience.
 Si tu actives les rappels, seules leurs heures partent vers le serveur. Avec un compte,
 une copie chiffrée y part, que seuls ton identifiant et ton mot de passe permettent de relire.
 Détail et mentions légales : https://emmajeuch.github.io/app-organisation/confidentialite.html
 
 ## Les mises à jour
 
-Elles arrivent toutes seules : ferme l'app et rouvre-la avec du réseau, deux fois de suite.
+Elles arrivent toutes seules : ferme complètement l'app puis rouvre-la avec du réseau.
 Tes données sont gardées. Le numéro de version est en bas de Profil › ⚙.

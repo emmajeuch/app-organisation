@@ -82,27 +82,37 @@ export async function traiter(req, env, maintenant = Date.now()) {
   return repondre(404);
 }
 
+// Au plus ENVOIS_MAX messages par passage : l'offre gratuite donne 10 ms de calcul, et un envoi en coûte un peu
+// plus d'une (chiffrement et signature). Les suivants partent au passage d'après, 2 minutes plus tard.
+export const ENVOIS_MAX = 5;
+
 // Toutes les 2 minutes : envoie les rappels arrivés à échéance, puis les retire.
+// Le rappel est retiré AVANT l'envoi : si le passage s'arrête en route, il ne repart pas une deuxième fois.
 export async function tourner(env, maintenant = Date.now(), faireFetch = fetch) {
   const s = Math.floor(maintenant / 1000), cles = { publique: env.VAPID_PUBLIQUE.trim(), privee: env.VAPID_PRIVEE.trim(), sujet: 'https://emmajeuch.github.io/app-organisation/' };
   let curseur, envoyes = 0;
   do {
     const page = await env.RAPPELS.list({ prefix: 'a:', cursor: curseur });
     for (const { name } of page.keys) {
-      const entree = await env.RAPPELS.get(name, 'json');
-      if (!entree) continue;
-      const dus = entree.rappels.filter(t => t <= s);
-      if (!dus.length) continue;
-      const restants = entree.rappels.filter(t => t > s);
-      // Un seul message par passage : le plus récent ; un rappel de plus de 15 minutes de retard est abandonné.
-      const t = dus.at(-1);
-      if (s - t <= 900) {
+      if (envoyes >= ENVOIS_MAX) return envoyes;
+      try {
+        const entree = await env.RAPPELS.get(name, 'json');
+        if (!entree) continue;
+        const dus = entree.rappels.filter(t => t <= s);
+        if (!dus.length) continue;
+        const restants = entree.rappels.filter(t => t > s);
+        // Un seul message par passage : le plus récent ; un rappel de plus de 15 minutes de retard est abandonné.
+        const t = dus.at(-1);
+        let retire = true;
+        try { await env.RAPPELS.put(name, JSON.stringify({ abonnement: entree.abonnement, rappels: restants }), { expirationTtl: GARDE }); }
+        catch { retire = false; console.log('écriture refusée'); } // quota du jour atteint, par exemple
+        // Si le rappel n'a pas pu être retiré, il ne part qu'au premier passage après son heure, pour ne pas le répéter.
+        if (s - t > 900 || (!retire && s - t >= 120)) continue;
         const statut = await envoyer(entree.abonnement, JSON.stringify({ t }), cles, faireFetch);
         envoyes++;
         console.log('envoi', statut); // seul le code de réponse du service, pour savoir si Apple accepte
-        if (statut === 404 || statut === 410) { await env.RAPPELS.delete(name); continue; }
-      }
-      await env.RAPPELS.put(name, JSON.stringify({ abonnement: entree.abonnement, rappels: restants }), { expirationTtl: GARDE });
+        if (statut === 404 || statut === 410) await env.RAPPELS.delete(name);
+      } catch (e) { console.log('échec', e?.name); } // un abonnement en panne n'arrête pas les autres
     }
     curseur = page.list_complete ? undefined : page.cursor;
   } while (curseur);
