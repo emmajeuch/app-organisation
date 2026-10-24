@@ -7,9 +7,11 @@ téléphone**, rien n'est envoyé nulle part.
 **L'app : https://emmajeuch.github.io/app-organisation/**
 
 **Préparer son app avant de l'installer : https://emmajeuch.github.io/app-organisation/questionnaire.html**
-— tu réponds à quelques questions, tu enregistres le fichier obtenu, puis dans l'app : Profil › Importer.
+— tu réponds à quelques questions, tu enregistres le fichier obtenu, puis dans l'app : Profil › ⚙ › Sauvegarde › Importer.
 
 ## L'installer
+
+La notice à envoyer (iPhone et Android) : https://emmajeuch.github.io/app-organisation/installer.html
 
 L'app s'installe depuis le navigateur, sans passer par l'App Store ni le Play Store.
 Elle s'ouvre ensuite en plein écran depuis son icône, et marche sans réseau.
@@ -42,15 +44,16 @@ Chrome peut aussi proposer de lui-même une petite bannière pour installer l'ap
 - **Supprimer l'icône peut effacer tes données.** Pour la ranger, déplace-la plutôt dans un
   dossier ou sur une page de l'écran d'accueil que tu masques.
 - Le téléphone peut aussi effacer les données d'une web app quand il manque de place.
-- **Fais une sauvegarde chaque semaine** : Profil › Sauvegarde › Exporter, puis range le
-  fichier dans Fichiers (iCloud Drive) ou Google Drive. Profil › Importer la remet en place.
+- **Fais une sauvegarde chaque semaine** : Profil › ⚙ › Sauvegarde › Exporter, puis range le
+  fichier dans Fichiers (iCloud Drive) ou Google Drive. Profil › ⚙ › Sauvegarde › Importer la remet en place.
 
 ## Confidentialité
 
-Rien ne quitte ton téléphone : pas de compte, pas de cookie, pas de publicité, pas de mesure d'audience.
+Ce que tu écris ne quitte pas ton téléphone : pas de compte, pas de cookie, pas de publicité, pas de mesure d'audience.
+Si tu actives les rappels, seules leurs heures partent vers le serveur des rappels.
 Détail et mentions légales : https://emmajeuch.github.io/app-organisation/confidentialite.html
 
 ## Les mises à jour
 
 Elles arrivent toutes seules : ferme l'app et rouvre-la avec du réseau, deux fois de suite.
-Tes données sont gardées. Le numéro de version est en bas de l'onglet Profil.
+Tes données sont gardées. Le numéro de version est en bas de Profil › ⚙.

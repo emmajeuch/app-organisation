@@ -1063,9 +1063,9 @@ function vueReglages() {
     ${groupe('modules', 'Modules', `${MODULES.filter(([id]) => actif(id)).length} sur ${MODULES.length} affichés`,
       `<ul class="list">${MODULES.map(([id, nom]) => `<li><label class="coche" style="flex:1"><input type="checkbox" class="chk" data-act="module" data-id="${id}" ${actif(id) ? 'checked' : ''}>${nom}</label></li>`).join('')}</ul>
        <p class="aide">Un module masqué disparaît de l’app, mais ses données restent là : le réactiver les fait revenir.</p>`)}
-    ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, confidentialité',
+    ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, notice, conditions',
       `<div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
-       <p><a href="confidentialite.html">Confidentialité et mentions légales</a></p>`)}
+       <p><a href="installer.html">Notice d’installation à envoyer</a> · <a href="conditions.html">Conditions d’utilisation</a> · <a href="confidentialite.html">Confidentialité et mentions légales</a></p>`)}
     <p class="aide version">App d’organisation · version ${L.VERSION}</p>`;
   appliquerTheme();
 }
@@ -1386,6 +1386,17 @@ const TUTO = [
   ['Ta sauvegarde', 'Tes données ne sont que sur ce téléphone. Exporte-les chaque semaine (Profil › Réglages › Sauvegarde). Et ne supprime pas l’icône : ça peut effacer tes données.'],
   ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes, le soir pour relire ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
 ];
+// Les conditions d'utilisation : acceptées une fois, et de nouveau quand leur version change.
+const CGU = 1;
+function conditions() {
+  ouvrirDlg(`<form><h2>Avant de commencer</h2>
+    <p>L’app est gratuite et sans compte. Ce que tu écris reste sur ton téléphone : personne ne peut le récupérer pour toi, alors exporte une sauvegarde chaque semaine. Les rappels peuvent arriver en retard ou pas du tout.</p>
+    <p><a href="conditions.html">Conditions d’utilisation</a> · <a href="confidentialite.html">Confidentialité</a></p>
+    <button class="btn plein">J’ai lu et j’accepte</button></form>`, () => {
+    data.cgu = CGU; sauver();
+    if (!data.tutoVu) setTimeout(tutoriel);
+  }, { collant: true });
+}
 function tutoriel(i = 0) {
   const [titre, texte] = TUTO[i];
   const rappels = titre === 'Les rappels';
@@ -1626,5 +1637,5 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) naviga
 rendre();
 dernier = L.stats(data, new Date());
 ouvrir(ui.onglet);
-if (!data.tutoVu) tutoriel();
+if (data.cgu !== CGU) conditions(); else if (!data.tutoVu) tutoriel();
 if (data.notifs?.actif) synchroRappels(false);
