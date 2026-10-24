@@ -42,7 +42,7 @@ let data = charger();
 navigator.storage?.persist?.().catch(() => {});
 
 function sauver() {
-  try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { dire('Enregistrement impossible : exporte tes données depuis Profil.'); }
+  try { localStorage.setItem(KEY, JSON.stringify(data)); } catch { dire('Enregistrement impossible : télécharge une copie de tes données (Profil › ⚙ › Aide et avis).'); }
 }
 // Après chaque changement : on enregistre, on redessine, et on annonce l'XP gagnée (avec un petit son).
 let dernier = null;
@@ -130,10 +130,11 @@ function relecture(jour) {
       const t = x.fait && !avant && x.tache && data.taches.find(y => y.id === x.tache);
       if (t && !t.fait) Object.assign(t, L.cocher(t, new Date()));
     }
-    dire(L.journeeValidee(slots) ? (L.utiliseEnJournee(data, jour) ? 'Journée validée' : 'Journée validée, hors essai') : `${faits.size} créneaux sur ${slots.length} validés`);
+    dire(L.journeeValidee(slots) ? (L.utiliseEnJournee(data, jour) ? 'Journée validée' : 'Journée validée, hors essai') : `Validés : ${faits.size} sur ${slots.length}`);
     maj();
   });
 }
+const pl = (n, un, plusieurs) => `${n} ${n > 1 ? plusieurs : un}`;
 const radios = (nom, valeurs, sel) => `<div class="cats">${Object.entries(valeurs).map(([v, n]) => `<label><input type="radio" name="${nom}" value="${v}" ${String(sel) === v ? 'checked' : ''}><span class="sans">${esc(n)}</span></label>`).join('')}</div>`;
 
 function cocherTache(t) {
@@ -172,7 +173,8 @@ function feter() {
 
 const toast = $('#toast');
 let tt;
-function dire(msg) { toast.textContent = msg; toast.hidden = false; clearTimeout(tt); tt = setTimeout(() => toast.hidden = true, 2200); }
+// Le message reste assez longtemps pour être lu : 2,2 s, plus pour un long message (une erreur à corriger, par exemple).
+function dire(msg) { toast.textContent = msg; toast.hidden = false; clearTimeout(tt); tt = setTimeout(() => toast.hidden = true, Math.max(2200, msg.length * 60)); }
 
 const dlg = $('#dlg');
 // Ouvre une fenêtre du bas. onChoix(choix, champs) ; renvoyer false la garde ouverte.
@@ -242,8 +244,8 @@ function vueAujourdhui() {
   // Hier pas validé : on le relit le lendemain (la veille ne compte dans l'essai que si elle a servi pendant la journée).
   const hier = L.ajouterJours(date, -1), semHier = data.semaines[cleSem(hier)];
   const slotsHier = semHier ? semHier.slots.filter(x => x.j === L.jourSemaine(hier)) : [];
-  if (slotsHier.length && !L.journeeValidee(slotsHier)) {
-    html += `<div class="card type"><div class="txt"><b>Hier n’est pas validé</b><small>${slotsHier.filter(x => !x.fait && !L.auto(x)).length} créneaux à relire pour garder ta série</small></div><button class="btn gris petit" data-act="relecture" data-jour="${L.isoJour(hier)}">Valider hier</button></div>`;
+  if (slotsHier.some(x => !L.auto(x)) && !L.journeeValidee(slotsHier)) {
+    html += `<div class="card type"><div class="txt"><b>Hier n’est pas validé</b><small>${pl(slotsHier.filter(x => !x.fait && !L.auto(x)).length, 'créneau', 'créneaux')} à relire pour garder ta série</small></div><button class="btn gris petit" data-act="relecture" data-jour="${L.isoJour(hier)}">Valider hier</button></div>`;
   }
   if (actif('sport')) {
     const regle = L.regleCompetition(data.competitions, L.isoJour(date));
@@ -278,7 +280,7 @@ function vueAujourdhui() {
   }
 
   const passes = slots.filter(x => x.e <= h && !L.auto(x)), hBilan = L.heureBilan(slots);
-  html += `<div class="sec"><h2>La journée <span>${passes.length ? `${passes.filter(x => x.fait).length} validés sur ${passes.length} passés` : ''}</span></h2>`;
+  html += `<div class="sec"><h2>La journée <span>${passes.length ? `${pl(passes.filter(x => x.fait).length, 'validé', 'validés')} sur ${pl(passes.length, 'passé', 'passés')}` : ''}</span></h2>`;
   // La journée en forme d'emploi du temps : la grille d'un seul jour, un bouton de validation sur chaque créneau passé.
   const [p0, p1] = data.plage;
   html += slots.length ? `<div class="wk seul jour-edt" style="--n:1;--rows:${(p1 - p0) * 2}"><div class="wk-body">
@@ -294,7 +296,7 @@ function vueAujourdhui() {
   const iso = L.isoJour(date), servi = L.utiliseEnJournee(data, iso);
   if (L.journeeValidee(slots)) {
     html += `<p class="vide">${servi ? `Journée validée, elle compte dans l’essai${actif('motivation') ? ` : +${L.XP.jour} XP de bonus` : ''}.` : 'Journée validée, mais elle ne compte pas dans l’essai : aucun créneau touché pendant la journée.'}</p>`;
-  } else if (h >= hBilan && slots.length) {
+  } else if (h >= hBilan && slots.some(x => !L.auto(x))) {
     html += `<button class="btn plein" data-act="relecture" data-jour="${iso}">Relire et valider la journée</button>`;
   } else if (slots.length) {
     html += `<p class="aide">Valide chaque créneau avec son bouton peu après sa fin${servi ? '' : ' : c’est ce qui fait compter la journée'}. Sommeil, cours et repas se valident tout seuls. Le bilan de la journée ouvre à ${L.hhmm(hBilan)}.</p>`;
@@ -1247,6 +1249,7 @@ function avantImport() { try { return JSON.parse(localStorage.getItem(CLE_AVANT)
 function proposerProfil(p, titre = 'Importer ce profil ?') {
   const essai = structuredClone(data), lignes = L.appliquerProfil(essai, p);
   if (!lignes.length) return dire('Ce profil n’ajoute rien de nouveau.');
+  const premier = !data.types.length;
   ouvrirDlg(`<form><h2>${esc(titre)}</h2><p class="muted">Ce qui va être ajouté (rien n’est effacé) :</p>
     <ul class="list">${lignes.map(l => `<li><div class="txt"><b>${esc(l)}</b></div></li>`).join('')}</ul>
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Ajouter</button></div></form>`, () => {
@@ -1254,8 +1257,11 @@ function proposerProfil(p, titre = 'Importer ce profil ?') {
     L.appliquerProfil(data, p);
     noterUsage('profil');
     maj(); dire('Profil ajouté'); feter();
+    if (premier) tutoApresDepart();
   });
 }
+// Juste après avoir construit son app, le tutoriel (une seule fois), le temps de voir sa semaine.
+function tutoApresDepart() { if (!data.tutoVu && data.types.length) setTimeout(() => { if (!dlg.open) tutoriel(); }, 2000); }
 
 $('#fichier').addEventListener('change', async e => {
   const fichier = e.target.files[0];
@@ -1274,7 +1280,7 @@ function proposerSauvegarde(o, apres) {
   const nb = Object.values(o.semaines).reduce((k, x) => k + x.slots.length, 0);
   ouvrirDlg(`<form><h2>Remplacer par cette sauvegarde ?</h2>
     <p class="muted">Sauvegarde${o.dernierExport ? ` du ${new Date(o.dernierExport).toLocaleDateString('fr-FR')}` : ''} : ${nb} créneaux, ${o.taches.length} tâches, ${o.notes.length} notes, ${o.journal.length} séances.
-    Elle remplace les données actuelles, qui restent récupérables dans Profil › Réglages › Sauvegarde › Revenir à avant l’import.</p>
+    Elle remplace les données actuelles, qui restent récupérables dans Profil › ⚙ › Compte et sauvegarde › Revenir à avant l’import.</p>
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Remplacer</button></div></form>`,
   () => { garderAvant(); data = o; apres?.(); maj(); dire('Sauvegarde importée'); });
 }
@@ -1309,9 +1315,13 @@ const envoyer = async (chemin, corps, type = 'text/plain') => fetch(L.SERVEUR_RA
 async function sauvegarderAuto() {
   const s = sauvAuto();
   if (!s?.cle) return;
+  // Rien n'a changé depuis la dernière copie : on ne la renvoie pas (sauf au bout de 30 jours, pour qu'elle ne soit pas effacée).
+  const emp = L.empreinte(JSON.stringify(data));
+  const maintenant = new Date().toISOString();
+  if (emp === s.emp && Date.now() - Date.parse(s.envoye || s.quand || 0) < 30 * 864e5) { ecrireSauvAuto({ ...s, quand: maintenant }); return; }
   const r = await envoyer('/sauvegarde', await L.chiffrerCopie(data, s));
   if (!r.ok) throw new Error('serveur ' + r.status);
-  ecrireSauvAuto({ ...s, quand: new Date().toISOString() });
+  ecrireSauvAuto({ ...s, quand: maintenant, envoye: maintenant, emp });
 }
 // Renvoie false si le serveur n'a pas confirmé : la clé est alors gardée, pour pouvoir réessayer avec du réseau.
 async function effacerCompte() {
@@ -1329,7 +1339,7 @@ function compte(mode = 'creer', apres) {
     <label class="champ">Identifiant<input name="ident" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
     <label class="champ">Mot de passe<input name="mdp" type="password" autocomplete="${creer ? 'new-password' : 'current-password'}" required${creer ? ` minlength="${L.MDP_MIN}"` : ''}></label>
     ${creer ? `<label class="champ">Encore une fois<input name="mdp2" type="password" autocomplete="new-password" required></label>
-    <p class="aide">Au moins ${L.MDP_MIN} caractères. Retiens-le bien : s’il est oublié, personne ne peut récupérer tes données, pas même l’autrice de l’app.</p>` : ''}
+    <p class="aide">Au moins ${L.MDP_MIN} caractères, sans ton identifiant. Retiens-le bien : s’il est oublié, personne ne peut récupérer tes données, pas même l’autrice de l’app.</p>` : ''}
     <button class="btn plein">${creer ? 'Créer mon compte' : 'Me connecter'}</button>
     <button type="button" class="btn gris" data-choix="${creer ? 'connexion' : 'creation'}">${creer ? 'J’ai déjà un compte' : 'Créer un compte'}</button>
     <button type="button" class="btn gris" data-choix="plus-tard">Plus tard</button></form>`, (choix, f) => {
@@ -1338,6 +1348,7 @@ function compte(mode = 'creer', apres) {
     const ident = L.normIdent(f.get('ident')), mdp = f.get('mdp');
     if (!L.identValide(ident)) { dire('Identifiant : 3 à 40 lettres, chiffres, points ou tirets'); return false; }
     if (creer && mdp !== f.get('mdp2')) { dire('Les deux mots de passe ne sont pas pareils'); return false; }
+    if (creer && L.mdpTropSimple(mdp, ident)) { dire('Mot de passe trop simple : mélange plus de caractères différents, sans ton identifiant.'); return false; }
     dire(creer ? 'Création du compte…' : 'Connexion…');
     (creer ? creerCompte : seConnecter)(ident, mdp, apres).catch(() => { dire('Pas de réseau : réessaie plus tard.'); apres?.(); });
   });
@@ -1435,7 +1446,7 @@ async function synchroRappels(forcer, sub, essai) {
   if (essai) rappels.unshift({ t: Math.floor(Date.now() / 1000) + 30, titre: 'Les rappels marchent', corps: 'Tu recevras tes rappels ici.' });
   try { await (await caches.open('orga-rappels')).put('rappels.json', new Response(JSON.stringify(rappels), { headers: { 'Content-Type': 'application/json' } })); } catch {}
   const heures = rappels.map(r => r.t);
-  if (!forcer && empreinte === data.notifs.dernier) return;
+  if (!forcer && !L.rappelsChanges(data.notifs.dernier, rappels.map(r => r.t), Math.floor(Date.now() / 1000))) return;
   sub ||= await (await navigator.serviceWorker.ready).pushManager.getSubscription();
   if (!sub) { data.notifs.actif = false; sauver(); return; }
   const r = await fetch(L.SERVEUR_RAPPELS + '/abonnement', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: data.notifs.id, abonnement: sub.toJSON(), rappels: heures }) });
@@ -1477,7 +1488,7 @@ const TUTO = [
   ['Les onglets', 'Aujourd’hui : le créneau en cours et ta journée. Semaine : la grille, à remplir au doigt (appui long puis glisser). Notes, Sport et Profil pour le reste.'],
   ['Le bouton +', 'Depuis n’importe quel écran, il ajoute un créneau, une tâche, une note ou un objectif.'],
   ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Sommeil, cours et repas se valident tout seuls. Avant le dîner, une notification fait le bilan : tu relis la journée et tu coches ce que tu as fait.'],
-  ['Ta sauvegarde', 'Tes données ne sont que sur ce téléphone. Exporte-les chaque semaine (Profil › Réglages › Sauvegarde). Et ne supprime pas l’icône : ça peut effacer tes données.'],
+  ['Ta sauvegarde', 'Avec un compte, une copie chiffrée de tes données part toute seule : sur un nouveau téléphone, tu te connectes et tout revient. Sans compte, elles ne sont que sur ce téléphone : crée-le dans Profil › ⚙ › Compte et sauvegarde. Et ne supprime pas l’icône : ça peut effacer tes données.'],
   ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
 ];
 // Les conditions d'utilisation : acceptées une fois, et de nouveau quand leur version change.
@@ -1488,7 +1499,8 @@ function conditions() {
     <p><a href="conditions.html">Conditions d’utilisation</a> · <a href="confidentialite.html">Confidentialité</a></p>
     <button class="btn plein">J’ai lu et j’accepte</button></form>`, () => {
     data.cgu = CGU; sauver();
-    const suite = () => { if (!data.tutoVu) setTimeout(tutoriel); };
+    // Le tutoriel attend que l'app soit construite : d'abord ta semaine, ensuite l'explication.
+    const suite = () => { if (!data.tutoVu && data.types.length) setTimeout(tutoriel); };
     if (!sauvAuto() && L.sauvegardePossible() && !data.types.length) setTimeout(() => compte('creer', suite)); else suite();
   }, { collant: true });
 }
@@ -1575,11 +1587,13 @@ document.addEventListener('click', e => {
       const t = { id: L.uid(), nom: act === 'depart-exemple' ? 'Semaine d’exemple' : 'Ma semaine', slots: act === 'depart-exemple' ? L.slotsExemple() : [], ...(act === 'depart-exemple' ? { exemple: true } : {}) };
       data.types.push(t); data.typeDefaut = t.id;
       maj();
+      tutoApresDepart();
       return dire(act === 'depart-exemple' ? 'Semaine d’exemple prête : modifie-la dans Semaine' : 'C’est parti : remplis ta semaine');
     }
     case 'slot': { const r = trouverSlot(id); if (r) editerSlot(r.slot, r.cle); return; }
     case 'valider': {
       const r = trouverSlot(id);
+      if (!r) return rendre();
       r.slot.fait = r.slot.fait ? null : true;
       // Validé par son bouton peu après sa fin, le jour même : la journée a servi.
       const { date, h } = L.momentLogique(new Date());
@@ -1630,7 +1644,7 @@ document.addEventListener('click', e => {
     case 'note': return editerNote(data.notes.find(n => n.id === id));
     case 'suppr-cat': {
       const n = [...Object.values(data.semaines), ...data.types].reduce((k, s) => k + s.slots.filter(x => x.cat === id).length, 0);
-      if (n) return dire(`${cat(id).nom} sert dans ${n} créneaux : change-les d’abord de catégorie.`);
+      if (n) return dire(`${cat(id).nom} sert dans ${pl(n, 'créneau', 'créneaux')} : change-les d’abord de catégorie.`);
       if (data.cats.length === 1) return dire('Garde au moins une catégorie.');
       data.cats = data.cats.filter(c => c.id !== id);
       return maj();
@@ -1672,7 +1686,7 @@ document.addEventListener('change', e => {
   const t = e.target, { act, id } = t.dataset;
   if (!act) return;
   if (['objectif', 'item', 'tache'].includes(act)) noterUsage({ objectif: 'objectifs', item: 'listes', tache: 'taches' }[act]);
-  if (act === 'objectif') { data.objectifs.find(o => o.id === id).fait = t.checked; if (t.checked) dire('Objectif atteint'); }
+  if (act === 'objectif') { const o = data.objectifs.find(x => x.id === id); if (!o) return rendre(); o.fait = t.checked; if (t.checked) dire('Objectif atteint'); }
   if (act === 'item') data.listes.find(l => l.id === t.dataset.liste).items.find(i => i.id === id).fait = t.checked;
   if (act === 'tache') {
     const x = data.taches.find(y => y.id === id);
@@ -1728,13 +1742,19 @@ document.addEventListener('keydown', e => {
 
 // L'écran Aujourd'hui suit l'heure ; tout se remet à jour au retour dans l'app.
 setInterval(() => { if (!dlg.open && !geste) vueAujourdhui(); }, 60e3);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !dlg.open) rendre(); });
+// Au retour dans l'app (l'iPhone la garde souvent en mémoire sans la relancer) : les rappels des 7 jours à venir et la copie suivent.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (!dlg.open) rendre();
+  planifierSynchro();
+  planifierSauvegarde();
+});
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 
 rendre();
 dernier = L.stats(data, new Date());
 ouvrir(ui.onglet);
-if (data.cgu !== CGU) conditions(); else if (!data.tutoVu) tutoriel();
+if (data.cgu !== CGU) conditions(); else if (!data.tutoVu && data.types.length) tutoriel();
 if (data.notifs?.actif) synchroRappels(false);
 planifierSauvegarde();

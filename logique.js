@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.9.9';
+export const VERSION = '1.9.10';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -494,7 +494,7 @@ export const CONSEILS = {
 
 export const CATS_DEPART = [
   ['cours', 'Transport et cours', '#EC4A46'], ['sommeil', 'Sommeil', '#FF9B3D'], ['detente', 'Détente', '#FFD447'],
-  ['repas', 'Repas', '#34BD67'], ['travail', 'Travail perso', '#35C6DF'], ['loisirs', 'Loisirs', '#6766F0'],
+  ['repas', 'Repas', '#34BD67'], ['travail', 'Travail perso', '#35C6DF'], ['loisirs', 'Loisirs', '#6261EE'],
   ['menage', 'Ménage', '#FF8AC1'], ['sport', 'Sport', '#B5DF2B'],
 ].map(([id, nom, couleur]) => ({ id, nom, couleur }));
 
@@ -589,6 +589,18 @@ export function grandir(compagnon, nbJours) {
 // Adresse du serveur des rappels et sa clé publique VAPID : vides tant que le serveur n'est pas en ligne.
 export const SERVEUR_RAPPELS = 'https://orga-rappels.orgadevie.workers.dev';
 export const VAPID_PUBLIQUE = 'BBdg9PHUm5_4LI9Vv8k4_zOLL8dEcvF3sfzBgkdqVoGQd2TXT4sz9F8rGsiA7TzcD5Et29wzK3UWe5AU8FejD7o';
+// Faut-il réécrire les heures sur le serveur ? Non si les heures à venir sont celles déjà envoyées :
+// le serveur retire lui-même les rappels passés (l'offre gratuite limite les écritures à 1 000 par jour).
+export function rappelsChanges(dernier, heures, maintenantS) {
+  const futur = l => l.filter(t => t > maintenantS).join(',');
+  return futur(String(dernier || '').split(',').filter(Boolean).map(Number)) !== futur(heures);
+}
+// Empreinte courte d'un texte (FNV-1a, 32 bits) : pour ne pas renvoyer une copie identique.
+export function empreinte(texte) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texte.length; i++) { h ^= texte.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16);
+}
 export const REGLAGES_RAPPELS = { actif: false, delai: 15, creneaux: true, habitudes: true, soir: true, bilan: true };
 const CATS_RAPPEL = ['cours', 'sport', 'job'];
 
@@ -634,6 +646,8 @@ export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
 // deux choses : l'identifiant de la copie sur le serveur et la clé AES-GCM qui la chiffre. Le mot de passe ne
 // quitte jamais le téléphone et n'y est pas gardé ; seule la clé l'est, pour les copies automatiques.
 export const MDP_MIN = 10;
+// Trop simple : moins de 5 caractères différents (« aaaaaaaaaa », « 1212121212 »), ou l'identifiant dedans.
+export const mdpTropSimple = (mdp, ident) => { const i = normIdent(ident); return new Set(String(mdp)).size < 5 || (i.length >= 3 && String(mdp).toLowerCase().includes(i)); };
 export const normIdent = s => String(s || '').trim().toLowerCase().normalize('NFC');
 export const identValide = s => /^[\p{L}\p{N}._-]{3,40}$/u.test(normIdent(s));
 export const sauvegardePossible = () => typeof CompressionStream === 'function' && !!globalThis.crypto?.subtle;

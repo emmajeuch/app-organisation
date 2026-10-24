@@ -305,4 +305,21 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   await assert.rejects(L.dechiffrerCopie(`${iv}\n${chiffre}`, await L.clesDuCompte('emma', 'un autre mot de passe')));
 }
 
+// Mot de passe trop simple : peu de caractères différents, ou l'identifiant dedans.
+{
+  assert.ok(L.mdpTropSimple('aaaaaaaaaa', 'lea') && L.mdpTropSimple('1212121212', 'lea') && L.mdpTropSimple('Camille2026!', 'camille'));
+  assert.ok(!L.mdpTropSimple('un mot de passe long', 'emma') && !L.mdpTropSimple('Tournesol42', 'lea'));
+}
+
+// Rappels : rien à réécrire si seules des heures sont passées ; une heure nouvelle ou changée, si.
+{
+  const s = 1_000_000;
+  assert.equal(L.rappelsChanges(`${s - 60},${s + 600},${s + 3600}`, [s + 600, s + 3600], s), false);
+  assert.equal(L.rappelsChanges(`${s + 600}`, [s + 600, s + 7200], s), true);
+  assert.equal(L.rappelsChanges(`${s + 600}`, [s + 900], s), true);
+  assert.equal(L.rappelsChanges('', [], s), false);
+  assert.equal(L.empreinte('abc'), L.empreinte('abc'));
+  assert.notEqual(L.empreinte('abc'), L.empreinte('abd'));
+}
+
 console.log('ok');
