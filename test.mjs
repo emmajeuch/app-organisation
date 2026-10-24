@@ -85,8 +85,10 @@ assert.equal(st.sources.creneaux, 10);
 assert.equal(st.sources.taches, 2 * 20 + 30);
 assert.equal(st.sources.bonus, 15);               // le lundi 19 est validé, pas le mardi
 assert.equal(st.joursValides, 1);
-assert.deepEqual(L.droitsTirage(mo, st), ['tache:f']);
-mo.tirages.push('tache:f');
+// Un tirage de bienvenue tant que la collection est vide, un par succès (V1.10.3), un par tâche de fac faite.
+assert.deepEqual(L.droitsTirage(mo, st), ['bienvenue', 'succes:Première journée validée', 'tache:f']);
+mo.tirages.push('bienvenue', 'succes:Première journée validée', 'tache:f');
+mo.collection.push({ id: 'ronfleur' });
 assert.deepEqual(L.droitsTirage(mo, st), []);
 assert.equal(L.cocher({ id: 'x' }, new Date(2026, 9, 21)).faits.length, 1);
 
@@ -416,15 +418,21 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   assert.notEqual(L.empreinte('abc'), L.empreinte('abd'));
 }
 
-// Thème à deux couleurs : quelles que soient les couleurs choisies, les textes restent lisibles.
-for (const [fond, accent] of [['#ffffff', '#ffff00'], ['#000000', '#000000'], ['#ff00ff', '#00ff00'], ['#808080', '#7f7f7f'], ['#1b0b33', '#ffe14d'], ['#ffdce3', '#16804a'], ['#00e0ff', '#ff5a1f']]) {
-  const p = L.paletteTheme(fond, accent);
-  for (const f of [p['--bg'], p['--surface'], p['--surface-2']]) {
-    assert.ok(L.contraste(p['--ink'], f) >= 4.5, `texte sur ${f} (${fond})`);
-    assert.ok(L.contraste(p['--ink-2'], f) >= 4.5, `texte gris sur ${f} (${fond})`);
-  }
-  for (const f of [p['--bg'], p['--surface']]) assert.ok(L.contraste(p['--accent-txt'], f) >= 4.5, `accent sur ${f} (${fond}, ${accent})`);
-  assert.ok(L.contraste(p['--on-accent'], p['--accent']) >= 4.5 || L.contraste(p['--on-accent'], p['--accent']) >= 3, `texte des boutons (${accent})`);
+// Deux créneaux ne partagent plus un moment ; un créneau type ne recouvre jamais ce qu'on a posé à la main.
+{
+  const s = [{ id: 'a', j: 0, s: 9, e: 10 }];
+  assert.equal(L.chevauche(s, { id: 'b', j: 0, s: 9.5, e: 11 })?.id, 'a');
+  assert.equal(L.chevauche(s, { id: 'b', j: 0, s: 10, e: 11 }), null);
+  assert.equal(L.chevauche(s, { id: 'a', j: 0, s: 9.5, e: 11 }), null);   // lui-même ne compte pas
+  const d = L.vide();
+  d.recurrents = [{ id: 'r1', titre: 'Cours', cat: 'cours', s: 8, e: 12, jours: [0, 1, 2, 3, 4] }];
+  const lun = L.isoJour(L.lundiDe(L.ajouterJours(new Date(), 7)));
+  d.semaines[lun] = { type: 'base', slots: [{ id: 'm', j: 1, s: 9, e: 10, cat: 'loisirs', titre: 'Dentiste' }] };
+  L.propager(d, ['r1']);
+  const sl = d.semaines[lun].slots;
+  assert.ok(sl.some(x => x.id === 'm' && x.s === 9 && x.e === 10));   // le créneau posé à la main reste entier
+  assert.ok(!sl.some(x => x.j === 1 && x.titre === 'Cours'));          // le cours de ce jour-là saute
+  assert.equal(sl.filter(x => x.titre === 'Cours').length, 4);
 }
 
 console.log('ok');

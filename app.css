@@ -31,8 +31,9 @@
     --line: #4A5263; --on-ink: #0B0D11; --danger: #FF6B66; --shadow: 0 8px 24px rgb(0 0 0 / .5); color-scheme: dark;
   }
 }
-/* Thème à deux couleurs (Réglages › Apparence) : les variables sont posées par appliquerTheme() à partir de
-   paletteTheme() (logique.js), qui vérifie les contrastes. */
+/* Thèmes (V1.10.3) : clair et sombre fixes ; sans thème, l'app suit l'iPhone. */
+:root[data-theme="clair"] { --bg: #E8EAF0; --surface: #FFFFFF; --surface-2: #DADEE6; --ink: #15171C; --ink-2: #4A5060; --line: #C9CED9; --on-ink: #FFFFFF; --danger: #C42B27; --shadow: 0 8px 24px rgb(21 23 28 / .18); color-scheme: light; }
+:root[data-theme="nuit"] { --bg: #0B0D11; --surface: #1C2028; --surface-2: #2F3542; --ink: #F1F3F7; --ink-2: #AEB5C2; --line: #4A5263; --on-ink: #0B0D11; --danger: #FF6B66; --shadow: 0 8px 24px rgb(0 0 0 / .5); color-scheme: dark; }
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -407,7 +408,8 @@ details.groupe summary .txt small { font-weight: 500; }
 .flamme .f-int { fill: color-mix(in srgb, var(--flamme) 35%, #FFE15A); animation: flamme-int 1.3s ease-in-out infinite; }
 .flamme.eteinte .f-ext { fill: var(--surface-2); }
 .flamme.eteinte .f-int { fill: var(--line); }
-.flamme.eteinte path { animation: none; }
+.flamme.eteinte .f-ext { animation-duration: 3.2s; }
+.flamme.eteinte .f-int { animation-duration: 2.4s; }
 .flamme.allume { animation: allumage .9s cubic-bezier(.3, 1.6, .5, 1); filter: drop-shadow(0 0 6px var(--flamme)); }
 @keyframes flamme-ext { 0%, 100% { transform: scale(1, 1) skewX(0); } 25% { transform: scale(1.04, .96) skewX(-3deg); } 50% { transform: scale(.97, 1.05) skewX(0); } 75% { transform: scale(1.03, .97) skewX(3deg); } }
 @keyframes flamme-int { 0%, 100% { transform: scale(1, 1) translateY(0); } 50% { transform: scale(.88, 1.12) translateY(-6%); } }
@@ -495,5 +497,7 @@ dialog[open]::backdrop { animation: fondu .3s ease-out; }
 @keyframes tape { 40% { transform: scale(1.2); } }
 @keyframes tape-v { 0%, 100% { transform: translateY(-50%) scale(1); } 40% { transform: translateY(-50%) scale(1.3); } }
 .tab[aria-selected="true"] svg { animation: tape .35s ease-out; }
-.couleurs-theme { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.couleurs-theme input[type="color"] { width: 100%; height: 48px; padding: 4px; border-radius: 12px; border: 0; background: var(--surface-2); }
+/* Un tirage attend : pastille sur l'onglet Profil */
+.tab { position: relative; }
+.tab.pastille::after { content: ""; position: absolute; top: 2px; left: calc(50% + 8px); width: 10px; height: 10px; border-radius: 50%; background: var(--flamme); box-shadow: 0 0 0 2px var(--surface); animation: bat 1.6s ease-in-out infinite; }
+@keyframes bat { 50% { transform: scale(1.3); } }

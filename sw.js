@@ -1,5 +1,5 @@
 // Hors ligne : réseau d'abord (pour recevoir les mises à jour), copie en cache si pas de réseau.
-const CACHE = 'orga-1.10.2';
+const CACHE = 'orga-1.10.3';
 const FICHIERS = ['./', 'index.html', 'app.css', 'app.js', 'logique.js', 'confidentialite.html', 'conditions.html', 'installer.html', 'manifest.json', 'icone-180.png', 'icone-512.png'];
 
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FICHIERS)).then(() => self.skipWaiting())));

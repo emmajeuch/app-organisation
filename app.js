@@ -60,7 +60,14 @@ function maj() {
     son();
     if (st.niveau.n > dernier.niveau.n) { feter(); setTimeout(() => dire(`Niveau ${st.niveau.n} ! Un tirage t’attend dans Profil`), 2300); }
   }
-  if (dernier && !dernier.valides.has(aujIso()) && st.valides.has(aujIso())) document.querySelectorAll('.flamme').forEach(f => f.classList.add('allume'));
+  if (dernier && !dernier.valides.has(aujIso()) && st.valides.has(aujIso())) { document.querySelectorAll('.flamme').forEach(f => f.classList.add('allume')); if (actif('motivation')) setTimeout(() => dire('Journée validée : ta flamme est allumée'), 600); }
+  // Un succès débloqué ou un tirage gagné : on le dit, on le fête (V1.10.3).
+  if (dernier && actif('motivation')) {
+    const nouveaux = L.succesObtenus(st).filter(n => !L.succesObtenus(dernier).includes(n));
+    if (nouveaux.length) { feter(); setTimeout(() => dire(`Succès : ${nouveaux[0]} ! Un tirage t’attend dans Profil`), 900); }
+    else if (L.droitsTirage(data, st).length > L.droitsTirage(data, dernier).length) setTimeout(() => dire('Un tirage t’attend dans Profil'), 900);
+  }
+  majPastille(st);
   if (tape) { document.querySelectorAll(`[data-act="${tape[0]}"][data-id="${CSS.escape(tape[1])}"]`).forEach(x => x.classList.add('tape')); tape = null; }
   dernier = st;
   planifierSynchro();
@@ -385,6 +392,7 @@ function vueSemaine() {
 
 const nouveauSlot = (j, s, e) => ({ id: L.uid(), j, s, e, cat: ui.derniereCat || data.cats[0]?.id, titre: '', salle: '', affaires: '', notes: '', fait: null, neuf: true });
 
+const occupe = x => `Ce moment est déjà pris : ${x.titre} (${L.hhmm(x.s)} – ${L.hhmm(x.e)}). Déplace-le ou raccourcis-le d’abord.`;
 function editerSlot(slot, cle) {
   const neuf = !!slot.neuf;
   const sem = semaineDe(cle), rec = !neuf && L.recurrentDe(data, slot.src);
@@ -428,6 +436,8 @@ function editerSlot(slot, cle) {
       salle: f.get('salle').trim(), affaires: f.get('affaires').trim(), notes: f.get('notes').trim(), fait: f.get('fait') ? true : null };
     c.titre = f.get('titre').trim() || cat(c.cat).nom;
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
+    const pris = L.chevauche(sem.slots, c);
+    if (pris) { dire(occupe(pris)); return false; }
     if (slot.src) c.src = slot.src;
     if (slot.tache) c.tache = slot.tache;
     if (c.cat === 'sport') { c.seance = f.get('seance') || null; c.club = !!f.get('club'); }
@@ -598,6 +608,8 @@ vueSem.addEventListener('pointerup', () => {
   finDernierGeste = Date.now();
   if (g.mode === 'creer') return editerSlot(nouveauSlot(c.j, c.s, c.e), cle);
   const sem = data.semaines[cle];
+  const pris = L.chevauche(sem.slots, { ...g.slot, j: c.j, s: c.s, e: c.e });
+  if (pris) { dire(occupe(pris)); return rendre(); }
   sem.slots = L.placer(sem.slots, { ...g.slot, j: c.j, s: c.s, e: c.e });
   noterUsage('creneau-deplace');
   maj();
@@ -1009,12 +1021,12 @@ function voirJournal(e) {
   choix => { if (choix === 'suppr') { data.journal = data.journal.filter(x => x !== e); maj(); } });
 }
 
-function editerExo(e) {
-  ouvrirDlg(`<form><h2>${esc(e.nom)}</h2>
+function editerExo(e, neuf = false) {
+  ouvrirDlg(`<form><h2>${neuf ? 'Nouvel exercice' : esc(e.nom)}</h2>
     <label class="champ">Nom<input name="nom" value="${esc(e.nom)}" autocomplete="off"></label>
     <div class="champ">Ce qu’on note${radios('type', L.TYPES_EXO, e.type)}</div>
     <label class="champ">Notes<input name="notes" value="${esc(e.notes)}" placeholder="Consignes, réglage de la machine…" autocomplete="off"></label>
-    <div class="rangee"><button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
+    <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
     if (choix === 'suppr') {
       data.exos = data.exos.filter(x => x !== e);
       data.seances.forEach(s => { s.exos = s.exos.filter(x => x.exo !== e.id); });
@@ -1022,6 +1034,7 @@ function editerExo(e) {
     }
     if (!f.get('nom').trim()) { dire('Donne un nom à l’exercice.'); return false; }
     Object.assign(e, { nom: f.get('nom').trim(), type: f.get('type'), notes: f.get('notes').trim() });
+    if (neuf) data.exos.push(e);
     maj();
   });
 }
@@ -1070,39 +1083,21 @@ function editerHabitude(hb, neuf = false) {
 }
 
 // Thèmes : [id, nom, couleur du thème, fond]. Tous libres (retour des testeurs, 24/10) ; les couleurs sont dans app.css.
-const THEMES = [['classique', 'Automatique', '#15171C', '#FFFFFF'], ['nuit', 'Nuit', '#F1F3F7', '#0B0D11'],
-  ['bonbon', 'Bonbon', '#C8006A', '#FFDCEE'], ['lagon', 'Lagon', '#00796D', '#CDF5EF'], ['soleil', 'Soleil', '#FF7A00', '#FFEDA8'],
-  ['lavande', 'Lavande', '#6236E8', '#E6DEFF'], ['menthe', 'Menthe', '#0B7F3D', '#D3F7E0'],
-  ['neon', 'Néon', '#39FF6A', '#07070D'], ['electrique', 'Électrique', '#00E0FF', '#050A24'], ['volcan', 'Volcan', '#FF5A1F', '#130705'],
-  ['minuit', 'Minuit', '#B388FF', '#0D0A1F'], ['galaxie', 'Galaxie', '#FF7AE6', '#0A0716'], ['ocean', 'Océan', '#2EE6C9', '#041419'],
-  ['foret', 'Forêt', '#A6E35F', '#06120B'], ['rubis', 'Rubis', '#FF4D8D', '#16060C'], ['ambre', 'Ambre', '#FFB020', '#110C04'],
-  ['arcade', 'Arcade', '#FFE14D', '#1B0B33'], ['contraste', 'Contraste fort', '#FFE600', '#000000'],
-  ['papier', 'Papier', '#C0321B', '#EFE5D3'], ['glace', 'Glace', '#1D4FE0', '#D6E7FF'], ['pasteque', 'Pastèque', '#16804A', '#FFDDE3']];
-// Les thèmes d'avant la 1.9.12 retombent sur le plus proche.
-const ANCIENS_THEMES = { ardoise: 'electrique', corail: 'volcan', or: 'soleil' };
-// Les deux couleurs du thème ; un ancien thème (avant la 1.10.2) donne les siennes. Rien : automatique.
-const couleursTheme = () => {
-  if (data.couleurs?.fond) return data.couleurs;
-  const t = THEMES.find(x => x[0] === (ANCIENS_THEMES[data.theme] || data.theme) && x[0] !== 'classique');
-  return t ? { fond: t[3], accent: t[2] } : null;
-};
-function appliquerTheme(c = couleursTheme()) {
-  const r = document.documentElement, p = c && L.paletteTheme(c.fond, c.accent);
-  delete r.dataset.theme;
+// Trois thèmes (V1.10.3) : automatique suit l'iPhone, clair et sombre sont fixes. Les anciens tombent sur le plus proche.
+const THEMES = [['classique', 'Automatique'], ['clair', 'Clair'], ['nuit', 'Sombre']];
+const SOMBRES = ['nuit', 'neon', 'electrique', 'volcan', 'minuit', 'galaxie', 'ocean', 'foret', 'rubis', 'ambre', 'arcade', 'contraste', 'ardoise', 'corail'];
+const themeActuel = () => THEMES.some(t => t[0] === data.theme) ? data.theme
+  : data.couleurs?.fond ? (L.texteSur(L.couleurSure(data.couleurs.fond)) === 'light' ? 'nuit' : 'clair')
+  : !data.theme || data.theme === 'classique' ? 'classique' : SOMBRES.includes(data.theme) ? 'nuit' : 'clair';
+function appliquerTheme() {
+  const r = document.documentElement, t = themeActuel();
   r.removeAttribute('style');
-  if (p) for (const [k, v] of Object.entries(p)) r.style.setProperty(k, v);
-  // La barre d'état de l'iPhone prend la couleur du fond du thème.
-  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = p ? p['--bg'] : m.media.includes('dark') ? '#0B0D11' : '#E8EAF0'; });
+  if (t === 'classique') delete r.dataset.theme; else r.dataset.theme = t;
+  // La barre d'état de l'iPhone prend la couleur du fond.
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = t === 'nuit' ? '#0B0D11' : t === 'clair' ? '#E8EAF0' : m.media.includes('dark') ? '#0B0D11' : '#E8EAF0'; });
 }
 const SOURCES = { creneaux: ['Créneaux', '#35C6DF'], taches: ['Tâches', '#EC4A46'], sport: ['Sport', '#B5DF2B'],
   habitudes: ['Habitudes', '#FF8AC1'], objectifs: ['Objectifs', '#6766F0'], bonus: ['Journées et bilans', '#FFD447'] };
-const SUCCES = [
-  ['Première journée validée', 'joursValides', 1], ['7 jours d’affilée', 'record', 7], ['30 jours d’affilée', 'record', 30],
-  ['Première semaine complète', 'semainesCompletes', 1], ['10 séances de sport', 'seances', 10], ['50 séances de sport', 'seances', 50],
-  ['10 tâches faites', 'taches', 10], ['100 tâches faites', 'taches', 100],
-  ['5 objectifs de semaine atteints', 'objSemaine', 5], ['Une habitude tenue 21 jours', 'habitudeMax', 21], ['4 bilans de la semaine', 'bilans', 4],
-  ['10 entraînements du club', 'entrainements', 10], ['Première compétition', 'competitions', 1], ['Un record battu', 'records', 1],
-];
 const RARETE = { commune: 'Commune', rare: 'Rare', legendaire: 'Légendaire' };
 const slug = t => String(t || '').toLowerCase().normalize('NFD').replace(/[^a-z]+/g, '-');
 const creaHtml = (c, sport) => `<div class="crea forme-${c.forme} ${c.rarete}${sport ? ` acc acc-${slug(sport)}` : ''}" style="--c:${c.couleur}"${sport ? ` title="Version ${esc(sport)}"` : ''}><i></i></div>`;
@@ -1126,7 +1121,7 @@ function vueProfil() {
   const droits = L.droitsTirage(data, st), possedes = new Set(data.collection.map(c => c.id));
   const aBilan = bilanAFaire();
   const sources = Object.entries(st.sources).filter(([, v]) => v);
-  const obtenus = SUCCES.filter(([, k, c]) => st[k] >= c).length;
+  const obtenus = L.SUCCES.filter(([, k, c]) => st[k] >= c).length;
   $('#profil').innerHTML = `<header class="top"><div><h1>${esc(data.profil.prenom || 'Profil')}</h1><p>Ta progression</p></div>
       <button class="chip reglages-bouton" data-act="reglages" aria-label="Réglages">${ENGRENAGE}</button></header>
     <div class="card niveau" data-module="motivation">
@@ -1141,7 +1136,7 @@ function vueProfil() {
     <details class="liste groupe" data-id="collection" data-module="motivation" ${ui.ouvertes.has('collection') ? 'open' : ''}><summary><span class="txt"><b>Collection</b><small>${possedes.size} sur ${L.CREATURES.length} créatures</small></span></summary><div class="groupe-corps">
       <div class="collec">${L.CREATURES.map(c => possedes.has(c.id) ? `<button class="fig" data-act="creature" data-id="${c.id}">${creaHtml(c, data.collection.find(x => x.id === c.id).sport)}<span>${esc(c.nom)}</span></button>` : '<div class="fig"><div class="crea lock">?</div><span>À gagner</span></div>').join('')}</div>
       <p class="aide">Un tirage à chaque niveau, à chaque tâche importante ou de fac faite, et pour chaque semaine avec au moins 5 journées validées.</p></div></details>
-    <details class="liste" data-id="succes" data-module="motivation" ${ui.ouvertes.has('succes') ? 'open' : ''}><summary>Succès<span class="pill">${obtenus} sur ${SUCCES.length}</span></summary><ul class="list">${SUCCES.map(([nom, k, cible]) => {
+    <details class="liste" data-id="succes" data-module="motivation" ${ui.ouvertes.has('succes') ? 'open' : ''}><summary>Succès<span class="pill">${obtenus} sur ${L.SUCCES.length}</span></summary><ul class="list">${L.SUCCES.map(([nom, k, cible]) => {
       const ok = st[k] >= cible;
       return `<li><span class="medal${ok ? '' : ' en-cours'}">${ok ? I.check : `${st[k]}/${cible}`}</span><div class="txt"><b>${nom}</b>${ok ? '<small>Obtenu</small>' : ''}</div></li>`;
     }).join('')}</ul></details>
@@ -1170,11 +1165,8 @@ function vueReglages() {
        : '<p>Pas possible sur ce téléphone (iPhone : iOS 16.4 ou plus).</p>'}
        ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}
        <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>`)}
-    ${groupe('apparence', 'Apparence et son', couleursTheme() ? 'Tes deux couleurs' : 'Automatique',
-      `<div class="couleurs-theme"><label class="champ">Fond et bulles<input type="color" data-act="couleur" data-id="fond" value="${couleursTheme()?.fond || '#E8EAF0'}"></label>
-         <label class="champ">Boutons et flamme<input type="color" data-act="couleur" data-id="accent" value="${couleursTheme()?.accent || '#FF9600'}"></label></div>
-       <p class="aide">Les textes s’ajustent tout seuls pour rester lisibles. Des idées pour commencer :</p>
-       <div class="cats">${THEMES.map(([id, nom, c, fond]) => `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${id === 'classique' ? !couleursTheme() : couleursTheme()?.fond === fond && couleursTheme()?.accent === c}" style="--c:${c};--fond:${fond}">${nom}</button>`).join('')}</div>
+    ${groupe('apparence', 'Apparence et son', `Thème ${THEMES.find(t => t[0] === themeActuel())[1].toLowerCase()}`,
+      `<div class="cats">${THEMES.map(([id, nom]) => `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${themeActuel() === id}">${nom}</button>`).join('')}</div>
        <p class="aide">Automatique suit l’iPhone : clair le jour, sombre si tu l’as réglé.</p>
        <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label>`)}
     ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, notice, conditions',
@@ -1234,7 +1226,7 @@ function travailHtml() {
     <label class="champ">Taux horaire en €, pour estimer la paie<input data-act="taux" inputmode="decimal" value="${data.taux || ''}" autocomplete="off"></label>
     <p>Une estimation : heures validées × taux horaire, pas une fiche de paie.</p></div></div>`;
 }
-const RAISON = k => { const [type, v] = k.split(':'); return { niveau: `Niveau ${v} atteint`, tache: 'Tâche importante faite', projet: 'Projet terminé', semaine: 'Semaine réussie', seances: `${v} séances de sport`, competition: 'Compétition notée' }[type]; };
+const RAISON = k => { const [type, v] = k.split(':'); return { bienvenue: 'Cadeau de bienvenue', succes: `Succès : ${v}`, niveau: `Niveau ${v} atteint`, tache: 'Tâche importante faite', projet: 'Projet terminé', semaine: 'Semaine réussie', seances: `${v} séances de sport`, competition: 'Compétition notée' }[type]; };
 // Le tirage est enregistré avant d'être montré : fermer la fenêtre ne permet pas de retirer.
 function ouvrirTirage() {
   const droits = L.droitsTirage(data, L.stats(data, new Date()));
@@ -1626,7 +1618,10 @@ function construire(etape = 0, r = {}) {
   const e = ETAPES[etape], dernier = etape === ETAPES.length - 1;
   ouvrirDlg(`<form class="construire"><h2>${e.titre}</h2>${e.corps}
     <p class="aide">${etape + 1} sur ${ETAPES.length}</p>
-    <div class="rangee">${etape ? '<button type="button" class="btn gris" data-choix="retour">Retour</button>' : ''}${e.cle ? '<button type="button" class="btn gris" data-choix="passer">Passer</button>' : ''}<button class="btn plein">${dernier ? 'Créer mon emploi du temps' : 'Suivant'}</button></div></form>`, (choix, f) => {
+    <div class="rangee">${etape ? '<button type="button" class="btn gris" data-choix="retour">Retour</button>' : ''}${e.cle ? '<button type="button" class="btn gris" data-choix="passer">Passer</button>' : ''}<button class="btn plein">${dernier ? 'Créer mon emploi du temps' : 'Suivant'}</button></div>
+    ${data.types.length ? '<button type="button" class="btn gris" data-choix="quitter">Quitter sans rien changer</button>' : ''}
+    ${dernier && data.types.length ? '<p class="aide">Ce que tu as déjà posé à la main dans tes semaines reste en place : un créneau de base ne le recouvre jamais.</p>' : ''}</form>`, (choix, f) => {
+    if (choix === 'quitter') return;
     if (choix === 'retour') { construire(etape - 1, r); return false; }
     if (choix === 'passer') delete r[e.cle];
     else if (e.lire) {
@@ -1668,7 +1663,7 @@ function appliquerConstruction(r) {
 const TUTO = [
   ['Bienvenue', 'Ton emploi du temps à la minute près, tes tâches, tes notes et ton sport, au même endroit. Tout reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire.'],
   ['Les onglets', 'Aujourd’hui : le créneau en cours et ta journée. Semaine : la grille, à remplir au doigt (appui long puis glisser). Notes, Sport et Profil pour le reste.'],
-  ['Le bouton +', 'Depuis n’importe quel écran, il ajoute un créneau, une tâche, une habitude, un objectif, une liste ou une note, chacun avec ses réglages.'],
+  ['Le bouton +', 'Il ajoute ce qui va avec l’écran : créneaux et tâches dans Aujourd’hui et Semaine ; tâches, habitudes, objectifs, listes et notes dans Notes ; exercices et compétitions dans Sport.'],
   ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Sommeil, cours et repas se valident tout seuls. Avant le dîner, une notification fait le bilan : tu relis la journée et tu coches ce que tu as fait.'],
   ['Ta sauvegarde', 'Avec un compte, une copie chiffrée de tes données part toute seule : sur un nouveau téléphone, tu te connectes et tout revient. Sans compte, elles ne sont que sur ce téléphone : crée-le dans Profil › ⚙ › Compte et sauvegarde. Et ne supprime pas l’icône : ça peut effacer tes données.'],
   ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes et de tes tâches, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
@@ -1721,13 +1716,19 @@ function donnerAvis() {
 
 function plus() {
   const o = (choix, icone, titre, aide) => `<button type="button" data-choix="${choix}">${icone}<b>${titre}</b><small>${aide}</small></button>`;
+  // V1.10.3 : seulement ce qui va avec l'onglet ouvert (Aujourd'hui et Semaine : créneaux et tâches ; Notes : le reste).
+  const pour = { aujourdhui: ['slot', 'tache'], semaine: ['slot', 'tache'], notes: ['tache', 'habitude', 'objectif', 'liste', 'note'], sport: ['slot', 'exo', 'competition'] }[ui.onglet]
+    || ['slot', 'tache', 'habitude', 'objectif', 'liste', 'note'];
+  const si = (cle, module, html) => pour.includes(cle) && (!module || actif(module)) ? html : '';
   ouvrirDlg(`<form><h2>Ajouter</h2><div class="opts">
-    ${o('slot', I.agenda, 'Créneau', 'Dans l’emploi du temps')}
-    ${actif('taches') ? o('tache', I.check, 'Tâche', 'Un jour, une heure, ou chaque semaine') : ''}
-    ${actif('habitudes') ? o('habitude', I.boucle, 'Habitude', 'À tenir, à heure fixe si tu veux') : ''}
-    ${actif('objectifs') ? o('objectif', I.cible, 'Objectif', 'Semaine, mois ou année') : ''}
-    ${actif('listes') ? o('liste', I.liste, 'Liste', 'Courses, à lire, à regarder…') : ''}
-    ${actif('notes') ? o('note', I.note, 'Note', 'Une idée, une consigne') : ''}
+    ${si('slot', null, o('slot', I.agenda, 'Créneau', 'Dans l’emploi du temps'))}
+    ${si('tache', 'taches', o('tache', I.check, 'Tâche', 'Un jour, une heure, ou chaque semaine'))}
+    ${si('habitude', 'habitudes', o('habitude', I.boucle, 'Habitude', 'À tenir, à heure fixe si tu veux'))}
+    ${si('objectif', 'objectifs', o('objectif', I.cible, 'Objectif', 'Semaine, mois ou année'))}
+    ${si('liste', 'listes', o('liste', I.liste, 'Liste', 'Courses, à lire, à regarder…'))}
+    ${si('note', 'notes', o('note', I.note, 'Note', 'Une idée, une consigne'))}
+    ${si('exo', 'sport', o('exo', I.boucle, 'Exercice', 'Pompes, gainage, course…'))}
+    ${si('competition', 'sport', o('competition', I.cible, 'Compétition', 'Avec son compte à rebours'))}
     </div><button type="button" class="btn gris" data-fermer>Fermer</button></form>`, choix => {
     if (choix === 'slot') {
       if (!data.types.length) { dire('Choisis d’abord comment commencer, dans Aujourd’hui.'); return; }
@@ -1736,7 +1737,8 @@ function plus() {
       editerSlot(nouveauSlot(L.jourSemaine(date), s, s + 1), cleSem(date));
       return false;
     }
-    const ouvrirEditeur = { note: () => editerNote(), tache: () => editerTache(), objectif: () => editerObjectif(), liste: () => editerListe(),
+    const ouvrirEditeur = { note: () => editerNote(), tache: () => editerTache(), objectif: () => editerObjectif(), liste: () => editerListe(), competition: () => editerCompetition(),
+      exo: () => editerExo({ id: L.uid(), nom: '', type: 'reps', notes: '' }, true),
       habitude: () => editerHabitude({ id: L.uid(), nom: '', freq: 'jour', faits: [], horaires: [] }, true) }[choix];
     if (ouvrirEditeur) { ouvrirEditeur(); return false; }
   });
@@ -1773,6 +1775,11 @@ function editerObjectif(o) {
 // Notes reste toujours là : c'est là que se règlent les modules.
 const ONGLETS_MODULES = { sport: ['sport'] };
 const ongletVisible = v => !ONGLETS_MODULES[v] || ONGLETS_MODULES[v].some(actif);
+// Une pastille sur Profil tant qu'un tirage attend.
+function majPastille(st = L.stats(data, new Date())) {
+  const t = document.querySelector('.tab[data-v="profil"]');
+  if (t) t.classList.toggle('pastille', actif('motivation') && L.droitsTirage(data, st).length > 0);
+}
 function majOnglets() {
   document.querySelectorAll('.tab').forEach(t => { t.hidden = !ongletVisible(t.dataset.v); });
   $('.tabs').style.gridTemplateColumns = `repeat(${[...document.querySelectorAll('.tab')].filter(t => !t.hidden).length}, 1fr)`;
@@ -1840,7 +1847,7 @@ document.addEventListener('click', e => {
     case 'tirage': return ouvrirTirage();
     case 'creature': return voirCreature(L.CREATURES.find(c => c.id === id));
     case 'bilan': return faireBilan(el.dataset.cle);
-    case 'theme': { const t = THEMES.find(x => x[0] === id); data.theme = id; data.couleurs = id === 'classique' || !t ? null : { fond: t[3], accent: t[2] }; return maj(); }
+    case 'theme': data.theme = id; delete data.couleurs; return maj();
     case 'editer-tache': return editerTache(data.taches.find(t => t.id === id));
     case 'habitude': {
       const hb = data.habitudes.find(x => x.id === id), jour = el.dataset.jour;
@@ -1921,7 +1928,6 @@ document.addEventListener('change', e => {
     if (t.checked) cocherTache(x); else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); }
   }
   if (act === 'son') data.son = t.checked;
-  if (act === 'couleur') { data.couleurs = { fond: '#E8EAF0', accent: '#FF9600', ...couleursTheme(), [id]: t.value }; data.theme = 'perso'; }
   if (act === 'rappel') data.notifs[id] = t.type === 'checkbox' ? t.checked : +t.value;
   if (act === 'taux') data.taux = Math.max(0, parseFloat(t.value.replace(',', '.')) || 0);
   if (act === 'module') data.modules[id] = t.checked;
@@ -1961,8 +1967,6 @@ document.addEventListener('submit', e => {
 
 document.addEventListener('input', e => {
   if (e.target.id === 'recherche') { ui.q = e.target.value; corpsNotes(); }
-  // Aperçu en direct pendant qu'on choisit une couleur ; enregistrée au « change ».
-  if (e.target.dataset.act === 'couleur') appliquerTheme({ fond: '#E8EAF0', accent: '#FF9600', ...couleursTheme(), [e.target.dataset.id]: e.target.value });
 });
 document.addEventListener('toggle', e => {
   if (!e.target.matches?.('details.liste')) return;
@@ -1989,4 +1993,5 @@ dernier = L.stats(data, new Date());
 ouvrir(ui.onglet);
 if (data.cgu !== CGU) conditions(); else if (!data.tutoVu && data.types.length) tutoriel();
 if (data.notifs?.actif) synchroRappels(false);
+majPastille();
 planifierSauvegarde();
