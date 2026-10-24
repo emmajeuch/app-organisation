@@ -1093,9 +1093,8 @@ function vueReglages() {
     ${groupe('modules', 'Modules', `${MODULES.filter(([id]) => actif(id)).length} sur ${MODULES.length} affichés`,
       `<ul class="list">${MODULES.map(([id, nom]) => `<li><label class="coche" style="flex:1"><input type="checkbox" class="chk" data-act="module" data-id="${id}" ${actif(id) ? 'checked' : ''}>${nom}</label></li>`).join('')}</ul>
        <p class="aide">Un module masqué disparaît de l’app, mais ses données restent là : le réactiver les fait revenir.</p>`)}
-    ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, inviter un ami, confidentialité',
+    ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, confidentialité',
       `<div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
-       <p>Pour un ami : envoie-lui le lien <b>emmajeuch.github.io/app-organisation/questionnaire.html</b> ; il répond et repart avec son fichier de profil.</p>
        <p><a href="confidentialite.html">Confidentialité et mentions légales</a></p>`)}
     <p class="aide version">App d’organisation · version ${L.VERSION}</p>`;
   appliquerTheme();
