@@ -228,6 +228,9 @@ function vueAujourdhui() {
   if (jExport === null || jExport > 7) {
     html += `<div class="card type alerte-export"><div class="txt"><b>${jExport === null ? 'Tes données n’ont jamais été exportées' : `Dernier export il y a ${jExport} jours`}</b><small>Elles ne sont que sur ce téléphone : exporte-les dans Fichiers.</small></div><button class="btn plein petit" data-act="exporter">Exporter</button></div>`;
   }
+  if (peutActiverRappels() && !data.notifs.plusTard) {
+    html += `<div class="card type"><div class="txt"><b>Activer les rappels ?</b><small>Avant tes cours et tes séances, et le soir pour relire ta journée</small></div><div class="rangee" style="flex:0 0 auto"><button class="btn gris petit" data-act="rappels-plus-tard">Plus tard</button><button class="btn plein petit" data-act="rappels-activer">Activer</button></div></div>`;
+  }
   if (!data.types.length) { $('#aujourdhui').innerHTML = html + bienvenue(); return; }
 
   // Hier pas validé : on le relit le lendemain (la veille ne compte dans l'essai que si elle a servi pendant la journée).
@@ -344,15 +347,15 @@ function editerSlot(slot, cle) {
   const neuf = !!slot.neuf;
   const sem = semaineDe(cle), type = data.types.find(t => t.id === sem.type);
   const [p0, p1] = data.plage;
-  const options = (de, a, sel) => { let o = ''; for (let x = de; x <= a; x += .5) o += `<option value="${x}" ${x === sel ? 'selected' : ''}>${L.hhmm(x)}</option>`; return o; };
+  const heure = (nom, h) => `<input type="time" name="${nom}" value="${L.hhmm(h)}" step="300" required>`;
   const liees = slot.titre ? notesLiees(slot.titre) : [];
   ouvrirDlg(`<form><h2>${neuf ? 'Nouveau créneau' : 'Créneau'}</h2>
     <label class="champ">Titre<input name="titre" value="${esc(slot.titre)}" placeholder="${esc(cat(slot.cat).nom)}" autocomplete="off"></label>
     <div class="cats" role="radiogroup" aria-label="Catégorie">${data.cats.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${c.id === slot.cat ? 'checked' : ''}><span style="${teinte(c.id)}">${esc(c.nom)}</span></label>`).join('')}</div>
     <div class="champs">
       <label class="champ">Jour<select name="j">${JOURS.map((n, j) => `<option value="${j}" ${j === slot.j ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-      <label class="champ">Début<select name="s">${options(p0, p1 - .5, slot.s)}</select></label>
-      <label class="champ">Fin<select name="e">${options(p0 + .5, p1, slot.e)}</select></label>
+      <label class="champ">Début${heure('s', slot.s)}</label>
+      <label class="champ">Fin${heure('e', slot.e)}</label>
     </div>
     <label class="champ">Salle, bâtiment<input name="salle" value="${esc(slot.salle)}" autocomplete="off"></label>
     <label class="champ">Affaires à prendre<input name="affaires" value="${esc(slot.affaires)}" autocomplete="off"></label>
@@ -374,10 +377,10 @@ function editerSlot(slot, cle) {
       if (versType && slot.src) type.slots = type.slots.filter(x => x.id !== slot.src);
       maj(); dire('Créneau supprimé'); return;
     }
-    const c = { id: slot.id, j: +f.get('j'), s: +f.get('s'), e: +f.get('e'), cat: f.get('cat') || slot.cat,
+    const c = { id: slot.id, j: +f.get('j'), s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), cat: f.get('cat') || slot.cat,
       salle: f.get('salle').trim(), affaires: f.get('affaires').trim(), notes: f.get('notes').trim(), fait: f.get('fait') ? true : null };
     c.titre = f.get('titre').trim() || cat(c.cat).nom;
-    if (c.e <= c.s) { dire('La fin doit être après le début.'); return false; }
+    if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
     if (slot.src) c.src = slot.src;
     if (slot.tache) c.tache = slot.tache;
     if (c.cat === 'sport') { c.seance = f.get('seance') || null; c.club = !!f.get('club'); }
@@ -1019,7 +1022,11 @@ function bilanAFaire() {
   return null;
 }
 
+const ENGRENAGE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>';
+
+// Profil : ta progression (niveau, série, compagnon, collection, succès, semaine, stats). Les réglages sont à part.
 function vueProfil() {
+  if (ui.reglages) return vueReglages();
   const st = L.stats(data, new Date()), nv = st.niveau;
   const sem = data.semaines[cleSem(new Date())];
   const prevu = L.heuresParCat(sem ? sem.slots : []), fait = L.heuresParCat(sem ? sem.slots.filter(x => x.fait) : []);
@@ -1028,7 +1035,8 @@ function vueProfil() {
   const prochainTheme = THEMES.find(t => t[2] > nv.n), aBilan = bilanAFaire();
   const sources = Object.entries(st.sources).filter(([, v]) => v);
   const obtenus = SUCCES.filter(([, k, c]) => st[k] >= c).length;
-  const motivation = `<header class="top"><div><h1>Profil</h1><p>Niveau, collection et réglages</p></div></header>
+  $('#profil').innerHTML = `<header class="top"><div><h1>${esc(data.profil.prenom || 'Profil')}</h1><p>Ta progression</p></div>
+      <button class="chip reglages-bouton" data-act="reglages" aria-label="Réglages">${ENGRENAGE}Réglages</button></header>
     <div class="card niveau" data-module="motivation">
       <div class="kv"><span class="num big">Niveau ${nv.n}</span><span class="num">${st.total - nv.de} / ${nv.a - nv.de} XP</span></div>
       <div class="xp"><div style="width:${(st.total - nv.de) / (nv.a - nv.de) * 100}%">${sources.map(([k, v]) => `<i style="--c:${SOURCES[k][1]};flex:${v}"></i>`).join('')}</div></div>
@@ -1036,53 +1044,60 @@ function vueProfil() {
       <small class="muted">${st.total} XP au total${prochainTheme ? ` · niveau ${prochainTheme[2]} : thème ${prochainTheme[1]}` : ''}</small></div>
     <div class="card serie" data-module="motivation">${FLAMME}<div><span class="num">${st.serie} jour${st.serie > 1 ? 's' : ''}</span><br><small class="muted">de journées validées · record ${st.record}</small></div><div class="jokers"><b>${st.jokers}</b>joker${st.jokers > 1 ? 's' : ''}</div></div>
     ${aBilan ? `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>` : ''}
+    ${compagnonHtml(st)}
     <div class="sec" data-module="motivation"><h2>Collection <span>${possedes.size} sur ${L.CREATURES.length}</span></h2>
       ${droits.length ? `<button class="btn plein" data-act="tirage">Ouvrir ${droits.length > 1 ? `tes ${droits.length} tirages` : 'ton tirage'}</button>` : ''}
       <div class="collec">${L.CREATURES.map(c => possedes.has(c.id) ? `<button class="fig" data-act="creature" data-id="${c.id}">${creaHtml(c, data.collection.find(x => x.id === c.id).sport)}<span>${esc(c.nom)}</span></button>` : '<div class="fig"><div class="crea lock">?</div><span>À gagner</span></div>').join('')}</div>
       <p class="aide">Un tirage à chaque niveau, à chaque tâche importante ou de fac faite, à chaque projet terminé, et pour chaque semaine avec au moins 5 journées validées.</p></div>
-    <div class="sec" data-module="motivation"><h2>Succès <span>${obtenus} sur ${SUCCES.length}</span></h2><ul class="list">${SUCCES.map(([nom, k, cible]) => {
+    <details class="liste" data-id="succes" data-module="motivation" ${ui.ouvertes.has('succes') ? 'open' : ''}><summary>Succès<span class="pill">${obtenus} sur ${SUCCES.length}</span></summary><ul class="list">${SUCCES.map(([nom, k, cible]) => {
       const ok = st[k] >= cible;
       return `<li><span class="medal${ok ? '' : ' en-cours'}">${ok ? I.check : `${st[k]}/${cible}`}</span><div class="txt"><b>${nom}</b>${ok ? '<small>Obtenu</small>' : ''}</div></li>`;
-    }).join('')}</ul></div>
+    }).join('')}</ul></details>
     <div class="sec"><h2>Cette semaine <span>réalisé / prévu</span></h2>${Object.keys(prevu).length ? `<div class="card"><ul class="stats">${Object.entries(prevu).sort((a, b) => b[1] - a[1]).map(([c, v]) =>
       `<li><span>${esc(cat(c).nom)}</span><span class="track duo" style="${teinte(c)}"><i style="width:${v / max * 100}%"></i><i style="width:${(fait[c] || 0) / max * 100}%"></i></span><b>${L.heures(fait[c] || 0)}<small> / ${L.heures(v)}</small></b></li>`).join('')}</ul></div>` : '<p class="vide">Aucun créneau cette semaine.</p>'}
       <button class="btn gris" data-act="bilan">Faire le bilan de la semaine</button></div>
-    ${travailHtml()}
     ${statsHtml()}
-    ${compagnonHtml(st)}
-    ${rappelsHtml()}
-    <div class="sec" data-module="motivation"><h2>Thème</h2><div class="cats">${THEMES.map(([id, nom, n, c]) => n > nv.n ? `<span class="theme verrou">${nom} · niv. ${n}</span>`
-      : `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${data.theme === id}" style="--c:${c || 'var(--ink)'}">${nom}</button>`).join('')}</div>
-      <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label></div>`;
-  const jours = data.dernierExport ? Math.floor((Date.now() - new Date(data.dernierExport)) / 864e5) : null;
+    ${travailHtml()}`;
+  $('#profil').querySelectorAll('[data-module]').forEach(e => { e.hidden = !actif(e.dataset.module); });
+  appliquerTheme();
+}
+
+// Réglages : rangés par thème, chaque groupe se replie.
+function vueReglages() {
+  const nv = L.stats(data, new Date()).niveau;
+  const jours = joursDepuisExport();
   const etat = jours === null ? 'Jamais exportée' : jours === 0 ? 'Exportée aujourd’hui' : `Dernier export il y a ${jours} jour${jours > 1 ? 's' : ''}`;
   const defaut = data.typeDefaut || data.types[0]?.id;
   const opt = (vals, sel) => vals.map(x => `<option value="${x}" ${x === sel ? 'selected' : ''}>${L.hhmm(x)}</option>`).join('');
-  $('#profil').innerHTML = `${motivation}
-    <div class="sec"><h2>Sauvegarde</h2><div class="card bientot">
-      <b class="${jours === null || jours > 7 ? 'alerte' : ''}">${etat}</b>
-      <p>Tes données ne sont que sur ce téléphone, et iOS peut les effacer s’il manque de place. Exporte-les chaque semaine dans Fichiers (iCloud Drive).</p>
-      <div class="rangee"><button class="btn plein" data-act="exporter">Exporter</button><button class="btn gris" data-act="importer">Importer</button></div>
-      ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}
-      <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>
-      <p><a href="confidentialite.html">Confidentialité et mentions légales</a></p></div></div>
-    <div class="sec"><h2>Ton profil</h2><div class="card bientot">
-      <b>${esc(data.profil.prenom || 'Sans prénom')}</b>
-      <p>${[data.profil.etudes !== false && 'Études', data.profil.travail && 'Travail', ...(data.profil.sports || [])].filter(Boolean).map(esc).join(' · ') || 'Rien de renseigné'}</p>
-      <div class="rangee"><button class="btn gris" data-act="assistant">Refaire le questionnaire</button><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button></div>
-      <button class="btn gris" data-act="avis">Donner mon avis</button>
-      <p>Pour un ami : envoie-lui le lien <b>emmajeuch.github.io/app-organisation/questionnaire.html</b> ; il répond et repart avec son fichier de profil.</p></div></div>
-    <div class="sec"><h2>Catégories</h2>
-      <ul class="list">${data.cats.map(c => `<li class="reglage"><input type="color" value="${L.couleurSure(c.couleur)}" data-act="cat-couleur" data-id="${c.id}" aria-label="Couleur de ${esc(c.nom)}"><input type="text" value="${esc(c.nom)}" data-act="cat-nom" data-id="${c.id}" aria-label="Nom de la catégorie"><button class="x" data-act="suppr-cat" data-id="${c.id}" aria-label="Supprimer ${esc(c.nom)}">${I.x}</button></li>`).join('')}</ul>
-      <form class="ajout" data-form="cat"><input name="nom" placeholder="Nouvelle catégorie" aria-label="Nouvelle catégorie" autocomplete="off"><button aria-label="Ajouter">${I.plus}</button></form></div>
-    <div class="sec"><h2>Plage horaire de la semaine</h2><div class="card reglage"><span>De</span><select data-act="plage" data-i="0" aria-label="Début">${opt([5, 6, 7, 8, 9], data.plage[0])}</select><span>à</span><select data-act="plage" data-i="1" aria-label="Fin">${opt([22, 23, 24, 25], data.plage[1])}</select></div></div>
-    <div class="sec"><h2>Semaines types</h2>
-      <ul class="list">${data.types.map(t => `<li class="reglage"><input type="text" value="${esc(t.nom)}" data-act="type-nom" data-id="${t.id}" aria-label="Nom de la semaine type"><button class="btn ${t.id === defaut ? 'plein' : 'gris'} petit" data-act="type-defaut" data-id="${t.id}" aria-pressed="${t.id === defaut}">Par défaut</button><button class="x" data-act="suppr-type" data-id="${t.id}" aria-label="Supprimer ${esc(t.nom)}">${I.x}</button></li>`).join('')}</ul>
-      <p class="aide">La semaine type par défaut remplit chaque nouvelle semaine. Pour en créer une : Semaine › Modifier.</p></div>
-    <div class="sec"><h2>Modules</h2><ul class="list">${MODULES.map(([id, nom]) => `<li><label class="coche" style="flex:1"><input type="checkbox" class="chk" data-act="module" data-id="${id}" ${actif(id) ? 'checked' : ''}>${nom}</label></li>`).join('')}</ul>
-      <p class="aide">Un module masqué disparaît de l’app, mais ses données restent là : le réactiver les fait revenir.</p></div>
+  const groupe = (id, titre, resume, corps) => `<details class="liste groupe" data-id="r-${id}" ${ui.ouvertes.has('r-' + id) ? 'open' : ''}><summary><span class="txt"><b>${titre}</b><small>${resume}</small></span></summary><div class="groupe-corps">${corps}</div></details>`;
+  $('#profil').innerHTML = `<header class="top"><div><button class="retour" data-act="reglages-fermer">${I.gauche}Profil</button><h1>Réglages</h1></div></header>
+    ${groupe('profil', 'Ton profil', esc([data.profil.prenom, data.profil.etudes !== false && 'études', data.profil.travail && 'travail', ...(data.profil.sports || [])].filter(Boolean).join(' · ') || 'Rien de renseigné'),
+      `<button class="btn gris" data-act="assistant">Refaire le questionnaire</button>
+       <p class="aide">Pour un nouveau semestre, un nouveau job ou un nouveau sport : rien n’est effacé, tout s’ajoute.</p>`)}
+    ${groupe('notifs', 'Notifications', data.notifs?.actif ? 'Activées' : 'Désactivées', rappelsHtml(true))}
+    ${groupe('sauvegarde', 'Sauvegarde', `<span class="${jours === null || jours > 7 ? 'alerte' : ''}">${etat}</span>`,
+      `<p>Tes données ne sont que sur ce téléphone, et iOS peut les effacer s’il manque de place. Exporte-les chaque semaine dans Fichiers (iCloud Drive).</p>
+       <div class="rangee"><button class="btn plein" data-act="exporter">Exporter</button><button class="btn gris" data-act="importer">Importer</button></div>
+       ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}
+       <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>`)}
+    ${actif('motivation') ? groupe('apparence', 'Apparence et son', `Thème ${THEMES.find(t => t[0] === data.theme)?.[1] || 'Classique'}`,
+      `<div class="cats">${THEMES.map(([id, nom, n, c]) => n > nv.n ? `<span class="theme verrou">${nom} · niv. ${n}</span>`
+        : `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${data.theme === id}" style="--c:${c || 'var(--ink)'}">${nom}</button>`).join('')}</div>
+       <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label>`) : ''}
+    ${groupe('edt', 'Emploi du temps', `De ${L.hhmm(data.plage[0])} à ${L.hhmm(data.plage[1])} · ${data.types.length} semaine${data.types.length > 1 ? 's' : ''} type${data.types.length > 1 ? 's' : ''} · ${data.cats.length} catégories`,
+      `<div class="champ">Plage horaire<div class="reglage"><span>De</span><select data-act="plage" data-i="0" aria-label="Début">${opt([5, 6, 7, 8, 9], data.plage[0])}</select><span>à</span><select data-act="plage" data-i="1" aria-label="Fin">${opt([22, 23, 24, 25], data.plage[1])}</select></div></div>
+       <div class="champ">Semaines types<ul class="list">${data.types.map(t => `<li class="reglage"><input type="text" value="${esc(t.nom)}" data-act="type-nom" data-id="${t.id}" aria-label="Nom de la semaine type"><button class="btn ${t.id === defaut ? 'plein' : 'gris'} petit" data-act="type-defaut" data-id="${t.id}" aria-pressed="${t.id === defaut}">Par défaut</button><button class="x" data-act="suppr-type" data-id="${t.id}" aria-label="Supprimer ${esc(t.nom)}">${I.x}</button></li>`).join('')}</ul>
+         <p class="aide">La semaine type par défaut remplit chaque nouvelle semaine. Pour en créer une : Semaine › Modifier.</p></div>
+       <div class="champ">Catégories<ul class="list">${data.cats.map(c => `<li class="reglage"><input type="color" value="${L.couleurSure(c.couleur)}" data-act="cat-couleur" data-id="${c.id}" aria-label="Couleur de ${esc(c.nom)}"><input type="text" value="${esc(c.nom)}" data-act="cat-nom" data-id="${c.id}" aria-label="Nom de la catégorie"><button class="x" data-act="suppr-cat" data-id="${c.id}" aria-label="Supprimer ${esc(c.nom)}">${I.x}</button></li>`).join('')}</ul>
+         <form class="ajout" data-form="cat"><input name="nom" placeholder="Nouvelle catégorie" aria-label="Nouvelle catégorie" autocomplete="off"><button aria-label="Ajouter">${I.plus}</button></form></div>`)}
+    ${groupe('modules', 'Modules', `${MODULES.filter(([id]) => actif(id)).length} sur ${MODULES.length} affichés`,
+      `<ul class="list">${MODULES.map(([id, nom]) => `<li><label class="coche" style="flex:1"><input type="checkbox" class="chk" data-act="module" data-id="${id}" ${actif(id) ? 'checked' : ''}>${nom}</label></li>`).join('')}</ul>
+       <p class="aide">Un module masqué disparaît de l’app, mais ses données restent là : le réactiver les fait revenir.</p>`)}
+    ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, inviter un ami, confidentialité',
+      `<div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
+       <p>Pour un ami : envoie-lui le lien <b>emmajeuch.github.io/app-organisation/questionnaire.html</b> ; il répond et repart avec son fichier de profil.</p>
+       <p><a href="confidentialite.html">Confidentialité et mentions légales</a></p>`)}
     <p class="aide version">App d’organisation · version ${L.VERSION}</p>`;
-  $('#profil').querySelectorAll('[data-module]').forEach(e => { e.hidden = !actif(e.dataset.module); });
   appliquerTheme();
 }
 
@@ -1242,7 +1257,7 @@ async function exporter() {
 }
 
 // Import contrôlé : un profil s'ajoute, une sauvegarde remplace ; dans les deux cas on montre d'abord
-// ce qui va changer, et on garde une copie des données d'avant (Profil › Revenir à avant l'import).
+// ce qui va changer, et on garde une copie des données d'avant (Réglages › Sauvegarde › Revenir à avant l'import).
 const CLE_AVANT = KEY + '-avant-import';
 function garderAvant() { try { localStorage.setItem(CLE_AVANT, JSON.stringify({ quand: new Date().toISOString(), data })); } catch {} }
 function avantImport() { try { return JSON.parse(localStorage.getItem(CLE_AVANT)); } catch { return null; } }
@@ -1274,7 +1289,7 @@ $('#fichier').addEventListener('change', async e => {
   const nb = Object.values(o.semaines).reduce((k, x) => k + x.slots.length, 0);
   ouvrirDlg(`<form><h2>Remplacer par cette sauvegarde ?</h2>
     <p class="muted">Sauvegarde${o.dernierExport ? ` du ${new Date(o.dernierExport).toLocaleDateString('fr-FR')}` : ''} : ${nb} créneaux, ${o.taches.length} tâches, ${o.notes.length} notes, ${o.journal.length} séances.
-    Elle remplace les données actuelles, qui restent récupérables dans Profil › Revenir à avant l’import.</p>
+    Elle remplace les données actuelles, qui restent récupérables dans Profil › Réglages › Sauvegarde › Revenir à avant l’import.</p>
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Remplacer</button></div></form>`,
   () => { garderAvant(); data = o; maj(); dire('Sauvegarde importée'); });
 });
@@ -1298,13 +1313,14 @@ function toutEffacer() {
 // ---------- Rappels (notifications) ----------
 // Le serveur ne reçoit que l'adresse d'abonnement de ce téléphone et les heures des rappels ;
 // les textes (cours, salle, affaires) restent ici, dans le cache « orga-rappels » que lit le service worker.
+const peutActiverRappels = () => !!L.SERVEUR_RAPPELS && pushPossible() && enApp() && Notification.permission !== 'denied' && !data.notifs?.actif;
 const pushPossible = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 const enApp = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const aleatoire = () => b64url(crypto.getRandomValues(new Uint8Array(24)));
 function b64url(u) { return btoa(String.fromCharCode(...u)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 const deB64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '=')), c => c.charCodeAt(0));
 
-function rappelsHtml() {
+function rappelsHtml(dansReglages) {
   const n = data.notifs;
   let corps;
   if (!L.SERVEUR_RAPPELS) corps = '<p>Bientôt : le serveur des rappels n’est pas encore en ligne.</p>';
@@ -1316,8 +1332,9 @@ function rappelsHtml() {
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="soir" ${n.soir ? 'checked' : ''}>À 20 h 30, relire ma journée</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="bilan" ${n.bilan ? 'checked' : ''}>Le dimanche à 17 h, le bilan</label>
     <button class="btn gris" data-act="rappels-desactiver">Désactiver les rappels</button>`;
-  return `<div class="sec"><h2>Notifications</h2><div class="card bientot">${corps}
-    <p>Seules les heures des rappels partent vers le serveur, jamais le nom de tes cours ni tes salles. <a href="confidentialite.html">En savoir plus</a></p></div></div>`;
+  const bas = `${corps}
+    <p>Seules les heures des rappels partent vers le serveur, jamais le nom de tes cours ni tes salles. <a href="confidentialite.html">En savoir plus</a></p>`;
+  return dansReglages ? bas : `<div class="sec"><h2>Notifications</h2><div class="card bientot">${bas}</div></div>`;
 }
 
 async function activerRappels() {
@@ -1389,17 +1406,20 @@ function assistant() {
 }
 
 const TUTO = [
-  ['Bienvenue', 'Ton emploi du temps par demi-heure, tes tâches, tes notes et ton sport, au même endroit. Tout reste sur ton téléphone.'],
+  ['Bienvenue', 'Ton emploi du temps à la minute près, tes tâches, tes notes et ton sport, au même endroit. Tout reste sur ton téléphone.'],
   ['Les onglets', 'Aujourd’hui : le créneau en cours et ta journée. Semaine : la grille, à remplir au doigt (appui long puis glisser). Notes, Sport et Profil pour le reste.'],
   ['Le bouton +', 'Depuis n’importe quel écran, il ajoute un créneau, une tâche, une note ou un objectif.'],
   ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Le soir, à partir de 20 h, tu relis la journée et tu coches ce que tu as fait.'],
-  ['Ta sauvegarde', 'Tes données ne sont que sur ce téléphone. Exporte-les chaque semaine (Profil › Exporter). Et ne supprime pas l’icône : ça peut effacer tes données.'],
+  ['Ta sauvegarde', 'Tes données ne sont que sur ce téléphone. Exporte-les chaque semaine (Profil › Réglages › Sauvegarde). Et ne supprime pas l’icône : ça peut effacer tes données.'],
+  ['Les rappels', 'Un rappel avant tes cours et tes séances, le soir pour relire ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
 ];
 function tutoriel(i = 0) {
   const [titre, texte] = TUTO[i];
-  ouvrirDlg(`<form><h2>${titre}</h2><p>${texte}</p><p class="aide">${i + 1} sur ${TUTO.length}</p>
+  const rappels = titre === 'Les rappels';
+  ouvrirDlg(`<form><h2>${titre}</h2><p>${texte}</p>${rappels ? (peutActiverRappels() ? '<button type="button" class="btn plein" data-choix="rappels">Activer les rappels</button>' : '<p class="aide">Tu pourras les activer dans Profil › Réglages › Notifications, en ouvrant l’app depuis son icône.</p>') : ''}<p class="aide">${i + 1} sur ${TUTO.length}</p>
     <div class="rangee"><button type="button" class="btn gris" data-choix="passer">${i === TUTO.length - 1 ? 'Fermer' : 'Passer'}</button>${i < TUTO.length - 1 ? '<button class="btn plein">Suivant</button>' : ''}</div></form>`, choix => {
     data.tutoVu = true; sauver();
+    if (choix === 'rappels') { activerRappels(); return; }
     if (choix === 'ok' && i < TUTO.length - 1) { tutoriel(i + 1); return false; }
   });
 }
@@ -1473,7 +1493,7 @@ document.addEventListener('click', e => {
   switch (act) {
     case 'plus': return plus();
     case 'depart-exemple': case 'depart-vide': {
-      const t = { id: L.uid(), nom: 'Semaine de cours', slots: act === 'depart-exemple' ? L.slotsExemple() : [] };
+      const t = { id: L.uid(), nom: act === 'depart-exemple' ? 'Semaine d’exemple' : 'Ma semaine', slots: act === 'depart-exemple' ? L.slotsExemple() : [], ...(act === 'depart-exemple' ? { exemple: true } : {}) };
       data.types.push(t); data.typeDefaut = t.id;
       maj();
       return dire(act === 'depart-exemple' ? 'Semaine d’exemple prête : modifie-la dans Semaine' : 'C’est parti : remplis ta semaine');
@@ -1545,7 +1565,10 @@ document.addEventListener('click', e => {
       if (data.typeDefaut === id) data.typeDefaut = data.types[0].id;
       return maj();
     case 'exporter': return exporter();
+    case 'reglages': ui.reglages = true; vueProfil(); return scrollTo(0, 0);
+    case 'reglages-fermer': ui.reglages = false; vueProfil(); return scrollTo(0, 0);
     case 'rappels-activer': return activerRappels();
+    case 'rappels-plus-tard': data.notifs.plusTard = true; return maj();
     case 'rappels-desactiver': return desactiverRappels();
     case 'tout-effacer': return toutEffacer();
     case 'stats-per': ui.statsPer = id; return vueProfil();
