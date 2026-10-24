@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.8.1';
+export const VERSION = '1.9.1';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -27,7 +27,14 @@ export function periode(horizon, d) {
   return `${y}-${y + 1}`;
 }
 
-export const hhmm = h => `${pad(Math.floor(h) % 24)}:${pad(Math.round(h % 1 * 60))}`;
+export function versHeure(texte, debutPlage = 6) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(texte || '').trim());
+  if (!m) return NaN;
+  let h = +m[1] + +m[2] / 60;
+  if (h < debutPlage) h += 24;
+  return Math.round(h * 60) / 60;
+}
+export const hhmm = h => { const m = Math.round(h * 60); return `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`; };
 export const duree = m => m >= 60 ? `${Math.floor(m / 60)} h ${pad(m % 60)}` : `${m} min`;
 export const heures = v => `${Math.floor(v)} h${v % 1 ? ' 30' : ''}`;
 
@@ -39,7 +46,7 @@ export function texteSur(hex) {
 }
 export const couleurSure = c => /^#[0-9a-f]{6}$/i.test(c) ? c : '#9aa1ae';
 
-// Pose un créneau sur sa journée. Comme sur l'EDT papier, chaque demi-heure n'a qu'une
+// Pose un créneau sur sa journée. Comme sur l'EDT papier, chaque moment n'a qu'une
 // catégorie : le nouveau créneau rogne, coupe en deux ou remplace ce qu'il recouvre.
 export function placer(slots, c) {
   const res = [];
@@ -103,7 +110,7 @@ const SCHEMA = {
   version: UN_DE(1), plage: [ENTRE(0, 26)], typeDefaut: ID, dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
   bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, tutoVu: BOOL, taux: ENTRE(0, 1000),
   cats: [{ id: ID, nom: TXT, couleur: TXT }],
-  types: [{ id: ID, nom: TXT, slots: [SLOT] }],
+  types: [{ id: ID, nom: TXT, exemple: BOOL, slots: [SLOT] }],
   semaines: { '*': { type: ID, slots: [SLOT] } },
   notes: [{ id: ID, titre: TXT, texte: TXT, couleur: TXT, epingle: BOOL, tags: [TXT], lien: TXT, maj: NUM }],
   listes: [{ id: ID, nom: TXT, tags: [TXT], items: [{ id: ID, txt: TXT, fait: BOOL }] }],
@@ -156,7 +163,7 @@ export function validerImport(o) {
 //   "exercices": [{ "nom": "Gainage", "type": "duree" }],
 //   "seances": [{ "nom": "Renfo", "exercices": [{ "nom": "Gainage", "series": 3, "cible": 45 }] }]
 // }
-// jour : 0 = lundi … 6 = dimanche ; heures en décimales par demi-heure (8.5 = 8 h 30, 25 = 1 h du matin) ;
+// jour : 0 = lundi … 6 = dimanche ; heures en décimales (8.5 = 8 h 30, 25 = 1 h du matin) ;
 // categorie : le nom d'une catégorie existante ou de "categories" ; type : reps, duree, distance ou charge ;
 // frequence : "jour" ou 1 à 6 (fois par semaine) ; horizon : semaine, mois ou annee. Tout est facultatif.
 const PROFIL = {
@@ -173,7 +180,7 @@ const PROFIL = {
 export function lireProfil(o) {
   if (!o || o.format !== 'orga-profil' || o.version !== 1) throw new Error('Ce fichier n’est pas un profil de l’app.');
   const p = nettoyer(o, PROFIL);
-  const demi = x => Math.round(x * 2) / 2;
+  const demi = x => Math.round(x * 12) / 12; // à 5 minutes près
   if (p.semaineType) p.semaineType.creneaux = (p.semaineType.creneaux || []).filter(c => c.jour !== undefined && c.debut !== undefined && c.fin !== undefined)
     .map(c => ({ ...c, debut: demi(c.debut), fin: demi(c.fin) })).filter(c => c.fin > c.debut);
   return p;
@@ -213,6 +220,14 @@ export function appliquerProfil(data, p, auj = new Date()) {
     data.types.push(t);
     if (!data.typeDefaut || data.types.length === 1) data.typeDefaut = t.id;
     fait.push(`Semaine type « ${nom} » : ${slots.length} créneaux`);
+    // Le profil remplace la semaine d'exemple : elle disparaît, et les semaines où rien n'a été validé repartent du profil.
+    const exemples = data.types.filter(x => x.exemple).map(x => x.id);
+    if (exemples.length) {
+      data.types = data.types.filter(x => !x.exemple);
+      for (const [cle, s] of Object.entries(data.semaines)) if (exemples.includes(s.type) && !s.slots.some(x => x.fait)) delete data.semaines[cle];
+      if (!data.types.some(x => x.id === data.typeDefaut)) data.typeDefaut = t.id;
+      fait.push('Semaine d’exemple retirée');
+    }
   }
   for (const t of p.taches || []) if (t.titre && !data.taches.some(x => !x.fait && meme(x.titre, t.titre))) {
     let d = new Date(auj.getFullYear(), auj.getMonth(), auj.getDate());
@@ -285,6 +300,8 @@ export function migrer(o) {
   // V1.4 : profil sur le téléphone ; V1.5 : compétitions.
   if (!o.profil || typeof o.profil !== 'object' || Array.isArray(o.profil)) o.profil = {};
   if (!Array.isArray(o.competitions)) o.competitions = [];
+  // Rappels : réglages propres à ce téléphone (jamais importés d'une sauvegarde : l'abonnement est lié à l'appareil).
+  if (!o.notifs || typeof o.notifs !== 'object') o.notifs = { ...REGLAGES_RAPPELS };
   if (o.club && !(o.profil.sports || []).length) o.profil.sports = [o.club];
   return o;
 }
@@ -558,4 +575,32 @@ export const stadeCompagnon = nbJours => SEUILS_COMPAGNON.filter(s => nbJours >=
 export const prochainSeuil = nbJours => SEUILS_COMPAGNON.find(s => nbJours < s) ?? null;
 export function grandir(compagnon, nbJours) {
   return { ...compagnon, stade: Math.max(compagnon.stade || 0, stadeCompagnon(nbJours)) };
+}
+
+// ---------- Rappels (notifications) ----------
+// Adresse du serveur des rappels et sa clé publique VAPID : vides tant que le serveur n'est pas en ligne.
+export const SERVEUR_RAPPELS = 'https://orga-rappels.orgadevie.workers.dev';
+export const VAPID_PUBLIQUE = 'BBdg9PHUm5_4LI9Vv8k4_zOLL8dEcvF3sfzBgkdqVoGQd2TXT4sz9F8rGsiA7TzcD5Et29wzK3UWe5AU8FejD7o';
+export const REGLAGES_RAPPELS = { actif: false, delai: 15, creneaux: true, soir: true, bilan: true };
+const CATS_RAPPEL = ['cours', 'sport', 'job'];
+
+// Les rappels des 7 prochains jours, avec leur texte. Seules les heures (t, en secondes) partent vers
+// le serveur ; les textes restent sur le téléphone, qui les affiche quand la notification arrive.
+export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
+  const out = [], s = Math.floor(maintenant / 1000);
+  const ajout = (t, titre, corps) => { if (t > s && !out.some(x => x.t === t)) out.push({ t, titre, corps }); };
+  const auj = new Date(maintenant);
+  for (let i = 0; i < 7; i++) {
+    const d = ajouterJours(new Date(auj.getFullYear(), auj.getMonth(), auj.getDate()), i);
+    const cle = isoJour(lundiDe(d));
+    const t = data.types.find(x => x.id === data.typeDefaut) || data.types[0];
+    const slots = (data.semaines[cle]?.slots || t?.slots || []).filter(x => x.j === jourSemaine(d));
+    const a = h => Math.floor(d.getTime() / 1000 + h * 3600);
+    if (r.creneaux) for (const x of slots) if (CATS_RAPPEL.includes(x.cat) && x.titre !== 'Trajet') {
+      ajout(a(x.s) - r.delai * 60, `Dans ${r.delai} min : ${x.titre}`, [hhmm(x.s), x.salle, x.affaires].filter(Boolean).join(' · '));
+    }
+    if (r.soir && slots.length) ajout(a(20.5), 'Relis ta journée', 'Valide tes créneaux pour qu’elle compte et garder ta série.');
+    if (r.bilan && jourSemaine(d) === 6) ajout(a(17), 'C’est l’heure du bilan', 'Objectifs, tâches à reporter, heures de la semaine.');
+  }
+  return out.sort((x, y) => x.t - y.t).slice(0, 300);
 }
