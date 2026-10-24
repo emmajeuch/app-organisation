@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.4';
+export const VERSION = '1.10.5';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -46,6 +46,44 @@ export function texteSur(hex) {
 }
 export const couleurSure = c => /^#[0-9a-f]{6}$/i.test(c) ? c : '#9aa1ae';
 
+
+// ---------- Thème à deux couleurs (V1.10.2, repris en V1.10.5 avec des pastilles) ----------
+// Emma choisit le fond (et les bulles) et l'accent (boutons, flamme). Tout le reste s'en déduit, avec des
+// contrastes vérifiés : textes à 4,5:1 au moins sur le fond, les bulles et les zones grises (7:1 visé pour le texte principal).
+const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const versHex = c => '#' + c.map(v => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+export const melange = (a, b, t) => { const x = rgb(a), y = rgb(b); return versHex(x.map((v, i) => v + (y[i] - v) * t)); };
+const lum = h => { const l = rgb(h).map(c => c / 255).map(c => c <= .03928 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4); return .2126 * l[0] + .7152 * l[1] + .0722 * l[2]; };
+export const contraste = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + .05) / (y + .05); };
+// Rapproche c de la cible (noir ou blanc) juste assez pour être lisible sur tous les fonds donnés.
+const lisible = (c, cible, fonds, min = 4.5) => {
+  for (let t = 0; t <= 1.001; t += .05) { const x = melange(c, cible, Math.min(t, 1)); if (fonds.every(f => contraste(x, f) >= min)) return x; }
+  return cible;
+};
+export function paletteTheme(fond, accent) {
+  fond = couleurSure(fond).toLowerCase(); accent = couleurSure(accent).toLowerCase();
+  const sombre = texteSur(fond) === 'light', extreme = sombre ? '#ffffff' : '#000000';
+  // Un fond presque blanc s'assombrit un peu, pour que les bulles blanches s'en détachent.
+  let bg = !sombre && contraste(fond, '#ffffff') < 1.12 ? melange(fond, '#000000', .08) : fond, fonds;
+  const bulles = bg => [bg, sombre ? melange(bg, '#ffffff', .1) : melange(bg, '#ffffff', .75), sombre ? melange(bg, '#ffffff', .2) : melange(bg, '#000000', .1)];
+  // Un fond « moyen » (gris, magenta…) s'éloigne du texte juste assez pour qu'il ressorte partout.
+  for (let k = 0; k < 12 && bulles(bg).some(f => contraste(extreme, f) < 6); k++) bg = melange(bg, sombre ? '#000000' : '#ffffff', .12);
+  fonds = bulles(bg);
+  const [, surface, surface2] = fonds;
+  return {
+    '--bg': bg, '--surface': surface, '--surface-2': surface2,
+    '--ink': lisible(melange(bg, extreme, .85), extreme, fonds, 7),
+    '--ink-2': lisible(melange(bg, extreme, .55), extreme, fonds),
+    '--line': melange(bg, extreme, sombre ? .3 : .25),
+    '--on-ink': sombre ? bg : '#ffffff',
+    '--accent': accent, '--on-accent': texteSur(accent) === 'light' ? '#ffffff' : '#15171c',
+    '--accent-txt': lisible(accent, extreme, [bg, surface]),
+    '--flamme': accent,
+    '--danger': lisible(sombre ? '#ff8a80' : '#c42b27', extreme, [bg, surface]),
+    '--shadow': sombre ? '0 8px 24px rgb(0 0 0 / .6)' : '0 8px 24px rgb(0 0 0 / .18)',
+    'color-scheme': sombre ? 'dark' : 'light',
+  };
+}
 
 // Pose un créneau sur sa journée. Comme sur l'EDT papier, chaque moment n'a qu'une
 // catégorie : le nouveau créneau rogne, coupe en deux ou remplace ce qu'il recouvre.
@@ -106,8 +144,9 @@ export const recurrentDe = (data, src) => data.recurrents.find(r => String(src |
 export function propager(data, ids, maintenant = new Date()) {
   const auj = momentLogique(maintenant).date, lundiAuj = isoJour(lundiDe(auj)), jAuj = jourSemaine(auj);
   const de = (x, id) => String(x.src || '').startsWith(id + '-');
-  // Ce qu'on a posé à la main (pas venu d'un créneau type) n'est jamais recouvert : le créneau type saute ce jour-là.
-  const aLaMain = x => !data.recurrents.some(r => de(x, r.id));
+  // V1.10.5 : rien n'est recouvert, ni ce qu'on a posé à la main ni les autres créneaux types : le créneau type saute ce jour-là.
+  // Seuls ceux qu'on repose ensemble peuvent se couper entre eux (les repas coupent les cours de la base).
+  const autre = x => !ids.some(id => de(x, id));
   for (const [cle, sem] of Object.entries(data.semaines)) {
     if (cle < lundiAuj) continue;
     const ouvert = j => cle > lundiAuj || j >= jAuj;
@@ -115,11 +154,22 @@ export function propager(data, ids, maintenant = new Date()) {
     for (const r of data.recurrents.filter(r => ids.includes(r.id))) for (const j of [...new Set(r.jours)].sort()) {
       if (!ouvert(j) || slots.some(x => x.j === j && x.fait && de(x, r.id))) continue;
       const c = { id: uid(), src: `${r.id}-${j}`, ...slotDe(r, j), fait: null };
-      if (chevauche(slots.filter(aLaMain), c)) continue;
+      if (chevauche(slots.filter(autre), c)) continue;
       slots = placer(slots, c);
     }
     sem.slots = slots;
   }
+}
+// Journées types (V1.10.5) : le lundi type devient aussi le mardi type. Le jour d'arrivée perd ses créneaux types,
+// puis reçoit ceux du jour de départ. Rend les créneaux types touchés, à reposer dans les semaines.
+export function copierJourType(data, de, vers) {
+  const touches = data.recurrents.filter(r => r.jours.includes(de) || r.jours.includes(vers)).map(r => r.id);
+  for (const r of data.recurrents) {
+    r.jours = r.jours.filter(j => j !== vers);
+    if (r.jours.includes(de)) r.jours = [...r.jours, vers].sort((a, b) => a - b);
+  }
+  data.recurrents = data.recurrents.filter(r => r.jours.length);
+  return touches;
 }
 // Des créneaux de semaine regroupés en créneaux types : même titre, catégorie, heures et salle = un créneau type et ses jours.
 export function recurrentsDepuis(slots, exemple = false) {
@@ -226,7 +276,7 @@ const SLOT = { id: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID
 const SCHEMA = {
   version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID,
   recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
-  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
+  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, couleurs: { fond: TXT, accent: TXT }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
   cats: [{ id: ID, nom: TXT, couleur: TXT }],
   types: [{ id: ID, nom: TXT, exemple: BOOL, slots: [SLOT] }],
   semaines: { '*': { type: ID, slots: [SLOT] } },

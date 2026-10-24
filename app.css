@@ -31,9 +31,7 @@
     --line: #4A5263; --on-ink: #0B0D11; --danger: #FF6B66; --shadow: 0 8px 24px rgb(0 0 0 / .5); color-scheme: dark;
   }
 }
-/* Thèmes (V1.10.3) : clair et sombre fixes ; sans thème, l'app suit l'iPhone. */
-:root[data-theme="clair"] { --bg: #E8EAF0; --surface: #FFFFFF; --surface-2: #DADEE6; --ink: #15171C; --ink-2: #4A5060; --line: #C9CED9; --on-ink: #FFFFFF; --danger: #C42B27; --shadow: 0 8px 24px rgb(21 23 28 / .18); color-scheme: light; }
-:root[data-theme="nuit"] { --bg: #0B0D11; --surface: #1C2028; --surface-2: #2F3542; --ink: #F1F3F7; --ink-2: #AEB5C2; --line: #4A5263; --on-ink: #0B0D11; --danger: #FF6B66; --shadow: 0 8px 24px rgb(0 0 0 / .5); color-scheme: dark; }
+/* Thème : les variables sont posées par appliquerTheme() à partir de paletteTheme() (logique.js), qui vérifie les contrastes. */
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -467,15 +465,41 @@ button:active, .chip:active, [role="button"]:active { transform: scale(.95); }
 @keyframes vient-droite { from { transform: translateX(28px); opacity: .3; } }
 @keyframes vient-gauche { from { transform: translateX(-28px); opacity: .3; } }
 /* Le compagnon qui se promène, au-dessus des onglets ; il ne bloque aucun tap */
-.balade { position: fixed; left: 0; bottom: calc(74px + env(safe-area-inset-bottom, 0px)); width: 46px; z-index: 4; pointer-events: none; animation: balade 46s linear infinite; }
-.balade .compagnon { width: 46px; }
-.balade .pas { animation: pas .5s ease-in-out infinite alternate; }
-@keyframes balade {
-  0% { transform: translateX(-60px); } 40% { transform: translateX(calc(100vw + 10px)); }
-  40.01% { transform: translateX(calc(100vw + 10px)) scaleX(-1); } 50% { transform: translateX(calc(100vw + 10px)) scaleX(-1); }
-  90% { transform: translateX(-60px) scaleX(-1); } 90.01%, 100% { transform: translateX(-60px); }
-}
+/* V1.10.5 : plus gros, et chaque créature a son comportement (animerBalade dans app.js choisit l'action) */
+.balade { position: fixed; left: 0; bottom: calc(72px + env(safe-area-inset-bottom, 0px)); width: 68px; z-index: 4; pointer-events: none; }
+.balade .compagnon { width: 68px; }
+.balade .sens { transform: scaleX(var(--sens, 1)); transition: transform .2s; }
+.balade .bulle { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--ink-2); animation: bulle 1.8s ease-in-out infinite; }
+.balade .bulle:empty { display: none; }
+@keyframes bulle { 0% { opacity: 0; transform: translate(-50%, 4px); } 30%, 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -10px); } }
+.balade.marcher .pas, .balade.flaner .pas { animation: pas .45s ease-in-out infinite alternate; }
+.balade.flaner .pas { animation-duration: .8s; }
+.balade.courir .pas { animation: pas .16s ease-in-out infinite alternate; }
+.balade.sauter .pas { animation: saut .6s cubic-bezier(.3, 0, .4, 1) infinite; }
+.balade.dormir .pas { animation: dodo 2.4s ease-in-out infinite; }
+.balade.dormir .crea i::before, .balade.dormir .crea i::after { transform: scaleY(.12); animation: none; }
+.balade.bailler .pas { animation: baille 2s ease-in-out infinite; }
+.balade.manger .pas { animation: mache .28s ease-in-out infinite alternate; }
+.balade.ecrire .pas { animation: ecrit .35s ease-in-out infinite alternate; }
+.balade.bricoler .pas { animation: tape-marteau .3s ease-in infinite alternate; }
+.balade.danser .pas { animation: danse .5s ease-in-out infinite alternate; }
+.balade.regarder .pas { animation: regarde 2.4s ease-in-out infinite; }
+.balade.flotter .pas { animation: flotte 1.8s ease-in-out infinite; }
+.balade.tourner .pas { animation: tourne 1.1s linear infinite; }
+.balade.rouler .pas { animation: tourne .9s linear infinite; }
+.balade.briller .pas { animation: brille 1.4s ease-in-out infinite; }
 @keyframes pas { from { transform: translateY(0) rotate(-4deg); } to { transform: translateY(-5px) rotate(4deg); } }
+@keyframes saut { 0%, 100% { transform: translateY(0) scale(1.08, .92); } 45% { transform: translateY(-26px) scale(.95, 1.06); } }
+@keyframes dodo { 0%, 100% { transform: scale(1.04, .94); } 50% { transform: scale(1, 1); } }
+@keyframes baille { 0%, 100% { transform: scale(1); } 40% { transform: scale(.94, 1.12) rotate(-4deg); } }
+@keyframes mache { from { transform: scale(1, 1); } to { transform: scale(1.04, .92); } }
+@keyframes ecrit { from { transform: rotate(6deg); } to { transform: rotate(10deg) translateX(2px); } }
+@keyframes tape-marteau { from { transform: translateY(0); } to { transform: translateY(-6px) rotate(-6deg); } }
+@keyframes danse { from { transform: rotate(-12deg) translateY(0); } to { transform: rotate(12deg) translateY(-4px); } }
+@keyframes regarde { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(-10deg); } 60% { transform: rotate(10deg); } }
+@keyframes flotte { 0%, 100% { transform: translateY(-6px); } 50% { transform: translateY(-20px); } }
+@keyframes tourne { to { transform: rotate(360deg); } }
+@keyframes brille { 0%, 100% { filter: drop-shadow(0 0 0 transparent); } 50% { filter: drop-shadow(0 0 10px var(--flamme)) brightness(1.15); } }
 @media (prefers-reduced-motion: reduce) { .balade { display: none; } }
 
 /* V1.10.1 : un liseré autour des cartes, listes, groupes et de la grille (retour des testeurs : plus de contraste) */
@@ -507,3 +531,16 @@ dialog[open]::backdrop { animation: fondu .3s ease-out; }
 .ligne-jour { display: grid; grid-template-columns: 72px 1fr 1fr; gap: 8px; align-items: end; }
 .ligne-jour > span, .ligne-jour > .coche { padding-bottom: 12px; font-weight: 650; text-transform: capitalize; }
 .ligne-jour .champ { font-size: 12px; }
+
+/* Couleurs du thème en pastilles (V1.10.5) */
+.pastilles { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 8px; }
+.pastille-c { aspect-ratio: 1; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--line); }
+.pastille-c[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--ink); }
+.pastille-c.auto { background: linear-gradient(135deg, #F4F5F8 50%, #0B0D11 50%); font-size: 10px; font-weight: 800; color: #FF9600; }
+/* Glisser un créneau sur un moment pris : le fantôme passe en rouge */
+.blk.fantome.refus { background: var(--danger); color: #fff; opacity: .85; }
+
+/* Journées types : un bouton par jour (V1.10.5) */
+.jours-type { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 4px 0 8px; }
+.jours-type button { height: 38px; border-radius: 10px; background: var(--surface-2); font-weight: 700; text-transform: capitalize; font-size: 13px; }
+.jours-type button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }

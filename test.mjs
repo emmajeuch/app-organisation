@@ -454,4 +454,35 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   assert.equal(L.morceauxMultiJours([...s, { id: 'b', j: 6, s: 10, e: 11, cat: 'loisirs' }], { id: 'x', j: 5, s: 16, e: 17 }, 6, [6, 25]).gene.id, 'b');
 }
 
+// Un créneau type ne découpe plus les autres créneaux types : il saute le jour où il les recouvrirait.
+{
+  const d = L.vide();
+  d.recurrents = [{ id: 'dodo', titre: 'Sommeil', cat: 'sommeil', s: 6, e: 8, jours: [0, 1, 2, 3, 4, 5, 6] }];
+  const lun = L.isoJour(L.lundiDe(L.ajouterJours(new Date(), 7)));
+  d.semaines[lun] = { type: 'base', slots: [] };
+  L.propager(d, ['dodo']);
+  d.recurrents.push({ id: 'yoga', titre: 'Yoga', cat: 'sport', s: 7, e: 9, jours: [0] });
+  L.propager(d, ['yoga']);
+  const sl = d.semaines[lun].slots;
+  assert.ok(sl.some(x => x.j === 0 && x.titre === 'Sommeil' && x.s === 6 && x.e === 8));   // le sommeil reste entier
+  assert.ok(!sl.some(x => x.titre === 'Yoga'));
+}
+// Palette des couleurs : textes lisibles sur tous les fonds proposés, avec toutes les couleurs de boutons.
+for (const fond of ['#F4F5F8', '#F3EAD9', '#FFE3EE', '#E9E3FF', '#DDF5E8', '#DDEEFF', '#0B0D11', '#1E2430', '#0B1630', '#1B0B33', '#07170F', '#220811']) {
+  for (const accent of ['#FF9600', '#EC4A46', '#FF4D8D', '#B04CFF', '#6236E8', '#1D7BFF', '#00B3C7', '#16A34A', '#A6E35F', '#FFD447', '#8B5E3C', '#9AA1AE']) {
+    const p = L.paletteTheme(fond, accent);
+    for (const f of [p['--bg'], p['--surface'], p['--surface-2']]) assert.ok(L.contraste(p['--ink'], f) >= 4.5 && L.contraste(p['--ink-2'], f) >= 4.5, `texte sur ${fond}`);
+    for (const f of [p['--bg'], p['--surface']]) assert.ok(L.contraste(p['--accent-txt'], f) >= 4.5, `accent ${accent} sur ${fond}`);
+  }
+}
+
+// Journées types : copier le lundi type vers le mardi remplace le mardi type.
+{
+  const d = L.vide();
+  d.recurrents = [{ id: 'a', titre: 'Sommeil', s: 6, e: 8, jours: [0, 1] }, { id: 'b', titre: 'Cours', s: 9, e: 12, jours: [0] }, { id: 'c', titre: 'Piscine', s: 18, e: 19, jours: [1] }];
+  const t = L.copierJourType(d, 0, 1);
+  assert.deepEqual(t.sort(), ['a', 'b', 'c']);
+  assert.deepEqual(d.recurrents.map(r => [r.id, r.jours]), [['a', [0, 1]], ['b', [0, 1]]]);   // la piscine du mardi part
+}
+
 console.log('ok');

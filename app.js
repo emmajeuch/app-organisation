@@ -498,14 +498,23 @@ function planifier(t) {
 }
 
 // « Ta semaine » : les créneaux types (ce qui revient chaque semaine), et les copies de semaine ou de jour.
-function actionsSemaine() {
+// V1.10.5 : les créneaux types se règlent jour par jour (le lundi type, le mardi type…).
+function actionsSemaine(jt = ui.jourType ?? L.jourSemaine(new Date())) {
+  ui.jourType = jt;
   const cle = L.isoJour(ui.lundi), sem = semaineDe(cle);
   const jours = JOURS.map((n, j) => `<option value="${j}">${n}</option>`).join('');
-  const recs = [...data.recurrents].sort((a, b) => data.cats.findIndex(c => c.id === a.cat) - data.cats.findIndex(c => c.id === b.cat) || a.s - b.s);
+  const recs = data.recurrents.filter(r => r.jours.includes(jt)).sort((a, b) => a.s - b.s);
+  const autres = r => r.jours.filter(j => j !== jt);
   ouvrirDlg(`<form><h2>Ta semaine</h2>
-    <div class="champ">Créneaux types : ils reviennent chaque semaine
-      ${recs.length ? `<ul class="list">${recs.map(r => `<li><button type="button" class="txt gauche" data-choix="r:${r.id}"><b><span class="dot" style="${teinte(r.cat)}"></span> ${esc(r.titre)}</b><small>${L.hhmm(r.s)} – ${L.hhmm(r.e)} · ${esc(L.joursTexte(r.jours))}</small></button></li>`).join('')}</ul>` : '<p class="aide">Aucun pour l’instant.</p>'}
-      <div class="rangee"><button type="button" class="btn gris" data-choix="nouveau">Nouveau créneau type</button><button type="button" class="btn gris" data-choix="construire">Régler par catégories</button></div></div>
+    <div class="champ">Journées types : ce qui revient chaque semaine
+      <div class="jours-type">${JOURS.map((n, j) => `<button type="button" data-choix="jt:${j}" aria-pressed="${j === jt}">${n.slice(0, 3)}</button>`).join('')}</div>
+      ${recs.length ? `<ul class="list">${recs.map(r => `<li><button type="button" class="txt gauche" data-choix="r:${r.id}"><b><span class="dot" style="${teinte(r.cat)}"></span> ${esc(r.titre)}</b><small>${L.hhmm(r.s)} – ${L.hhmm(r.e)}${autres(r).length ? ` · aussi ${esc(L.joursTexte(autres(r)))}` : ' · seulement ce jour-là'}</small></button></li>`).join('')}</ul>` : `<p class="aide">Rien le ${JOURS[jt]} pour l’instant.</p>`}
+      <button type="button" class="btn gris" data-choix="nouveau">Ajouter au ${JOURS[jt]} type</button>
+      <div class="champs" style="grid-template-columns: 1fr auto; align-items: end">
+        <label class="champ">Copier le ${JOURS[jt]} type vers le<select name="versType">${jours}</select></label>
+        <button type="button" class="btn gris" data-choix="copier-type">Copier</button>
+      </div>
+      <button type="button" class="btn gris" data-choix="construire">Régler par catégories</button></div>
     <button type="button" class="btn gris" data-choix="precedente">Copier la semaine précédente</button>
     <div class="champs" style="grid-template-columns: 1fr 1fr auto; align-items: end">
       <label class="champ">Copier le<select name="de">${jours}</select></label>
@@ -514,8 +523,17 @@ function actionsSemaine() {
     </div>
     <button type="button" class="btn plein" data-fermer>Fermer</button>
   </form>`, (choix, f) => {
-    if (choix.startsWith('r:')) { editerRecurrent(data.recurrents.find(r => r.id === choix.slice(2))); return false; }
-    if (choix === 'nouveau') { editerRecurrent(); return false; }
+    if (choix.startsWith('jt:')) { setTimeout(() => actionsSemaine(+choix.slice(3))); return; }
+    if (choix.startsWith('r:')) { editerRecurrent(data.recurrents.find(r => r.id === choix.slice(2)), jt); return false; }
+    if (choix === 'nouveau') { editerRecurrent(null, jt); return false; }
+    if (choix === 'copier-type') {
+      const vers = +f.get('versType');
+      if (vers === jt) { dire('Choisis un autre jour.'); return false; }
+      const touches = L.copierJourType(data, jt, vers);
+      L.regenerer(data); L.propager(data, touches);
+      noterUsage('creneau-type');
+      maj(); dire(`Le ${JOURS[vers]} type est maintenant comme le ${JOURS[jt]} type`); return;
+    }
     if (choix === 'construire') { construire(); return false; }
     if (choix === 'precedente') {
       const prec = data.semaines[L.isoJour(L.ajouterJours(ui.lundi, -7))];
@@ -535,9 +553,10 @@ function actionsSemaine() {
 const joursChoix = (nom, sel = []) => `<div class="jours-choix">${JOURS.map((n, j) => `<label><input type="checkbox" name="${nom}" value="${j}" ${sel.includes(j) ? 'checked' : ''}><span>${n.slice(0, 2)}</span></label>`).join('')}</div>`;
 
 // Un créneau type : ce qui revient chaque semaine, les jours cochés.
-function editerRecurrent(r) {
-  const neuf = !r, v = r || { titre: '', cat: ui.derniereCat || data.cats[0]?.id, s: 8, e: 9, jours: [L.jourSemaine(new Date())], salle: '', affaires: '' };
-  ouvrirDlg(`<form><h2>${neuf ? 'Nouveau créneau type' : 'Créneau type'}</h2>
+function editerRecurrent(r, jt = null) {
+  const neuf = !r, v = r || { titre: '', cat: ui.derniereCat || data.cats[0]?.id, s: 8, e: 9, jours: [jt ?? L.jourSemaine(new Date())], salle: '', affaires: '' };
+  const separable = !neuf && jt !== null && r.jours.length > 1;
+  ouvrirDlg(`<form><h2>${neuf ? (jt !== null ? `Nouveau, le ${JOURS[jt]}` : 'Nouveau créneau type') : 'Créneau type'}</h2>
     <p class="muted">Il revient chaque semaine, les jours cochés. Le changer met à jour ta semaine à partir d’aujourd’hui ; le passé et ce qui est déjà validé ne bougent pas.</p>
     <label class="champ">Titre<input name="titre" value="${esc(v.titre)}" placeholder="${esc(cat(v.cat).nom)}" autocomplete="off"></label>
     <div class="cats" role="radiogroup" aria-label="Catégorie">${data.cats.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${c.id === v.cat ? 'checked' : ''}><span style="${teinte(c.id)}">${esc(c.nom)}</span></label>`).join('')}</div>
@@ -545,20 +564,31 @@ function editerRecurrent(r) {
     <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Début<input type="time" name="s" value="${L.hhmm(v.s)}" step="300" required></label><label class="champ">Fin<input type="time" name="e" value="${L.hhmm(v.e)}" step="300" required></label></div>
     <label class="champ">Salle, lieu<input name="salle" value="${esc(v.salle)}" autocomplete="off"></label>
     <label class="champ">Affaires à prendre<input name="affaires" value="${esc(v.affaires)}" autocomplete="off"></label>
+    ${separable ? `<label class="coche"><input type="checkbox" class="chk" name="seul" checked>Seulement le ${JOURS[jt]} (les autres jours ne changent pas)</label>` : ''}
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
+    const seul = separable && !!f.get('seul');
+    if (choix === 'suppr' && seul) {
+      r.jours = r.jours.filter(j => j !== jt);
+      L.regenerer(data); L.propager(data, [r.id]);
+      maj(); dire(`Retiré du ${JOURS[jt]} type`); return;
+    }
     if (choix === 'suppr') {
       data.recurrents = data.recurrents.filter(x => x !== r);
       L.regenerer(data); L.propager(data, [r.id]);
       maj(); dire('Créneau type supprimé, à partir d’aujourd’hui'); return;
     }
     const p0 = data.plage[0];
-    const c = { cat: f.get('cat') || v.cat, s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), jours: f.getAll('jours').map(Number), salle: f.get('salle').trim(), affaires: f.get('affaires').trim() };
+    const c = { cat: f.get('cat') || v.cat, s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), jours: seul ? [jt] : f.getAll('jours').map(Number), salle: f.get('salle').trim(), affaires: f.get('affaires').trim() };
     c.titre = f.get('titre').trim() || cat(c.cat).nom;
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
     if (!c.jours.length) { dire('Coche au moins un jour.'); return false; }
+    const gene = data.recurrents.find(y => y !== r && y.jours.some(j => c.jours.includes(j)) && y.s < c.e && y.e > c.s);
+    // ponytail: avec « seulement ce jour-là », r garde encore ce jour pendant la vérification ; il est exclu, c'est lui qu'on sépare.
+    if (gene) { dire(`Ce moment est déjà pris par le créneau type « ${gene.titre} » (${L.hhmm(gene.s)} – ${L.hhmm(gene.e)}, ${L.joursTexte(gene.jours.filter(j => c.jours.includes(j)))}).`); return false; }
     let x = r;
-    if (neuf) { x = { id: L.uid(), ...c }; data.recurrents.push(x); } else { Object.assign(r, c); delete r.exemple; }
-    L.regenerer(data); L.propager(data, [x.id]);
+    if (seul) { r.jours = r.jours.filter(j => j !== jt); x = { id: L.uid(), ...c }; data.recurrents.push(x); }
+    else if (neuf) { x = { id: L.uid(), ...c }; data.recurrents.push(x); } else { Object.assign(r, c); delete r.exemple; }
+    L.regenerer(data); L.propager(data, seul ? [r.id, x.id] : [x.id]);
     ui.derniereCat = c.cat;
     noterUsage('creneau-type');
     maj(); dire(neuf ? 'Créneau type ajouté' : 'Créneau type modifié');
@@ -574,7 +604,10 @@ function cible(g) {
   const col = g.mode === 'deplacer' && sous ? sous : g.col;
   const h = Math.min(Math.max(heureA(col, g.cy), p0), p1 - .5);
   if (g.mode === 'creer') return { col, j: g.j, s: Math.min(g.h0, h), e: Math.max(g.h0, h) + .5 };
-  if (g.mode === 'etirer') return { col, j: g.slot.j, s: g.slot.s, e: Math.max(g.slot.s + .5, h + .5) };
+  // Étirer s'arrête au créneau voisin (V1.10.5) : on ne recouvre jamais un autre créneau.
+  const voisins = data.semaines[L.isoJour(ui.lundi)].slots.filter(x => x.j === g.slot?.j && x.id !== g.slot?.id);
+  if (g.mode === 'etirer') return { col, j: g.slot.j, s: g.slot.s, e: Math.min(Math.max(g.slot.s + .5, h + .5), ...voisins.filter(x => x.s >= g.slot.e).map(x => x.s), p1) };
+  if (g.mode === 'etirer-haut') return { col, j: g.slot.j, s: Math.max(Math.min(g.slot.e - .5, h), ...voisins.filter(x => x.e <= g.slot.s).map(x => x.e), p0), e: g.slot.e };
   const d = g.slot.e - g.slot.s;
   const s = Math.min(Math.max(g.slot.s + h - g.h0, p0), p1 - d);
   return { col, j: +col.dataset.j, s, e: s + d };
@@ -582,7 +615,9 @@ function cible(g) {
 function apercu() {
   const c = cible(geste), f = geste.fantome;
   f.style.cssText = `${teinte(geste.slot ? geste.slot.cat : ui.derniereCat || data.cats[0]?.id)};--s:${c.s - data.plage[0]};--d:${c.e - c.s}`;
-  f.textContent = `${L.hhmm(c.s)}–${L.hhmm(c.e)}`;
+  const pris = geste.mode === 'deplacer' && L.chevauche(data.semaines[L.isoJour(ui.lundi)].slots, { ...geste.slot, j: c.j, s: c.s, e: c.e });
+  f.classList.toggle('refus', !!pris);
+  f.textContent = pris ? `Pris : ${pris.titre}` : `${L.hhmm(c.s)}–${L.hhmm(c.e)}`;
   if (f.parentNode !== c.col) c.col.append(f);
 }
 function finGeste() {
@@ -599,10 +634,10 @@ vueSem.addEventListener('pointerdown', e => {
   const blk = e.target.closest('.blk');
   const slot = blk && data.semaines[L.isoJour(ui.lundi)].slots.find(x => x.id === blk.dataset.id);
   geste = { mode: 'attente', x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, col, j: +col.dataset.j, h0: heureA(col, e.clientY),
-    slot, blk, bas: !!blk && e.clientY > blk.getBoundingClientRect().bottom - 12, pid: e.pointerId };
+    slot, blk, bas: !!blk && e.clientY > blk.getBoundingClientRect().bottom - 14, haut: !!blk && e.clientY < blk.getBoundingClientRect().top + 14, pid: e.pointerId };
   geste.timer = setTimeout(() => {
     if (!geste) return;
-    geste.mode = slot ? (geste.bas ? 'etirer' : 'deplacer') : 'creer';
+    geste.mode = slot ? (geste.bas ? 'etirer' : geste.haut ? 'etirer-haut' : 'deplacer') : 'creer';
     try { col.setPointerCapture(geste.pid); } catch {}
     blk?.classList.add('leve');
     geste.fantome = Object.assign(document.createElement('div'), { className: 'blk fantome' });
@@ -1100,19 +1135,26 @@ function editerHabitude(hb, neuf = false) {
 }
 
 // Thèmes : [id, nom, couleur du thème, fond]. Tous libres (retour des testeurs, 24/10) ; les couleurs sont dans app.css.
-// Trois thèmes (V1.10.3) : automatique suit l'iPhone, clair et sombre sont fixes. Les anciens tombent sur le plus proche.
-const THEMES = [['classique', 'Automatique'], ['clair', 'Clair'], ['nuit', 'Sombre']];
-const SOMBRES = ['nuit', 'neon', 'electrique', 'volcan', 'minuit', 'galaxie', 'ocean', 'foret', 'rubis', 'ambre', 'arcade', 'contraste', 'ardoise', 'corail'];
-const themeActuel = () => THEMES.some(t => t[0] === data.theme) ? data.theme
-  : data.couleurs?.fond ? (L.texteSur(L.couleurSure(data.couleurs.fond)) === 'light' ? 'nuit' : 'clair')
-  : !data.theme || data.theme === 'classique' ? 'classique' : SOMBRES.includes(data.theme) ? 'nuit' : 'clair';
+// Thème (V1.10.5) : deux couleurs choisies en pastilles (le sélecteur de l'iPhone se manipulait mal).
+// Fond « Auto » : l'app suit l'iPhone, clair ou sombre ; la couleur des boutons et de la flamme s'y applique quand même.
+const FONDS = [['#F4F5F8', 'Blanc'], ['#F3EAD9', 'Sable'], ['#FFE3EE', 'Rose'], ['#E9E3FF', 'Lavande'], ['#DDF5E8', 'Menthe'], ['#DDEEFF', 'Ciel'],
+  ['#0B0D11', 'Nuit'], ['#1E2430', 'Ardoise'], ['#0B1630', 'Bleu nuit'], ['#1B0B33', 'Violet nuit'], ['#07170F', 'Forêt'], ['#220811', 'Bordeaux']];
+const ACCENTS = [['#FF9600', 'Orange'], ['#EC4A46', 'Rouge'], ['#FF4D8D', 'Rose'], ['#B04CFF', 'Violet'], ['#6236E8', 'Indigo'], ['#1D7BFF', 'Bleu'],
+  ['#00B3C7', 'Turquoise'], ['#16A34A', 'Vert'], ['#A6E35F', 'Citron'], ['#FFD447', 'Jaune'], ['#8B5E3C', 'Brun'], ['#9AA1AE', 'Gris']];
+// Les anciens thèmes (avant la 1.10.5) donnent leurs couleurs : clair et sombre deviennent un fond.
+const couleursTheme = () => data.couleurs || (data.theme === 'nuit' ? { fond: '#0B0D11' } : data.theme === 'clair' ? { fond: '#F4F5F8' } : {});
 function appliquerTheme() {
-  const r = document.documentElement, t = themeActuel();
-  r.removeAttribute('style');
-  if (t === 'classique') delete r.dataset.theme; else r.dataset.theme = t;
+  const r = document.documentElement, c = couleursTheme(), p = c.fond && L.paletteTheme(c.fond, c.accent || '#FF9600');
+  r.removeAttribute('style'); delete r.dataset.theme;
+  if (p) for (const [k, v] of Object.entries(p)) r.style.setProperty(k, v);
+  else if (c.accent) {
+    r.style.setProperty('--accent', c.accent); r.style.setProperty('--flamme', c.accent);
+    r.style.setProperty('--on-accent', L.texteSur(c.accent) === 'light' ? '#ffffff' : '#15171c');
+  }
   // La barre d'état de l'iPhone prend la couleur du fond.
-  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = t === 'nuit' ? '#0B0D11' : t === 'clair' ? '#E8EAF0' : m.media.includes('dark') ? '#0B0D11' : '#E8EAF0'; });
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = p ? p['--bg'] : m.media.includes('dark') ? '#0B0D11' : '#E8EAF0'; });
 }
+const pastilles = (id, liste, sel, auto) => `<div class="pastilles">${auto ? `<button class="pastille-c auto" data-act="couleur" data-id="${id}" data-c="" aria-pressed="${!sel}" aria-label="Automatique">Auto</button>` : ''}${liste.map(([c, nom]) => `<button class="pastille-c" data-act="couleur" data-id="${id}" data-c="${c}" aria-pressed="${sel?.toLowerCase() === c.toLowerCase()}" aria-label="${nom}" style="background:${c}"></button>`).join('')}</div>`;
 const SOURCES = { creneaux: ['Créneaux', '#35C6DF'], taches: ['Tâches', '#EC4A46'], sport: ['Sport', '#B5DF2B'],
   habitudes: ['Habitudes', '#FF8AC1'], objectifs: ['Objectifs', '#6766F0'], bonus: ['Journées et bilans', '#FFD447'] };
 const RARETE = { commune: 'Commune', rare: 'Rare', legendaire: 'Légendaire' };
@@ -1182,9 +1224,10 @@ function vueReglages() {
        : '<p>Pas possible sur ce téléphone (iPhone : iOS 16.4 ou plus).</p>'}
        ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}
        <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>`)}
-    ${groupe('apparence', 'Apparence et son', `Thème ${THEMES.find(t => t[0] === themeActuel())[1].toLowerCase()}`,
-      `<div class="cats">${THEMES.map(([id, nom]) => `<button class="theme" data-act="theme" data-id="${id}" aria-pressed="${themeActuel() === id}">${nom}</button>`).join('')}</div>
-       <p class="aide">Automatique suit l’iPhone : clair le jour, sombre si tu l’as réglé.</p>
+    ${groupe('apparence', 'Apparence et son', couleursTheme().fond ? (FONDS.find(f => f[0].toLowerCase() === couleursTheme().fond.toLowerCase())?.[1] || 'Tes couleurs') : 'Automatique',
+      `<div class="champ">Fond et bulles${pastilles('fond', FONDS, couleursTheme().fond, true)}</div>
+       <div class="champ">Boutons et flamme${pastilles('accent', ACCENTS, couleursTheme().accent || (couleursTheme().fond ? '#FF9600' : ''), false)}</div>
+       <p class="aide">Auto suit l’iPhone : clair le jour, sombre si tu l’as réglé. Les textes s’ajustent tout seuls pour rester lisibles.</p>
        <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label>`)}
     ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, notice, conditions',
       `<div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
@@ -1847,7 +1890,49 @@ function majBalade() {
   if (!c) { el?.remove(); return; }
   const cle = `${c.id}-${data.compagnon.stade || 0}`;
   if (!el) { el = Object.assign(document.createElement('div'), { id: 'balade', className: 'balade' }); el.setAttribute('aria-hidden', 'true'); document.body.append(el); }
-  if (el.dataset.cle !== cle) { el.innerHTML = `<div class="pas">${compagnonFig(c, data.compagnon.stade || 0)}</div>`; el.dataset.cle = cle; }
+  if (el.dataset.cle !== cle) {
+    el.innerHTML = `<span class="bulle"></span><div class="sens"><div class="pas">${compagnonFig(c, data.compagnon.stade || 0)}</div></div>`;
+    el.dataset.cle = cle;
+    animerBalade(el, c);
+  }
+}
+// Chaque créature a ses habitudes (V1.10.5) : ce qu'elle fait le plus souvent, avec un poids.
+const COMPORTEMENTS = {
+  ronfleur: { dormir: 6, marcher: 2, bailler: 2 }, gratte: { ecrire: 5, marcher: 2, regarder: 2 }, sprintou: { courir: 6, sauter: 3, marcher: 1 },
+  grignote: { manger: 5, marcher: 2, sauter: 1 }, plumette: { flotter: 4, marcher: 2, danser: 2 }, flanou: { flaner: 5, regarder: 2, dormir: 1 },
+  bricolo: { bricoler: 5, marcher: 2, sauter: 1 }, caillou: { rouler: 4, dormir: 3 }, brindille: { marcher: 3, danser: 3, regarder: 1 },
+  mirabelle: { sauter: 4, danser: 3, marcher: 2 }, tourbillon: { tourner: 5, courir: 2 }, pepite: { briller: 4, marcher: 2, sauter: 1 },
+  nuage: { flotter: 5, dormir: 2 }, cactou: { flaner: 3, regarder: 3, sauter: 1 }, lumino: { briller: 4, flotter: 3, sauter: 1 },
+  zephyr: { flotter: 3, courir: 3, tourner: 2 },
+};
+const VITESSES = { marcher: 45, flaner: 22, courir: 150, rouler: 70, flotter: 30 };   // pixels par seconde ; les autres restent sur place
+const BULLES = { dormir: 'z z z', bailler: 'Ouaaah', ecrire: '✎', manger: 'miam', bricoler: '♪', regarder: '?', danser: '♪ ♫', briller: '✦' };
+let baladeMinuteur = null;
+function animerBalade(el, c) {
+  clearTimeout(baladeMinuteur);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const poids = COMPORTEMENTS[c.id] || { marcher: 1 };
+  const total = Object.values(poids).reduce((a, b) => a + b, 0);
+  const choisir = () => { let t = Math.random() * total; for (const [k, p] of Object.entries(poids)) if ((t -= p) <= 0) return k; return 'marcher'; };
+  let x = Math.round(innerWidth * .3);
+  el.style.transform = `translateX(${x}px)`;
+  const etape = () => {
+    if (!el.isConnected) return;
+    const action = choisir(), v = VITESSES[action];
+    let duree = 2500 + Math.random() * 3500;
+    el.className = `balade ${action}`;
+    el.querySelector('.bulle').textContent = BULLES[action] || '';
+    if (v) {
+      const x1 = Math.round(10 + Math.random() * (Math.min(innerWidth, 440) - 90));
+      duree = Math.max(900, Math.abs(x1 - x) / v * 1000);
+      el.style.setProperty('--sens', x1 < x ? -1 : 1);
+      el.style.transition = `transform ${duree}ms linear`;
+      el.style.transform = `translateX(${x1}px)`;
+      x = x1;
+    } else el.style.transition = 'none';
+    baladeMinuteur = setTimeout(etape, duree + 300 + Math.random() * 700);
+  };
+  etape();
 }
 
 // Ce qu'on vient de cocher, pour le faire rebondir une fois redessiné.
@@ -1888,7 +1973,7 @@ document.addEventListener('click', e => {
     case 'tirage': return ouvrirTirage();
     case 'creature': return voirCreature(L.CREATURES.find(c => c.id === id));
     case 'bilan': return faireBilan(el.dataset.cle);
-    case 'theme': data.theme = id; delete data.couleurs; return maj();
+    case 'couleur': data.couleurs = { ...couleursTheme(), [id]: el.dataset.c || null }; data.theme = 'perso'; return maj();
     case 'editer-tache': return editerTache(data.taches.find(t => t.id === id));
     case 'habitude': {
       const hb = data.habitudes.find(x => x.id === id), jour = el.dataset.jour;
