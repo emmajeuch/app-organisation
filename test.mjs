@@ -229,4 +229,22 @@ assert.equal(L.calculerRappels(rp, new Date(2026, 9, 26, 9, 0).getTime(), { ...L
 // Une sauvegarde importée ne garde pas l'abonnement d'un autre téléphone.
 assert.equal(L.validerImport({ ...JSON.parse(JSON.stringify(L.vide())), notifs: { actif: true, id: 'x' } }).notifs.actif, false);
 
+// Le profil remplace la semaine d'exemple ; une semaine où quelque chose a été validé est gardée.
+const ex = L.vide();
+ex.types.push({ id: 'ex', nom: 'Semaine d’exemple', exemple: true, slots: L.slotsExemple() }); ex.typeDefaut = 'ex';
+L.semaine(ex, '2026-10-26');
+ex.semaines['2026-10-19'] = { type: 'ex', slots: [{ id: 'v', j: 0, s: 8, e: 9, fait: true }] };
+const lignesEx = L.appliquerProfil(ex, escrime);
+assert.ok(!ex.types.some(x => x.exemple) && ex.types.length === 1 && ex.typeDefaut === ex.types[0].id);
+assert.ok(!ex.semaines['2026-10-26'] && ex.semaines['2026-10-19']);
+assert.ok(lignesEx.includes('Semaine d’exemple retirée'));
+assert.equal(L.lireProfil({ format: 'orga-profil', version: 1, semaineType: { creneaux: [{ jour: 0, debut: 8.25, fin: 9.75, titre: 'TD' }] } }).semaineType.creneaux[0].debut, 8.25);
+
+// Horaires à la minute près ; après minuit, c'est encore la journée (jusqu'à 1 h = 25 h).
+assert.equal(L.versHeure('08:20'), 8 + 20 / 60);
+assert.equal(L.versHeure('00:30'), 24.5);
+assert.equal(L.versHeure('01:00'), 25);
+assert.ok(Number.isNaN(L.versHeure('bonjour')));
+assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
+
 console.log('ok');

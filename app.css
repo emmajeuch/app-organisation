@@ -380,3 +380,15 @@ textarea.copie { width: 100%; min-height: 160px; border: 0; border-radius: 12px;
 .jour-edt .blk.actuel { outline: 2.5px solid var(--ink); outline-offset: 1px; z-index: 1; }
 .jour-edt .blk .valid { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: min(26px, calc(var(--d) * 2 * var(--row) - 6px)); height: min(26px, calc(var(--d) * 2 * var(--row) - 6px)); border: 2px dashed var(--t); opacity: .75; }
 .jour-edt .blk .valid[aria-pressed="true"] { border-style: solid; background: color-mix(in srgb, var(--t) 22%, transparent); color: var(--t); opacity: 1; }
+
+/* V1.9 : Réglages à part, rangés en groupes repliables */
+.reglages-bouton { gap: 6px; font-family: var(--f-body); font-size: 14px; font-weight: 650; }
+.reglages-bouton svg { width: 18px; height: 18px; }
+.retour { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2); font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+.retour svg { width: 18px; height: 18px; }
+details.groupe summary { align-items: center; }
+details.groupe summary .txt small { font-weight: 500; }
+.groupe-corps { display: flex; flex-direction: column; gap: 12px; padding: 0 16px 16px; }
+.groupe-corps .list { background: var(--surface-2); }
+.groupe-corps .reglage input[type="text"], .groupe-corps .reglage select { background: var(--surface); }
+.groupe-corps .ajout input { background: var(--surface-2); }

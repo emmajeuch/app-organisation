@@ -1,5 +1,5 @@
 // Les questions de départ, communes à l'assistant de l'app et au questionnaire en ligne.
-import { hhmm, CONSEILS } from './logique.js';
+import { hhmm, CONSEILS, versHeure } from './logique.js';
 
 const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const MENAGE = ['Ménage', 'Lessive', 'Courses', 'Vaisselle', 'Sortir les poubelles'];
@@ -7,8 +7,8 @@ const LISTES = ['Courses', 'À acheter', 'À regarder', 'À lire', 'Matériel', 
 const HABITUDES = ['Boire 1,5 L d’eau', 'Lire 20 min', 'Étirements', 'Coucher avant minuit'];
 export const SPORTS = [...new Set(['Sabre laser', ...Object.keys(CONSEILS)])];
 
-const heures = (nom, de, a, sel) => `<select name="${nom}">${Array.from({ length: (a - de) * 2 + 1 }, (_, i) => de + i / 2)
-  .map(h => `<option value="${h}" ${h === sel ? 'selected' : ''}>${hhmm(h)}</option>`).join('')}</select>`;
+// Heures à la minute près (de 5 en 5 minutes au clavier de l'iPhone).
+const heures = (nom, de, a, sel) => `<input type="time" name="${nom}" value="${hhmm(sel)}" step="300" required>`;
 const jours = (nom, sel = []) => `<div class="cats">${JOURS.map((n, j) => `<label><input type="checkbox" name="${nom}" value="${j}" ${sel.includes(j) ? 'checked' : ''}><span class="sans">${n}</span></label>`).join('')}</div>`;
 
 export function formulaireHtml() {
@@ -64,7 +64,8 @@ export function brancher(form) {
 }
 
 export function lireReponses(form) {
-  const f = new FormData(form), n = k => +f.get(k), js = k => f.getAll(k).map(Number);
+  const f = new FormData(form), js = k => f.getAll(k).map(Number);
+  const n = k => k === 'clubDuree' ? +f.get(k) : versHeure(f.get(k), 5);
   // Ce que la personne écrit elle-même : séparé par des virgules, 10 au plus, 60 caractères chacun.
   const perso = k => String(f.get(k) || '').split(',').map(x => x.trim().slice(0, 60)).filter(Boolean).slice(0, 10);
   const sport = String(f.get('sport') || '').trim().slice(0, 40);
@@ -75,7 +76,7 @@ export function lireReponses(form) {
     travailJours: js('travailJours'), travailDebut: n('travailDebut'), travailFin: n('travailFin'),
     taux: parseFloat(String(f.get('taux') || '').replace(',', '.')) || 0,
     sport, clubJours: js('clubJours'), clubDebut: n('clubDebut'), clubDuree: n('clubDuree'),
-    menage: f.getAll('menage').map(i => ({ titre: MENAGE[+i], jour: n(`menageJour${i}`) })),
+    menage: f.getAll('menage').map(i => ({ titre: MENAGE[+i], jour: +f.get(`menageJour${i}`) })),
     listes: [...new Set([...f.getAll('listes'), ...perso('listesPerso')])], habitudes: [...new Set([...f.getAll('habitudes'), ...perso('habitudesPerso')])],
   };
 }
