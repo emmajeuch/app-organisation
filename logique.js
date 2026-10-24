@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.9.2';
+export const VERSION = '1.9.3';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -122,7 +122,7 @@ const SCHEMA = {
   seances: [{ id: ID, nom: TXT, sport: TXT, exos: [{ exo: ID, series: ENTRE(1, 50), cible: NUM_OU_VIDE }] }],
   journal: [{ id: ID, date: DATE, seance: ID, nom: TXT, slot: ID, ressenti: ENTRE(1, 5), notes: TXT,
     series: [{ exo: ID, sets: [{ reps: NUM, sec: NUM, km: NUM, kg: NUM }] }] }],
-  habitudes: [{ id: ID, nom: TXT, freq: v => v === 'jour' ? v : ENTRE(1, 6)(v), faits: [DATE] }],
+  habitudes: [{ id: ID, nom: TXT, freq: v => v === 'jour' ? v : ENTRE(1, 6)(v), faits: [DATE], heure: ENTRE(0, 26), duree: ENTRE(.25, 4), jours: [ENTRE(0, 6)] }],
   tirages: [TXT], collection: [{ id: ID, date: DATE, raison: TXT, sport: TXT }],
   bilans: { '*': { date: DATE, ailleurs: ENTRE(0, 7), ailleursNote: TXT, comptent: ENTRE(0, 7), validees: TXT, usage: { '*': NUM } } },
   usage: { '*': { '*': NUM } }, modules: { '*': BOOL },
@@ -359,6 +359,8 @@ export function progression(journal, exo, type) {
 }
 export const dernieresSeries = (journal, exo) => [...journal].sort((a, b) => b.date.localeCompare(a.date)).find(e => e.series?.some(x => x.exo === exo))?.series.find(x => x.exo === exo).sets;
 
+// Les habitudes qui ont une heure, posées sur le jour j (0 = lundi) ; sans jours choisis, tous les jours.
+export const habitudesAHeure = (habitudes, j) => habitudes.filter(h => typeof h.heure === 'number' && (!h.jours?.length || h.jours.includes(j)));
 export const faitsSemaine = (h, lundi) => {
   const de = isoJour(lundi), a = isoJour(ajouterJours(lundi, 6));
   return h.faits.filter(d => d >= de && d <= a).length;

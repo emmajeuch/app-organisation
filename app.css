@@ -402,3 +402,14 @@ button, .chip, .btn, [role="button"] { transition: transform .12s ease, backgrou
 button:active, .chip:active, [role="button"]:active { transform: scale(.95); }
 .jour-edt .blk .valid:active { transform: translateY(-50%) scale(.9); }
 .reglages-bouton:active svg { transform: rotate(60deg); transition: transform .3s; }
+
+/* Habitudes à heure dans les grilles : à droite du créneau qu'elles recouvrent */
+.blk.hab { left: 45%; z-index: 1; outline: 2px solid var(--bg); }
+.blk.hab.fait { opacity: .6; }
+.wk:not(.jour-edt) .blk.hab { pointer-events: none; }
+.jours-choix { display: flex; gap: 6px; }
+.jours-choix label { flex: 1; }
+.jours-choix input { position: absolute; opacity: 0; }
+.jours-choix span { display: grid; place-items: center; height: 40px; border-radius: 12px; background: var(--surface); font-weight: 650; text-transform: capitalize; }
+.jours-choix input:checked + span { background: var(--ink); color: var(--on-ink); }
+.jours-choix input:focus-visible + span { outline: 2px solid var(--ink); }

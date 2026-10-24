@@ -247,4 +247,11 @@ assert.equal(L.versHeure('01:00'), 25);
 assert.ok(Number.isNaN(L.versHeure('bonjour')));
 assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
 
+// Habitudes à heure : seulement les jours choisis, ou tous les jours si aucun.
+{
+  const hs = [{ nom: 'Lire', heure: 22, jours: [] }, { nom: 'Yoga', heure: 7.5, jours: [0, 2] }, { nom: 'Eau', heure: null }];
+  assert.deepEqual(L.habitudesAHeure(hs, 0).map(h => h.nom), ['Lire', 'Yoga']);
+  assert.deepEqual(L.habitudesAHeure(hs, 1).map(h => h.nom), ['Lire']);
+}
+
 console.log('ok');

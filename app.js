@@ -280,7 +280,7 @@ function vueAujourdhui() {
       const sous = [`${L.hhmm(x.s)} – ${L.hhmm(x.e)}`, infos(x), liees ? `${liees} note${liees > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
       return `<div class="blk${actuel ? ' actuel' : ''}${x.fait ? ' fait' : ''}" data-act="slot" data-id="${x.id}" style="${teinte(x.cat)};--s:${s - p0};--d:${e - s}">${esc(x.titre)}<small>${esc(sous)}</small>
         ${passe ? `<button class="valid" data-act="valider" data-id="${x.id}" aria-pressed="${!!x.fait}" aria-label="Valider ${esc(x.titre)}">${I.check}</button>` : ''}</div>`;
-    }).join('')}${h >= p0 && h < p1 ? `<div class="nowline" style="--s:${h - p0}"></div>` : ''}</div></div></div>`
+    }).join('')}${actif('habitudes') ? L.habitudesAHeure(data.habitudes, L.jourSemaine(date)).map(hb => habBlocHtml(hb, p0, p1, L.isoJour(date))).join('') : ''}${h >= p0 && h < p1 ? `<div class="nowline" style="--s:${h - p0}"></div>` : ''}</div></div></div>`
     : '<p class="vide">Rien de prévu aujourd’hui. Ajoute un créneau avec le bouton +.</p>';
   // Dès 20 h, la relecture : chaque créneau se coche un par un (ceux validés dans la journée arrivent cochés).
   const iso = L.isoJour(date), servi = L.utiliseEnJournee(data, iso);
@@ -307,6 +307,12 @@ function vueAujourdhui() {
 
 // ---------- Semaine ----------
 
+function habBlocHtml(hb, p0, p1, iso) {
+  const s = Math.max(hb.heure, p0), e = Math.min(hb.heure + (hb.duree || .5), p1);
+  if (e <= s) return '';
+  const fait = iso && hb.faits.includes(iso);
+  return `<div class="blk hab${fait ? ' fait' : ''}" style="--c:#FF8AC1;--t:#15171C;--s:${s - p0};--d:${e - s}">${iso || e - s >= 1 || ui.seul !== null ? esc(hb.nom) : ''}${iso ? `<button class="valid" data-act="habitude" data-id="${hb.id}" data-jour="${iso}" aria-pressed="${fait}" aria-label="Habitude tenue : ${esc(hb.nom)}">${I.check}</button>` : ''}</div>`;
+}
 function blocHtml(x, p0, p1) {
   const s = Math.max(x.s, p0), e = Math.min(x.e, p1);
   const titre = e - s >= 1 || ui.seul !== null ? esc(x.titre) : '';
@@ -332,7 +338,7 @@ function vueSemaine() {
   html += `<div class="wk${ui.seul !== null ? ' seul' : ''}" style="--n:${jours.length};--rows:${(p1 - p0) * 2}">
     <div class="wk-head"><span></span>${jours.map(j => `<button data-act="jour" data-j="${j}" class="${j === jAuj ? 'auj' : ''}" aria-label="${ui.seul === null ? `Voir le ${JOURS[j]} seul` : 'Revenir à la semaine'}"><small>${ui.seul === null ? 'LMMJVSD'[j] : JOURS[j]}</small>${L.ajouterJours(lundi, j).getDate()}</button>`).join('')}</div>
     <div class="wk-body"><div class="wk-hours">${Array.from({ length: p1 - p0 - 1 }, (_, i) => `<span style="--s:${i + 1}">${(p0 + i + 1) % 24}</span>`).join('')}</div>
-    ${jours.map(j => `<div class="wk-col" data-j="${j}">${sem.slots.filter(x => x.j === j && x.e > p0 && x.s < p1).map(x => blocHtml(x, p0, p1)).join('')}${j === jNow && h >= p0 && h < p1 ? `<div class="nowline" style="--s:${h - p0}"></div>` : ''}</div>`).join('')}
+    ${jours.map(j => `<div class="wk-col" data-j="${j}">${sem.slots.filter(x => x.j === j && x.e > p0 && x.s < p1).map(x => blocHtml(x, p0, p1)).join('')}${actif('habitudes') ? L.habitudesAHeure(data.habitudes, j).map(hb => habBlocHtml(hb, p0, p1)).join('') : ''}${j === jNow && h >= p0 && h < p1 ? `<div class="nowline" style="--s:${h - p0}"></div>` : ''}</div>`).join('')}
     </div></div>
     <p class="aide">Touche une case vide pour ajouter un créneau, un créneau pour le modifier. Appui long puis glisse : sur du vide pour remplir plusieurs demi-heures, sur un créneau pour le déplacer, sur son bas pour l’étirer. Touche un jour pour le voir seul.</p>
     <ul class="legend">${data.cats.map(c => `<li><span class="dot" style="${teinte(c.id)}"></span>${esc(c.nom)}</li>`).join('')}</ul>`;
@@ -591,7 +597,7 @@ function corpsNotes() {
     ${faites.length ? `<details class="liste" data-id="faites" ${ui.ouvertes.has('faites') ? 'open' : ''}><summary>Faites récemment<span class="pill">${faites.length}</span></summary><ul class="list">${faites.map(tacheHtml).join('')}</ul></details>` : ''}</div>`;
 
   if (actif('habitudes')) h += `<div class="sec"><h2>Habitudes</h2>${data.habitudes.length ? `<div class="regs">${data.habitudes.map(hb => `<div class="card"><button class="kv" data-act="editer-habitude" data-id="${hb.id}"><b>${esc(hb.nom)}</b><small class="muted">${hb.freq === 'jour' ? 'chaque jour' : `${L.faitsSemaine(hb, lundiH)}/${hb.freq} cette sem.`}</small></button>${regulariteHtml(hb, lundiH)}</div>`).join('')}</div>` : ''}
-    <form class="ajout" data-form="habitude"><input name="txt" placeholder="Nouvelle habitude" aria-label="Nouvelle habitude" autocomplete="off"><select name="freq" aria-label="Fréquence">${Object.entries(FREQS).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select><button aria-label="Ajouter">${I.plus}</button></form></div>`;
+    <form class="ajout" data-form="habitude"><input name="txt" placeholder="Nouvelle habitude" aria-label="Nouvelle habitude" autocomplete="off"><select name="freq" aria-label="Fréquence">${FREQS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select><button aria-label="Ajouter">${I.plus}</button></form></div>`;
   if (actif('objectifs')) h += `<div class="sec"><h2>Objectifs de la semaine</h2>${os.length ? `<div class="card"><div class="goal-head"><b>${faits} sur ${os.length} atteints</b><span class="num">${Math.round(faits / os.length * 100)} %</span></div><div class="bar"><i style="width:${faits / os.length * 100}%"></i></div></div>` : ''}${objectifsHtml('semaine', pS, true)}</div>`;
   if (actif('objectifs')) h += `<div class="sec"><h2>Objectifs du mois <span>${now.toLocaleDateString('fr-FR', { month: 'long' })}</span></h2>${objectifsHtml('mois', pM, true)}</div>`;
   if (actif('objectifs')) h += `<div class="sec"><h2>Objectifs de l’année <span>${pA.replace('-', '–')}</span></h2>${objectifsHtml('annee', pA, true)}</div>`;
@@ -693,7 +699,8 @@ function editerListe(l) {
 
 const UNITE = { reps: '', duree: ' s', distance: ' km', charge: ' reps' };
 const cibleTxt = (e, c) => c === '' || c == null ? '—' : `${c}${UNITE[e.type]}`;
-const FREQS = { jour: 'Chaque jour', 1: '1 fois par semaine', 2: '2 fois par semaine', 3: '3 fois par semaine', 4: '4 fois par semaine', 5: '5 fois par semaine', 6: '6 fois par semaine' };
+// Une liste et non un objet : un objet range les clés chiffrées avant « jour ».
+const FREQS = [['jour', 'Chaque jour'], ...[1, 2, 3, 4, 5, 6].map(n => [String(n), `${n} fois par semaine`])];
 
 function courbe(points, unite) {
   const W = 300, H = 128, g = 28, d = 10, haut = 8, bas = 104;
@@ -930,16 +937,28 @@ function editerSeanceType(s) {
   });
 }
 
-function editerHabitude(hb) {
-  ouvrirDlg(`<form><h2>${esc(hb.nom)}</h2>
+function editerHabitude(hb, neuf = false) {
+  const p0 = data.plage[0], aHeure = typeof hb.heure === 'number';
+  ouvrirDlg(`<form><h2>${neuf ? 'Nouvelle habitude' : esc(hb.nom)}</h2>
     <label class="champ">Nom<input name="nom" value="${esc(hb.nom)}" autocomplete="off"></label>
-    <label class="champ">Fréquence<select name="freq">${Object.entries(FREQS).map(([v, n]) => `<option value="${v}" ${String(hb.freq) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-    <p class="muted">${hb.faits.length} jour${hb.faits.length > 1 ? 's' : ''} tenu${hb.faits.length > 1 ? 's' : ''} en tout.</p>
-    <div class="rangee"><button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
+    <label class="champ">Fréquence<select name="freq">${FREQS.map(([v, n]) => `<option value="${v}" ${String(hb.freq) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    <div class="champs" style="grid-template-columns: 1fr 1fr">
+      <label class="champ">Heure (facultatif)<input type="time" name="heure" step="300" value="${aHeure ? L.hhmm(hb.heure) : ''}"></label>
+      <label class="champ">Durée<select name="duree">${[15, 30, 45, 60, 90, 120].map(m => `<option value="${m}" ${m === Math.round((hb.duree || .5) * 60) ? 'selected' : ''}>${m < 60 ? m + ' min' : L.heures(m / 60)}</option>`).join('')}</select></label>
+    </div>
+    <div class="champ">Jours dans l’emploi du temps<div class="jours-choix">${JOURS.map((n, j) => `<label><input type="checkbox" name="jours" value="${j}" ${hb.jours?.includes(j) ? 'checked' : ''}><span>${n.slice(0, 2)}</span></label>`).join('')}</div>
+      <p class="aide">Avec une heure, l’habitude apparaît dans Semaine et Aujourd’hui. Aucun jour coché : tous les jours.</p></div>
+    ${neuf ? '' : `<p class="muted">${hb.faits.length} jour${hb.faits.length > 1 ? 's' : ''} tenu${hb.faits.length > 1 ? 's' : ''} en tout.</p>`}
+    <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
     if (choix === 'suppr') { data.habitudes = data.habitudes.filter(x => x !== hb); maj(); return; }
     if (!f.get('nom').trim()) return false;
     hb.nom = f.get('nom').trim();
     hb.freq = f.get('freq') === 'jour' ? 'jour' : +f.get('freq');
+    const h = L.versHeure(f.get('heure'), p0);
+    hb.heure = Number.isNaN(h) ? null : h;
+    hb.duree = +f.get('duree') / 60;
+    hb.jours = f.getAll('jours').map(Number);
+    if (neuf) data.habitudes.push(hb);
     maj();
   });
 }
@@ -1580,7 +1599,7 @@ document.addEventListener('submit', e => {
   if (k === 'item') data.listes.find(l => l.id === f.dataset.id).items.push({ id: L.uid(), txt, fait: false });
   if (k === 'cat') data.cats.push({ id: L.uid(), nom: txt, couleur: '#8a8f9c' });
   if (k === 'tache') data.taches.push({ id: L.uid(), titre: txt, echeance: f.elements.date.value || null, priorite: 2, fac: false, recurrence: null, projet: null, sous: [], fait: false });
-  if (k === 'habitude') data.habitudes.push({ id: L.uid(), nom: txt, freq: f.elements.freq.value === 'jour' ? 'jour' : +f.elements.freq.value, faits: [] });
+  if (k === 'habitude') return editerHabitude({ id: L.uid(), nom: txt, freq: f.elements.freq.value === 'jour' ? 'jour' : +f.elements.freq.value, faits: [] }, true);
   if (k === 'exo') data.exos.push({ id: L.uid(), nom: txt, type: f.elements.type.value, notes: '' });
   maj();
   // On garde le clavier ouvert pour enchaîner les ajouts.
