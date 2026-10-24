@@ -56,6 +56,7 @@ function maj() {
   if (data.compagnon?.id && data.compagnon.stade > (avant || 0) && actif('compagnon')) setTimeout(() => dire(`Ton compagnon grandit : stade ${data.compagnon.stade} !`), 1200);
   if (dernier && st.total > dernier.total && actif('motivation')) {
     const gain = `+${st.total - dernier.total} XP`;
+    reagirBalade(st.niveau.n > dernier.niveau.n ? 'fete' : 'content');
     dire(toast.hidden ? gain : `${toast.textContent} · ${gain}`);
     son();
     if (st.niveau.n > dernier.niveau.n) { feter(); setTimeout(() => dire(`Niveau ${st.niveau.n} ! Un tirage t’attend dans Profil`), 2300); }
@@ -1149,13 +1150,9 @@ function editerHabitude(hb, neuf = false) {
   });
 }
 
-// Thèmes : [id, nom, couleur du thème, fond]. Tous libres (retour des testeurs, 24/10) ; les couleurs sont dans app.css.
-// Thème (V1.10.5) : deux couleurs choisies en pastilles (le sélecteur de l'iPhone se manipulait mal).
+// Thème (V1.10.7) : deux couleurs choisies comme dans une app de dessin. La barre choisit la teinte ; le carré, la nuance :
+// de gauche à droite, du gris à la couleur vive ; de haut en bas, du clair au foncé. Le gris, le blanc et le noir y sont.
 // Fond « Auto » : l'app suit l'iPhone, clair ou sombre ; la couleur des boutons et de la flamme s'y applique quand même.
-const FONDS = [['#F4F5F8', 'Blanc'], ['#F3EAD9', 'Sable'], ['#FFE3EE', 'Rose'], ['#E9E3FF', 'Lavande'], ['#DDF5E8', 'Menthe'], ['#DDEEFF', 'Ciel'],
-  ['#0B0D11', 'Nuit'], ['#1E2430', 'Ardoise'], ['#0B1630', 'Bleu nuit'], ['#1B0B33', 'Violet nuit'], ['#07170F', 'Forêt'], ['#220811', 'Bordeaux']];
-const ACCENTS = [['#FF9600', 'Orange'], ['#EC4A46', 'Rouge'], ['#FF4D8D', 'Rose'], ['#B04CFF', 'Violet'], ['#6236E8', 'Indigo'], ['#1D7BFF', 'Bleu'],
-  ['#00B3C7', 'Turquoise'], ['#16A34A', 'Vert'], ['#A6E35F', 'Citron'], ['#FFD447', 'Jaune'], ['#8B5E3C', 'Brun'], ['#9AA1AE', 'Gris']];
 // Les anciens thèmes (avant la 1.10.5) donnent leurs couleurs : clair et sombre deviennent un fond.
 const couleursTheme = () => data.couleurs || (data.theme === 'nuit' ? { fond: '#0B0D11' } : data.theme === 'clair' ? { fond: '#F4F5F8' } : {});
 function appliquerTheme(c = couleursTheme()) {
@@ -1169,40 +1166,42 @@ function appliquerTheme(c = couleursTheme()) {
   // La barre d'état de l'iPhone prend la couleur du fond.
   document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = p ? p['--bg'] : m.media.includes('dark') ? '#0B0D11' : '#E8EAF0'; });
 }
-// Le spectre : la teinte de gauche à droite, du clair (en haut) au foncé (en bas) ; le rond montre la couleur choisie.
-const versHsl = hex => {
-  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255), max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+const versHsv = hex => {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255), max = Math.max(r, g, b), d = max - Math.min(r, g, b);
   const h = !d ? 0 : max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  return [h * 60, l];
+  return [h * 60, max ? d / max : 0, max];
 };
-const depuisHsl = (h, l) => {
-  const k = n => (n + h / 30) % 12, a = Math.min(l, 1 - l);
-  return '#' + [0, 8, 4].map(n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)))).toString(16).padStart(2, '0')).join('');
+const depuisHsv = (h, s, v) => '#' + [5, 3, 1].map(n => { const k = (n + h / 60) % 6; return Math.round(255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1)))).toString(16).padStart(2, '0'); }).join('');
+const choixCouleur = (id, val) => {
+  const [h, s, v] = versHsv(L.couleurSure(val));
+  return `<div class="choix-couleur" data-couleur="${id}" data-h="${h}" data-s="${s}" data-v="${v}" style="--h:${h};--sx:${s * 100}%;--vy:${(1 - v) * 100}%;--hx:${h / 3.6}%;--c:${val}">
+    <div class="nuances" data-zone="sv"><i></i></div><div class="teintes" data-zone="h"><i></i></div></div>`;
 };
-const spectre = (id, val) => { const [h, l] = val ? versHsl(L.couleurSure(val)) : [30, .5]; return `<div class="spectre" data-spectre="${id}" style="--x:${h / 3.6}%;--y:${(1 - l) * 100}%;--c:${val || 'transparent'}"><i></i></div>`; };
 document.addEventListener('pointerdown', e => {
-  const sp = e.target.closest('[data-spectre]');
-  if (!sp) return;
+  const zone = e.target.closest('[data-zone]'), boite = zone?.closest('[data-couleur]');
+  if (!boite) return;
   e.preventDefault();
-  try { sp.setPointerCapture(e.pointerId); } catch {}
-  const id = sp.dataset.spectre;
-  let couleur = null;
+  try { zone.setPointerCapture(e.pointerId); } catch {}
+  const id = boite.dataset.couleur;
+  let { h, s, v } = boite.dataset, couleur = null;
+  [h, s, v] = [+h, +s, +v];
   const bouge = ev => {
-    const r = sp.getBoundingClientRect(), x = Math.min(Math.max((ev.clientX - r.left) / r.width, 0), 1), y = Math.min(Math.max((ev.clientY - r.top) / r.height, 0), 1);
-    couleur = depuisHsl(x * 360, 1 - y);
-    sp.style.setProperty('--x', x * 100 + '%'); sp.style.setProperty('--y', y * 100 + '%'); sp.style.setProperty('--c', couleur);
+    const r = zone.getBoundingClientRect(), x = Math.min(Math.max((ev.clientX - r.left) / r.width, 0), 1), y = Math.min(Math.max((ev.clientY - r.top) / r.height, 0), 1);
+    if (zone.dataset.zone === 'h') h = x * 360; else { s = x; v = 1 - y; }
+    couleur = depuisHsv(h, s, v);
+    Object.assign(boite.dataset, { h, s, v });
+    for (const [k, val] of [['--h', h], ['--sx', s * 100 + '%'], ['--vy', (1 - v) * 100 + '%'], ['--hx', h / 3.6 + '%'], ['--c', couleur]]) boite.style.setProperty(k, val);
     appliquerTheme({ ...couleursTheme(), [id]: couleur });   // aperçu en direct, rien n'est redessiné pendant le geste
   };
   const fin = () => {
-    sp.removeEventListener('pointermove', bouge);
+    zone.removeEventListener('pointermove', bouge);
     if (couleur) { data.couleurs = { ...couleursTheme(), [id]: couleur }; data.theme = 'perso'; maj(); }
   };
   bouge(e);
-  sp.addEventListener('pointermove', bouge);
-  sp.addEventListener('pointerup', fin, { once: true });
-  sp.addEventListener('pointercancel', fin, { once: true });
+  zone.addEventListener('pointermove', bouge);
+  zone.addEventListener('pointerup', fin, { once: true });
+  zone.addEventListener('pointercancel', fin, { once: true });
 });
-const pastilles = (id, liste, sel, auto) => `<div class="pastilles">${auto ? `<button class="pastille-c auto" data-act="couleur" data-id="${id}" data-c="" aria-pressed="${!sel}" aria-label="Automatique">Auto</button>` : ''}${liste.map(([c, nom]) => `<button class="pastille-c" data-act="couleur" data-id="${id}" data-c="${c}" aria-pressed="${sel?.toLowerCase() === c.toLowerCase()}" aria-label="${nom}" style="background:${c}"></button>`).join('')}</div>`;
 const SOURCES = { creneaux: ['Créneaux', '#35C6DF'], taches: ['Tâches', '#EC4A46'], sport: ['Sport', '#B5DF2B'],
   habitudes: ['Habitudes', '#FF8AC1'], objectifs: ['Objectifs', '#6766F0'], bonus: ['Journées et bilans', '#FFD447'] };
 const RARETE = { commune: 'Commune', rare: 'Rare', legendaire: 'Légendaire' };
@@ -1272,10 +1271,10 @@ function vueReglages() {
        : '<p>Pas possible sur ce téléphone (iPhone : iOS 16.4 ou plus).</p>'}
        ${avantImport() ? '<button class="btn gris" data-act="revenir-avant">Revenir à avant l’import</button>' : ''}
        <button class="btn rouge" data-act="tout-effacer">Effacer toutes mes données</button>`)}
-    ${groupe('apparence', 'Apparence et son', couleursTheme().fond ? (FONDS.find(f => f[0].toLowerCase() === couleursTheme().fond.toLowerCase())?.[1] || 'Tes couleurs') : 'Automatique',
-      `<div class="champ"><span class="rangee-titre">Fond et bulles <button type="button" class="btn gris petit" data-act="couleur" data-id="fond" data-c="" aria-pressed="${!couleursTheme().fond}">Auto</button></span>${spectre('fond', couleursTheme().fond)}</div>
-       <div class="champ"><span class="rangee-titre">Boutons et flamme <button type="button" class="btn gris petit" data-act="couleur" data-id="accent" data-c="" aria-pressed="${!couleursTheme().accent}">Par défaut</button></span>${spectre('accent', couleursTheme().accent || '#FF9600')}</div>
-       <p class="aide">Glisse le doigt sur le spectre : la couleur change en direct. Auto suit l’iPhone (clair le jour, sombre si tu l’as réglé). Les textes s’ajustent tout seuls pour rester lisibles.</p>
+    ${groupe('apparence', 'Apparence et son', couleursTheme().fond ? 'Tes couleurs' : 'Automatique',
+      `<div class="champ"><span class="rangee-titre">Fond et bulles <button type="button" class="btn gris petit" data-act="couleur" data-id="fond" data-c="" aria-pressed="${!couleursTheme().fond}">Auto</button></span>${choixCouleur('fond', couleursTheme().fond || (matchMedia('(prefers-color-scheme: dark)').matches ? '#0B0D11' : '#E8EAF0'))}</div>
+       <div class="champ"><span class="rangee-titre">Boutons et flamme <button type="button" class="btn gris petit" data-act="couleur" data-id="accent" data-c="" aria-pressed="${!couleursTheme().accent}">Par défaut</button></span>${choixCouleur('accent', couleursTheme().accent || '#FF9600')}</div>
+       <p class="aide">La barre choisit la teinte, le carré la nuance (à gauche les gris, en haut le clair, en bas le foncé). La couleur change en direct. Auto suit l’iPhone (clair le jour, sombre si tu l’as réglé). Les textes s’ajustent tout seuls pour rester lisibles.</p>
        <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label>`)}
     ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, notice, conditions',
       `<div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
@@ -1956,35 +1955,78 @@ const COMPORTEMENTS = {
 };
 const VITESSES = { marcher: 45, flaner: 22, courir: 150, rouler: 70, flotter: 30 };   // pixels par seconde ; les autres restent sur place
 const BULLES = { dormir: 'z z z', bailler: 'Ouaaah', ecrire: '✎', manger: 'miam', bricoler: '♪', regarder: '?', danser: '♪ ♫', briller: '✦' };
-let baladeMinuteur = null;
+let baladeMinuteur = null, balade = null;
+// Ce que dit chaque créature quand on la touche (V1.10.7).
+const REPLIQUES = {
+  ronfleur: ['Hein ? Je dormais…', 'Encore cinq minutes…'], gratte: ['Je note, je note !', 'Tu as vu mon carnet ?'], sprintou: ['On fait la course ?', 'Trop lent !'],
+  grignote: ['T’as un goûter ?', 'Miam !'], plumette: ['Hihi, ça chatouille !', 'Je m’envole !'], flanou: ['Rien ne presse…', 'Oh, salut.'],
+  bricolo: ['Je répare un truc !', 'Passe-moi le marteau !'], caillou: ['…', 'Je suis solide.'], brindille: ['Doucement, je suis fragile !', 'Le vent se lève !'],
+  mirabelle: ['On danse ?', 'Youpi !'], tourbillon: ['Ça tourne !', 'Wouhou !'], pepite: ['Je brille, hein ?', 'Précieuse !'],
+  nuage: ['Pfiou…', 'Je flotte…'], cactou: ['Attention, ça pique !', 'Câlin ? Non.'], lumino: ['Tadaa !', 'Je m’allume !'], zephyr: ['Fiouuu !', 'Attrape-moi !'],
+};
+// Ce qu'il fait quand toi tu fais quelque chose.
+const REACTIONS = { touche: null, content: ['Bravo !', 'Bien joué !', 'Yes !', 'Trop fort !'], fete: ['Wouhou !!', 'Incroyable !', 'Champion·ne !'], surpris: ['Oh !', 'Tiens ?'] };
+const auHasard = t => t[Math.floor(Math.random() * t.length)];
+const positionBalade = el => { const m = getComputedStyle(el).transform; return m && m !== 'none' ? new DOMMatrix(m).m41 : 0; };
 function animerBalade(el, c) {
   clearTimeout(baladeMinuteur);
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const poids = COMPORTEMENTS[c.id] || { marcher: 1 };
+  const poids = { ...(COMPORTEMENTS[c.id] || { marcher: 1 }), visiter: 1.5 };
   const total = Object.values(poids).reduce((a, b) => a + b, 0);
   const choisir = () => { let t = Math.random() * total; for (const [k, p] of Object.entries(poids)) if ((t -= p) <= 0) return k; return 'marcher'; };
-  let x = Math.round(innerWidth * .3);
-  el.style.transform = `translateX(${x}px)`;
+  balade = { el, c, x: Math.round(innerWidth * .3) };
+  el.style.transform = `translateX(${balade.x}px)`;
+  const aller = (x1, vitesse, classe) => {
+    const duree = Math.max(700, Math.abs(x1 - balade.x) / vitesse * 1000);
+    el.style.setProperty('--sens', x1 < balade.x ? -1 : 1);
+    el.className = `balade ${classe}`;
+    el.style.transition = `transform ${duree}ms linear`;
+    el.style.transform = `translateX(${x1}px)`;
+    balade.x = x1;
+    return duree;
+  };
   const etape = () => {
     if (!el.isConnected) return;
     const action = choisir(), v = VITESSES[action];
-    let duree = 2500 + Math.random() * 3500;
-    el.className = `balade ${action}`;
     el.querySelector('.bulle').textContent = BULLES[action] || '';
+    let duree = 2500 + Math.random() * 3500;
+    if (action === 'visiter') {
+      // Il va taquiner quelque chose de l'app : un onglet ou le bouton +. Il le fait bouger, sans jamais l'actionner.
+      const fab = document.querySelector('.fab'), cibles = [...document.querySelectorAll('.tab:not([hidden]) svg'), ...(fab && getComputedStyle(fab).display !== 'none' ? [fab] : [])];
+      const cible = auHasard(cibles), r = cible.getBoundingClientRect();
+      const arrivee = aller(Math.round(Math.min(Math.max(r.left + r.width / 2 - 48, -10), innerWidth - 86)), 60, 'marcher');
+      baladeMinuteur = setTimeout(() => {
+        el.className = 'balade pousser';
+        el.querySelector('.bulle').textContent = cible === fab ? 'Toc toc !' : auHasard(['Coucou !', 'Hop !', '?']);
+        cible.classList.remove('bouscule'); void cible.getBoundingClientRect(); cible.classList.add('bouscule');
+        setTimeout(() => cible.classList.remove('bouscule'), 700);
+        baladeMinuteur = setTimeout(etape, 1800);
+      }, arrivee);
+      return;
+    }
     if (v) {
-      // Il reste sur les bords du téléphone, un peu caché, et ne traverse que de temps en temps (V1.10.6).
+      // Il reste surtout sur les bords du téléphone, un peu caché, et traverse de temps en temps (V1.10.6).
       const w = innerWidth, bords = [-22, w - 74];
-      const x1 = Math.round(Math.random() < .8 ? bords[Math.random() < .5 ? 0 : 1] + (Math.random() * 30 - 15) : 20 + Math.random() * (w - 136));
-      duree = Math.max(900, Math.abs(x1 - x) / v * 1000);
-      el.style.setProperty('--sens', x1 < x ? -1 : 1);
-      el.style.transition = `transform ${duree}ms linear`;
-      el.style.transform = `translateX(${x1}px)`;
-      x = x1;
-    } else el.style.transition = 'none';
+      duree = aller(Math.round(Math.random() < .8 ? bords[Math.random() < .5 ? 0 : 1] + (Math.random() * 30 - 15) : 20 + Math.random() * (w - 136)), v, action);
+    } else { el.className = `balade ${action}`; el.style.transition = 'none'; }
     baladeMinuteur = setTimeout(etape, duree + 300 + Math.random() * 700);
   };
+  balade.etape = etape;
   etape();
 }
+// Une réaction : il s'arrête où il est, fait sa petite scène, puis reprend sa vie.
+function reagirBalade(type) {
+  const b = balade;
+  if (!b?.el.isConnected || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  clearTimeout(baladeMinuteur);
+  b.x = positionBalade(b.el);
+  b.el.style.transition = 'none';
+  b.el.style.transform = `translateX(${b.x}px)`;
+  b.el.className = `balade reagit-${type}`;
+  b.el.querySelector('.bulle').textContent = type === 'touche' ? auHasard(REPLIQUES[b.c.id] || ['♥']) : auHasard(REACTIONS[type]);
+  baladeMinuteur = setTimeout(b.etape, type === 'fete' ? 2600 : 1900);
+}
+document.addEventListener('pointerdown', e => { if (e.target.closest('#balade .compagnon')) { navigator.vibrate?.(12); reagirBalade('touche'); } });
 
 // Ce qu'on vient de cocher, pour le faire rebondir une fois redessiné.
 let tape = null;
