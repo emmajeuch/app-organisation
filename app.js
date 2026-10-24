@@ -110,7 +110,7 @@ const dateDuSlot = (cle, j) => L.isoJour(L.ajouterJours(L.deIso(cle), j));
 // Seuls les créneaux cochés rapportent de l'XP ; la relecture seule ne fait pas compter la journée.
 function relecture(jour) {
   const d = L.deIso(jour), cle = cleSem(d), j = L.jourSemaine(d), sem = semaineDe(cle);
-  const slots = sem.slots.filter(x => x.j === j);
+  const slots = sem.slots.filter(x => x.j === j && !L.auto(x));
   const hier = jour !== aujIso();
   const servi = L.utiliseEnJournee(data, jour);
   ouvrirDlg(`<form><h2>${hier ? 'Relire hier' : 'Relire ta journée'}</h2>
@@ -227,7 +227,7 @@ function vueAujourdhui() {
     html += `<div class="card type alerte-export"><div class="txt"><b>${jExport === null ? 'Tes données n’ont jamais été exportées' : `Dernier export il y a ${jExport} jours`}</b><small>Elles ne sont que sur ce téléphone : exporte-les dans Fichiers.</small></div><button class="btn plein petit" data-act="exporter">Exporter</button></div>`;
   }
   if (peutActiverRappels() && !data.notifs.plusTard) {
-    html += `<div class="card type"><div class="txt"><b>Activer les rappels ?</b><small>Avant tes cours et tes séances, et le soir pour relire ta journée</small></div><div class="rangee" style="flex:0 0 auto"><button class="btn gris petit" data-act="rappels-plus-tard">Plus tard</button><button class="btn plein petit" data-act="rappels-activer">Activer</button></div></div>`;
+    html += `<div class="card type"><div class="txt"><b>Activer les rappels ?</b><small>Avant tes cours et tes séances, et avant le dîner pour le bilan de ta journée</small></div><div class="rangee" style="flex:0 0 auto"><button class="btn gris petit" data-act="rappels-plus-tard">Plus tard</button><button class="btn plein petit" data-act="rappels-activer">Activer</button></div></div>`;
   }
   if (!data.types.length) { $('#aujourdhui').innerHTML = html + bienvenue(); return; }
 
@@ -235,7 +235,7 @@ function vueAujourdhui() {
   const hier = L.ajouterJours(date, -1), semHier = data.semaines[cleSem(hier)];
   const slotsHier = semHier ? semHier.slots.filter(x => x.j === L.jourSemaine(hier)) : [];
   if (slotsHier.length && !L.journeeValidee(slotsHier)) {
-    html += `<div class="card type"><div class="txt"><b>Hier n’est pas validé</b><small>${slotsHier.filter(x => !x.fait).length} créneaux à relire pour garder ta série</small></div><button class="btn gris petit" data-act="relecture" data-jour="${L.isoJour(hier)}">Valider hier</button></div>`;
+    html += `<div class="card type"><div class="txt"><b>Hier n’est pas validé</b><small>${slotsHier.filter(x => !x.fait && !L.auto(x)).length} créneaux à relire pour garder ta série</small></div><button class="btn gris petit" data-act="relecture" data-jour="${L.isoJour(hier)}">Valider hier</button></div>`;
   }
   if (actif('sport')) {
     const regle = L.regleCompetition(data.competitions, L.isoJour(date));
@@ -269,7 +269,7 @@ function vueAujourdhui() {
     html += `<div class="now"><div class="now-label">Maintenant</div><div class="now-title">Créneau libre</div><div class="next">${ensuite}</div></div>`;
   }
 
-  const passes = slots.filter(x => x.e <= h);
+  const passes = slots.filter(x => x.e <= h && !L.auto(x)), hBilan = L.heureBilan(slots);
   html += `<div class="sec"><h2>La journée <span>${passes.length ? `${passes.filter(x => x.fait).length} validés sur ${passes.length} passés` : ''}</span></h2>`;
   // La journée en forme d'emploi du temps : la grille d'un seul jour, un bouton de validation sur chaque créneau passé.
   const [p0, p1] = data.plage;
@@ -279,17 +279,17 @@ function vueAujourdhui() {
       const s = Math.max(x.s, p0), e = Math.min(x.e, p1), passe = x.e <= h, actuel = x.s <= h && h < x.e, liees = notesLiees(x.titre).length;
       const sous = [`${L.hhmm(x.s)} – ${L.hhmm(x.e)}`, infos(x), liees ? `${liees} note${liees > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
       return `<div class="blk${actuel ? ' actuel' : ''}${x.fait ? ' fait' : ''}" data-act="slot" data-id="${x.id}" style="${teinte(x.cat)};--s:${s - p0};--d:${e - s}">${esc(x.titre)}<small>${esc(sous)}</small>
-        ${passe ? `<button class="valid" data-act="valider" data-id="${x.id}" aria-pressed="${!!x.fait}" aria-label="Valider ${esc(x.titre)}">${I.check}</button>` : ''}</div>`;
+        ${passe && !L.auto(x) ? `<button class="valid" data-act="valider" data-id="${x.id}" aria-pressed="${!!x.fait}" aria-label="Valider ${esc(x.titre)}">${I.check}</button>` : ''}</div>`;
     }).join('')}${actif('habitudes') ? L.habitudesAHeure(data.habitudes, L.jourSemaine(date)).map(hb => habBlocHtml(hb, p0, p1, L.isoJour(date))).join('') : ''}${h >= p0 && h < p1 ? `<div class="nowline" style="--s:${h - p0}"></div>` : ''}</div></div></div>`
     : '<p class="vide">Rien de prévu aujourd’hui. Ajoute un créneau avec le bouton +.</p>';
-  // Dès 20 h, la relecture : chaque créneau se coche un par un (ceux validés dans la journée arrivent cochés).
+  // Dès l'heure du bilan (avant le dîner, sinon 20 h), la relecture : chaque créneau se coche un par un.
   const iso = L.isoJour(date), servi = L.utiliseEnJournee(data, iso);
   if (L.journeeValidee(slots)) {
     html += `<p class="vide">${servi ? `Journée validée, elle compte dans l’essai${actif('motivation') ? ` : +${L.XP.jour} XP de bonus` : ''}.` : 'Journée validée, mais elle ne compte pas dans l’essai : aucun créneau touché pendant la journée.'}</p>`;
-  } else if (h >= 20 && slots.length) {
+  } else if (h >= hBilan && slots.length) {
     html += `<button class="btn plein" data-act="relecture" data-jour="${iso}">Relire et valider la journée</button>`;
   } else if (slots.length) {
-    html += `<p class="aide">Valide chaque créneau avec son bouton peu après sa fin${servi ? '' : ' : c’est ce qui fait compter la journée'}. La relecture de la journée ouvre à 20 h.</p>`;
+    html += `<p class="aide">Valide chaque créneau avec son bouton peu après sa fin${servi ? '' : ' : c’est ce qui fait compter la journée'}. Sommeil, cours et repas se valident tout seuls. Le bilan de la journée ouvre à ${L.hhmm(hBilan)}.</p>`;
   }
   html += '</div>';
 
@@ -999,7 +999,7 @@ function vueProfil() {
   if (ui.reglages) return vueReglages();
   const st = L.stats(data, new Date()), nv = st.niveau;
   const sem = data.semaines[cleSem(new Date())];
-  const prevu = L.heuresParCat(sem ? sem.slots : []), fait = L.heuresParCat(sem ? sem.slots.filter(x => x.fait) : []);
+  const lun = L.lundiDe(new Date()), prevu = L.heuresParCat(sem ? sem.slots : []), fait = L.heuresPeriode(data, lun, L.ajouterJours(lun, 6)).fait;
   const max = Math.max(1, ...Object.values(prevu));
   const droits = L.droitsTirage(data, st), possedes = new Set(data.collection.map(c => c.id));
   const prochainTheme = THEMES.find(t => t[2] > nv.n), aBilan = bilanAFaire();
@@ -1294,12 +1294,12 @@ function rappelsHtml(dansReglages) {
   let corps;
   if (!L.SERVEUR_RAPPELS) corps = '<p>Bientôt : le serveur des rappels n’est pas encore en ligne.</p>';
   else if (!pushPossible() || !enApp()) corps = '<p>Pour recevoir des rappels, ouvre l’app depuis son icône sur l’écran d’accueil (iPhone : iOS 16.4 ou plus).</p>';
-  else if (!n.actif) corps = `<p>Un rappel avant tes cours et tes séances, à l’heure de tes habitudes, le soir pour relire ta journée, le dimanche pour le bilan.</p>
+  else if (!n.actif) corps = `<p>Un rappel avant tes cours et tes séances, à l’heure de tes habitudes, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan.</p>
     <button class="btn plein" data-act="rappels-activer">Activer les rappels</button>`;
   else corps = `<label class="champ">Avant un cours, une séance ou un service<select data-act="rappel" data-id="delai">${[5, 10, 15, 20, 30, 45, 60].map(m => `<option value="${m}" ${m === n.delai ? 'selected' : ''}>${m} min avant</option>`).join('')}</select></label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="creneaux" ${n.creneaux ? 'checked' : ''}>Avant les cours, séances et services</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="habitudes" ${n.habitudes !== false ? 'checked' : ''}>À l’heure de mes habitudes</label>
-    <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="soir" ${n.soir ? 'checked' : ''}>À 20 h 30, relire ma journée</label>
+    <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="soir" ${n.soir ? 'checked' : ''}>Avant le dîner, le bilan de ma journée</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="bilan" ${n.bilan ? 'checked' : ''}>Le dimanche à 17 h, le bilan</label>
     <div class="rangee"><button class="btn gris" data-act="rappels-essai">Rappel d’essai</button><button class="btn gris" data-act="rappels-desactiver">Désactiver</button></div>`;
   const bas = `${corps}
@@ -1382,9 +1382,9 @@ const TUTO = [
   ['Bienvenue', 'Ton emploi du temps à la minute près, tes tâches, tes notes et ton sport, au même endroit. Tout reste sur ton téléphone.'],
   ['Les onglets', 'Aujourd’hui : le créneau en cours et ta journée. Semaine : la grille, à remplir au doigt (appui long puis glisser). Notes, Sport et Profil pour le reste.'],
   ['Le bouton +', 'Depuis n’importe quel écran, il ajoute un créneau, une tâche, une note ou un objectif.'],
-  ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Le soir, à partir de 20 h, tu relis la journée et tu coches ce que tu as fait.'],
+  ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Sommeil, cours et repas se valident tout seuls. Avant le dîner, une notification fait le bilan : tu relis la journée et tu coches ce que tu as fait.'],
   ['Ta sauvegarde', 'Tes données ne sont que sur ce téléphone. Exporte-les chaque semaine (Profil › Réglages › Sauvegarde). Et ne supprime pas l’icône : ça peut effacer tes données.'],
-  ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes, le soir pour relire ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
+  ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
 ];
 // Les conditions d'utilisation : acceptées une fois, et de nouveau quand leur version change.
 const CGU = 1;

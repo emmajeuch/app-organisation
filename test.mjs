@@ -185,9 +185,9 @@ assert.ok(L.droitsTirage(sp, L.stats(sp, new Date(2026, 9, 23))).includes('seanc
 assert.deepEqual(L.migrer({ ...L.vide(), club: 'Basket', profil: {} }).profil.sports, ['Basket']);
 // Heures sur une période : jour par jour, jamais au-delà d'aujourd'hui.
 const hp = L.vide();
-hp.semaines['2026-10-19'] = { slots: [{ j: 0, s: 8, e: 10, cat: 'cours', fait: true }, { j: 4, s: 8, e: 9, cat: 'cours' }, { j: 6, s: 8, e: 9, cat: 'cours', fait: true }] };
+hp.semaines['2026-10-19'] = { slots: [{ j: 0, s: 8, e: 10, cat: 'travail', fait: true }, { j: 4, s: 8, e: 9, cat: 'travail' }, { j: 6, s: 8, e: 9, cat: 'travail', fait: true }] };
 const per = L.heuresPeriode(hp, new Date(2026, 9, 19), new Date(2026, 9, 25), new Date(2026, 9, 23));
-assert.deepEqual([per.prevu.cours, per.fait.cours], [3, 2]);   // le dimanche 25 n'est pas encore vécu
+assert.deepEqual([per.prevu.travail, per.fait.travail], [3, 2]);   // le dimanche 25 n'est pas encore vécu
 
 // Bonus. Compagnon : stades sur des journées simulées, et il ne régresse jamais.
 const sim = n => { const x = L.vide(); for (let i = 0; i < n; i++) { const d = L.ajouterJours(new Date(2026, 9, 26), i), cle = L.isoJour(L.lundiDe(d));
@@ -222,7 +222,7 @@ const rs = L.calculerRappels(rp, lundi7h, { ...L.REGLAGES_RAPPELS });
 assert.equal(rs[0].t, new Date(2026, 9, 26, 8, 15).getTime() / 1000);
 assert.equal(rs[0].titre, 'Dans 15 min : TD');
 assert.equal(rs[0].corps, '08:30 · B');
-assert.ok(rs.some(x => x.titre === 'Relis ta journée' && x.t === new Date(2026, 9, 26, 20, 30).getTime() / 1000));
+assert.ok(rs.some(x => x.titre === 'Bilan de ta journée' && x.t === new Date(2026, 9, 26, 20, 0).getTime() / 1000));   // pas de dîner prévu : 20 h
 assert.ok(!rs.some(x => /Trajet|Déjeuner/.test(x.titre)));
 assert.ok(rs.every(x => x.t > lundi7h / 1000));
 assert.equal(L.calculerRappels(rp, new Date(2026, 9, 26, 9, 0).getTime(), { ...L.REGLAGES_RAPPELS, soir: false, bilan: false }).length, 0);
@@ -254,16 +254,16 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   assert.deepEqual(L.habitudesAHeure(hs, 1).map(h => h.nom), ['Lire']);
 }
 
-// Rappels d'habitude : à l'heure exacte, pas si l'habitude est déjà cochée, fusionnés avec la relecture de 20 h 30.
+// Rappels d'habitude : à l'heure exacte, pas si l'habitude est déjà cochée, fusionnés avec le bilan de 20 h.
 {
   const d = L.vide();
-  d.habitudes = [{ id: 'h1', nom: 'Lire', freq: 'jour', faits: ['2026-10-27'], heure: 22, jours: [] }, { id: 'h2', nom: 'Étirements', freq: 'jour', faits: [], heure: 20.5, jours: [0] }];
+  d.habitudes = [{ id: 'h1', nom: 'Lire', freq: 'jour', faits: ['2026-10-27'], heure: 22, jours: [] }, { id: 'h2', nom: 'Étirements', freq: 'jour', faits: [], heure: 20, jours: [0] }];
   d.semaines['2026-10-26'] = { slots: [{ j: 0, s: 9, e: 10, cat: 'repas', titre: 'Brunch' }] };
   const rs = L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS });
   const a = (j, h, m = 0) => new Date(2026, 9, j, h, m).getTime() / 1000;
   assert.ok(rs.some(x => x.t === a(26, 22) && x.titre === 'Lire'));
   assert.ok(!rs.some(x => x.t === a(27, 22)));                       // déjà cochée le 27
-  assert.equal(rs.find(x => x.t === a(26, 20, 30)).titre, 'Étirements · Relis ta journée');
+  assert.equal(rs.find(x => x.t === a(26, 20)).titre, 'Étirements · Bilan de ta journée');
   assert.ok(!L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS, habitudes: false }).some(x => x.titre.includes('Lire')));
 }
 
@@ -272,6 +272,21 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   const d = L.vide();
   const rs = L.calculerRappels(d, new Date(2026, 9, 24, 12, 0).getTime(), { ...L.REGLAGES_RAPPELS });
   assert.equal(rs.find(x => x.titre === 'C’est l’heure du bilan').t, new Date(2026, 9, 25, 17, 0).getTime() / 1000);
+}
+
+// Sommeil, cours et repas se valident tout seuls ; le bilan part 15 min avant le dîner et dit ce qui reste.
+{
+  const jour = [{ j: 0, s: 7, e: 8, cat: 'sommeil', titre: 'Sommeil' }, { j: 0, s: 9, e: 11, cat: 'cours', titre: 'TD' },
+    { j: 0, s: 14, e: 16, cat: 'travail', titre: 'Révisions', fait: true }, { j: 0, s: 16, e: 17, cat: 'sport', titre: 'Renfo' },
+    { j: 0, s: 19, e: 20, cat: 'repas', titre: 'Dîner' }, { j: 0, s: 20, e: 22, cat: 'loisirs', titre: 'Série' }];
+  assert.equal(L.heureBilan(jour), 18.75);
+  assert.equal(L.heureBilan(jour.filter(x => x.titre !== 'Dîner')), 20);
+  assert.equal(L.journeeValidee(jour), false);
+  assert.equal(L.journeeValidee(jour.map(x => L.auto(x) ? x : { ...x, fait: true })), true);
+  const d = L.vide(); d.semaines['2026-10-26'] = { slots: jour };
+  const b = L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS }).find(x => x.titre === 'Bilan de ta journée');
+  assert.equal(b.t, new Date(2026, 9, 26, 18, 45).getTime() / 1000);
+  assert.equal(b.corps, 'Validé : Révisions · À valider : Renfo');
 }
 
 console.log('ok');

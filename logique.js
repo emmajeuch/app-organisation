@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.9.5';
+export const VERSION = '1.9.6';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -370,7 +370,13 @@ export const faitsSemaine = (h, lundi) => {
 // Tout se recalcule à partir de ce qui a été fait : ouvrir l'app sans rien faire ne rapporte rien,
 // et décocher retire ce que cocher avait donné.
 
-export const journeeValidee = slots => slots.length > 0 && slots.every(x => x.fait);
+// Sommeil, cours (trajets compris) et repas se valident tout seuls (Emma, 24/10) : seuls les autres créneaux se cochent.
+export const AUTO = ['sommeil', 'cours', 'repas'];
+export const auto = x => AUTO.includes(x.cat);
+// ponytail: une journée faite seulement de créneaux automatiques ne se valide jamais ; à revoir si ça arrive.
+export const journeeValidee = slots => { const v = slots.filter(x => !auto(x)); return v.length > 0 && v.every(x => x.fait); };
+// Le bilan du soir : 15 min avant le dîner (le premier repas qui commence à 17 h ou après), sinon 20 h.
+export const heureBilan = slots => { const d = slots.filter(x => x.cat === 'repas' && x.s >= 17).sort((a, b) => a.s - b.s)[0]; return d ? d.s - .25 : 20; };
 export function joursValides(data) {
   const v = new Set();
   for (const [cle, s] of Object.entries(data.semaines)) {
@@ -562,7 +568,7 @@ export function heuresPeriode(data, de, a, auj = new Date()) {
     const sem = data.semaines[isoJour(lundiDe(d))];
     for (const x of sem ? sem.slots.filter(y => y.j === jourSemaine(d)) : []) {
       prevu[x.cat] = (prevu[x.cat] || 0) + x.e - x.s;
-      if (x.fait) fait[x.cat] = (fait[x.cat] || 0) + x.e - x.s;
+      if (x.fait || auto(x)) fait[x.cat] = (fait[x.cat] || 0) + x.e - x.s;
     }
   }
   return { prevu, fait };
@@ -611,7 +617,13 @@ export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
     if (r.habitudes !== false && data.modules?.habitudes !== false) for (const hb of habitudesAHeure(data.habitudes, jourSemaine(d))) {
       if (!hb.faits.includes(isoJour(d))) ajout(a(hb.heure), hb.nom, 'C’est l’heure de ton habitude.');
     }
-    if (r.soir && slots.length) ajout(a(20.5), 'Relis ta journée', 'Valide tes créneaux pour qu’elle compte et garder ta série.');
+    // Le bilan avant le dîner : pour aujourd'hui, ce qui est déjà validé et ce qui reste (écrit sur le téléphone, jamais envoyé).
+    if (r.soir && slots.length) {
+      const hb = heureBilan(slots), v = slots.filter(x => !auto(x) && x.e <= hb + .25);
+      const ok = v.filter(x => x.fait).map(x => x.titre), reste = v.filter(x => !x.fait).map(x => x.titre);
+      const resume = [ok.length && `Validé : ${ok.join(', ')}`, reste.length && `À valider : ${reste.join(', ')}`].filter(Boolean).join(' · ');
+      ajout(a(hb), 'Bilan de ta journée', i === 0 && resume ? resume.slice(0, 180) : 'Avant de manger, valide ce que tu as fait aujourd’hui.');
+    }
     if (r.bilan && jourSemaine(d) === 6) ajout(a(17), 'C’est l’heure du bilan', 'Objectifs, tâches à reporter, heures de la semaine.');
   }
   return out.sort((x, y) => x.t - y.t).slice(0, 300);
