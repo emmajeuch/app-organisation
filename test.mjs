@@ -435,4 +435,23 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   assert.equal(sl.filter(x => x.titre === 'Cours').length, 4);
 }
 
+// Horaires jour par jour : réveil à 6 h le lundi, 8 h le mardi et le mercredi.
+{
+  const pj = [6, 8, 8, 7, 7, 9, 9].map(lever => ({ lever, coucher: 23 }));
+  const b = L.creneauxDeBase({ sommeil: { parJour: pj } });
+  const matin = b.filter(x => x.s === 6).map(x => [x.e, x.jours]);
+  assert.deepEqual(matin.find(([e]) => e === 8)[1], [1, 2]);
+  assert.ok(!matin.some(([e]) => e === 6));                         // levé à 6 h : pas de sommeil le matin
+  assert.deepEqual(b.filter(x => x.s === 23).map(x => x.jours), [[0, 1, 2, 3, 4, 5, 6]]);
+  const c = L.creneauxDeBase({ cours: { parJour: [{ debut: 8, fin: 12 }, null, { debut: 14, fin: 18 }, null, null, null, null], trajet: 0 } });
+  assert.deepEqual(c.map(x => [x.s, x.e, x.jours]), [[8, 12, [0]], [14, 18, [2]]]);
+}
+// Un créneau du samedi 16 h au dimanche 17 h garde les repas et le sommeil ; tout autre créneau sur le chemin le bloque.
+{
+  const s = [{ id: 'd', j: 5, s: 19, e: 20, cat: 'repas' }, { id: 'n', j: 5, s: 23, e: 25, cat: 'sommeil' }, { id: 'm', j: 6, s: 6, e: 9, cat: 'sommeil' }, { id: 'dj', j: 6, s: 12, e: 13, cat: 'repas' }];
+  const { morceaux } = L.morceauxMultiJours(s, { id: 'x', j: 5, s: 16, e: 17 }, 6, [6, 25]);
+  assert.deepEqual(morceaux.map(m => [m.j, m.s, m.e]), [[5, 16, 19], [5, 20, 23], [6, 9, 12], [6, 13, 17]]);
+  assert.equal(L.morceauxMultiJours([...s, { id: 'b', j: 6, s: 10, e: 11, cat: 'loisirs' }], { id: 'x', j: 5, s: 16, e: 17 }, 6, [6, 25]).gene.id, 'b');
+}
+
 console.log('ok');

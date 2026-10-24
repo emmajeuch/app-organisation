@@ -407,6 +407,7 @@ function editerSlot(slot, cle) {
       <label class="champ">Début${heure('s', slot.s)}</label>
       <label class="champ">Fin${heure('e', slot.e)}</label>
     </div>
+    <label class="champ">Finit le<select name="jf"><option value="">même jour</option>${JOURS.map((n, j) => `<option value="${j}">${n}</option>`).join('')}</select></label>
     <label class="champ">Salle, bâtiment<input name="salle" value="${esc(slot.salle)}" autocomplete="off"></label>
     <label class="champ">Affaires à prendre<input name="affaires" value="${esc(slot.affaires)}" autocomplete="off"></label>
     <label class="champ">Notes<textarea name="notes">${esc(slot.notes)}</textarea></label>
@@ -435,6 +436,22 @@ function editerSlot(slot, cle) {
     const c = { id: slot.id, j: +f.get('j'), s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), cat: f.get('cat') || slot.cat,
       salle: f.get('salle').trim(), affaires: f.get('affaires').trim(), notes: f.get('notes').trim(), fait: f.get('fait') ? true : null };
     c.titre = f.get('titre').trim() || cat(c.cat).nom;
+    // Sur plusieurs jours (V1.10.4) : coupé jour par jour autour des repas et du sommeil, jamais répété.
+    const jf = f.get('jf') === '' ? c.j : +f.get('jf');
+    if (jf < c.j) { dire('Le jour de fin doit être après le jour de début (même semaine).'); return false; }
+    if (jf > c.j) {
+      if (versType) { dire('Un créneau sur plusieurs jours ne se répète pas : décoche « Répéter chaque semaine ».'); return false; }
+      if (c.cat === 'sport') { c.seance = f.get('seance') || null; c.club = !!f.get('club'); }
+      if (c.cat === catTravail()?.id) c.collegue = (f.get('collegue') || '').trim();
+      const { morceaux, gene } = L.morceauxMultiJours(sem.slots, { ...c, e: c.e }, jf, data.plage);
+      if (gene) { dire(occupe(gene)); return false; }
+      if (!morceaux.length) { dire('Il ne reste aucun moment libre entre ces deux heures.'); return false; }
+      sem.slots = sem.slots.filter(x => x.id !== slot.id);
+      morceaux.forEach((m, i) => { sem.slots = L.placer(sem.slots, { ...c, ...m, id: i ? L.uid() : c.id }); });
+      noterUsage(neuf ? 'creneau-ajout' : 'creneau-deplace');
+      ui.derniereCat = c.cat;
+      maj(); dire(`Créneau posé en ${morceaux.length} morceaux, autour des repas et du sommeil`); return;
+    }
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
     const pris = L.chevauche(sem.slots, c);
     if (pris) { dire(occupe(pris)); return false; }
@@ -1582,36 +1599,55 @@ function construire(etape = 0, r = {}) {
   const ouiNon = (nom, oui, question) => `<div class="champ">${question}${radios(nom, { oui: 'Oui', non: 'Non' }, oui ? 'oui' : 'non')}</div>`;
   const deux = (a, b) => `<div class="champs" style="grid-template-columns: 1fr 1fr">${a}${b}</div>`;
   const pr = data.profil, sp = r.sport || {};
+  // Mêmes horaires tous les jours, ou une ligne par jour (V1.10.4) ; la case « Mêmes horaires » bascule entre les deux.
+  const memes = (cle, html, champs, defauts, avecCoche) => {
+    const pj = r[cle]?.parJour;
+    return `<label class="coche"><input type="checkbox" class="chk" name="memes" ${pj ? '' : 'checked'}>Les mêmes horaires tous les jours</label>
+      <div data-memes>${html}</div>
+      <div data-par-jour class="par-jour">${JOURS.map((n, j) => `<div class="ligne-jour">${avecCoche ? `<label class="coche"><input type="checkbox" class="chk" name="pj${j}" ${(pj ? pj[j] : defauts.jours?.includes(j)) ? 'checked' : ''}>${n.slice(0, 3)}</label>` : `<span>${n.slice(0, 3)}</span>`}
+        ${champs.map(([nom, etiquette, def]) => `<label class="champ">${etiquette}${hm(nom + j, pj?.[j]?.[nom] ?? def(j))}</label>`).join('')}</div>`).join('')}</div>`;
+  };
+  const lirePJ = (f, champs, avecCoche, bas) => JOURS.map((_, j) => avecCoche && !f.get('pj' + j) ? null
+    : Object.fromEntries(champs.map(([nom]) => [nom, L.versHeure(f.get(nom + j), bas[nom] ?? 4)])));
   const ETAPES = [
     { cle: null, titre: 'Construire ton app', corps: `<p>Ton emploi du temps est fait de <b>catégories</b>, chacune avec sa couleur. Pour chacune, tu règles ses <b>créneaux de base</b> : ils reviendront chaque semaine.</p>
       <ul class="legend">${data.cats.map(c => `<li><span class="dot" style="${teinte(c.id)}"></span>${esc(c.nom)}</li>`).join('')}</ul>
       <p class="aide">Une catégorie ne te concerne pas ? Passe-la. Tout se change ensuite dans Semaine › Modifier, et le reste s’ajoute au doigt dans la grille.</p>` },
     { cle: 'sommeil', titre: titre('sommeil', 'Sommeil'), corps: `<p class="muted">Tes nuits, en semaine et le week-end.</p>
-      ${deux(`<label class="champ">Couché à${hm('coucher', r.sommeil?.coucher ?? 23.5)}</label>`, `<label class="champ">Levé à${hm('lever', r.sommeil?.lever ?? 7)}</label>`)}
+      ${memes('sommeil', `${deux(`<label class="champ">Couché à${hm('coucher', r.sommeil?.coucher ?? 23.5)}</label>`, `<label class="champ">Levé à${hm('lever', r.sommeil?.lever ?? 7)}</label>`)}
       <label class="champ">Le week-end, levé à${hm('leverWe', r.sommeil?.leverWe ?? 9.5)}</label>`,
-      lire: f => ({ coucher: L.versHeure(f.get('coucher'), 12), lever: L.versHeure(f.get('lever'), 4), leverWe: L.versHeure(f.get('leverWe'), 4) }) },
+        [['lever', 'Levé à', j => j >= 5 ? 9.5 : 7], ['coucher', 'Couché à', () => 23.5]], {}, false)}
+      <p class="aide">Le coucher d’un jour, c’est le soir de ce jour-là.</p>`,
+      lire: f => f.get('memes') ? { coucher: L.versHeure(f.get('coucher'), 12), lever: L.versHeure(f.get('lever'), 4), leverWe: L.versHeure(f.get('leverWe'), 4) }
+        : { parJour: lirePJ(f, [['lever'], ['coucher']], false, { coucher: 12 }) } },
     { cle: 'repas', titre: titre('repas', 'Repas'), corps: `<p class="muted">Tes repas valident tout seuls ; ils coupent les cours s’ils tombent dessus.</p>
       <label class="coche"><input type="checkbox" class="chk" name="pdj" checked>Petit-déjeuner à</label>${hm('pdjH', r.repas?.petitDej ?? 7)}
       <label class="coche"><input type="checkbox" class="chk" name="dej" checked>Déjeuner</label>${deux(`<label class="champ">De${hm('dejS', r.repas?.dej?.[0] ?? 12)}</label>`, `<label class="champ">À${hm('dejE', r.repas?.dej?.[1] ?? 13)}</label>`)}
       <label class="coche"><input type="checkbox" class="chk" name="din" checked>Dîner</label>${deux(`<label class="champ">De${hm('dinS', r.repas?.diner?.[0] ?? 19.5)}</label>`, `<label class="champ">À${hm('dinE', r.repas?.diner?.[1] ?? 20.5)}</label>`)}`,
       lire: f => ({ petitDej: f.get('pdj') ? L.versHeure(f.get('pdjH'), 4) : null, dej: f.get('dej') ? [L.versHeure(f.get('dejS'), 4), L.versHeure(f.get('dejE'), 4)] : null, diner: f.get('din') ? [L.versHeure(f.get('dinS'), 4), L.versHeure(f.get('dinE'), 4)] : null }) },
     { cle: 'cours', titre: titre('cours', 'Cours et trajets'), corps: `${ouiNon('oui', pr.etudes !== false, 'Tu as des cours ?')}
-      <div data-si-oui><div class="champ">Les jours de cours${joursChoix('jours', r.cours?.jours ?? [0, 1, 2, 3, 4])}</div>
-      ${deux(`<label class="champ">Début${hm('debut', r.cours?.debut ?? 8.5)}</label>`, `<label class="champ">Fin${hm('fin', r.cours?.fin ?? 17)}</label>`)}
+      <div data-si-oui>${memes('cours', `<div class="champ">Les jours de cours${joursChoix('jours', r.cours?.jours ?? [0, 1, 2, 3, 4])}</div>
+      ${deux(`<label class="champ">Début${hm('debut', r.cours?.debut ?? 8.5)}</label>`, `<label class="champ">Fin${hm('fin', r.cours?.fin ?? 17)}</label>`)}`,
+        [['debut', 'Début', () => 8.5], ['fin', 'Fin', () => 17]], { jours: r.cours?.jours ?? [0, 1, 2, 3, 4] }, true)}
       <label class="champ">Trajet, à l’aller comme au retour<select name="trajet">${[0, 15, 30, 45, 60].map(m => `<option value="${m}" ${m === (r.cours?.trajet ?? 30) ? 'selected' : ''}>${m ? m + ' min' : 'Aucun'}</option>`).join('')}</select></label>
       <p class="aide">Une journée de base : tu ajusteras chaque cours dans la grille.</p></div>`,
-      lire: f => f.get('oui') === 'non' ? { jours: [] } : { jours: f.getAll('jours').map(Number), debut: L.versHeure(f.get('debut'), 4), fin: L.versHeure(f.get('fin'), 4), trajet: +f.get('trajet') } },
+      lire: f => f.get('oui') === 'non' ? { jours: [] } : f.get('memes') ? { jours: f.getAll('jours').map(Number), debut: L.versHeure(f.get('debut'), 4), fin: L.versHeure(f.get('fin'), 4), trajet: +f.get('trajet') }
+        : { parJour: lirePJ(f, [['debut'], ['fin']], true, {}), trajet: +f.get('trajet') } },
     { cle: 'job', titre: titre(catTravailId(), 'Job'), corps: `${ouiNon('oui', !!pr.travail, 'Tu as un job (étudiant, alternance, extras) ?')}
-      <div data-si-oui><div class="champ">Les jours de travail${joursChoix('jours', r.job?.jours ?? [5])}</div>
-      ${deux(`<label class="champ">Début${hm('debut', r.job?.debut ?? 9)}</label>`, `<label class="champ">Fin${hm('fin', r.job?.fin ?? 13)}</label>`)}
+      <div data-si-oui>${memes('job', `<div class="champ">Les jours de travail${joursChoix('jours', r.job?.jours ?? [5])}</div>
+      ${deux(`<label class="champ">Début${hm('debut', r.job?.debut ?? 9)}</label>`, `<label class="champ">Fin${hm('fin', r.job?.fin ?? 13)}</label>`)}`,
+        [['debut', 'Début', () => 9], ['fin', 'Fin', () => 13]], { jours: r.job?.jours ?? [5] }, true)}
       <p class="aide">Horaires variables ? Mets les plus fréquents, puis ajuste chaque semaine dans la grille.</p></div>`,
-      lire: f => f.get('oui') === 'non' ? { jours: [] } : { jours: f.getAll('jours').map(Number), debut: L.versHeure(f.get('debut'), 4), fin: L.versHeure(f.get('fin'), 4) } },
+      lire: f => f.get('oui') === 'non' ? { jours: [] } : f.get('memes') ? { jours: f.getAll('jours').map(Number), debut: L.versHeure(f.get('debut'), 4), fin: L.versHeure(f.get('fin'), 4) }
+        : { parJour: lirePJ(f, [['debut'], ['fin']], true, {}) } },
     { cle: 'sport', titre: titre('sport', 'Sport'), corps: `${ouiNon('oui', actif('sport') && (sportsDuProfil().length > 0 || !!sp.nom), 'Tu fais du sport ?')}
       <div data-si-oui><label class="champ">Ton sport<input name="nom" list="sports-construire" value="${esc(sp.nom || sportsDuProfil()[0] || '')}" maxlength="40" placeholder="Basket, sabre laser, natation…" autocomplete="off"><datalist id="sports-construire">${L.SPORTS.map(x => `<option value="${x}">`).join('')}</datalist></label>
-      <div class="champ">Les jours d’entraînement${joursChoix('jours', sp.jours ?? [])}</div>
-      ${deux(`<label class="champ">À${hm('heure', sp.heure ?? 18)}</label>`, `<label class="champ">Durée<select name="duree">${[1, 1.5, 2, 2.5, 3].map(d => `<option value="${d}" ${d === (sp.duree ?? 1.5) ? 'selected' : ''}>${L.heures(d)}</option>`).join('')}</select></label>`)}</div>
+      ${memes('sport', `<div class="champ">Les jours d’entraînement${joursChoix('jours', sp.jours ?? [])}</div>
+      <label class="champ">À${hm('heure', sp.heure ?? 18)}</label>`, [['heure', 'À', () => 18]], { jours: sp.jours ?? [] }, true)}
+      ${deux('', `<label class="champ">Durée<select name="duree">${[1, 1.5, 2, 2.5, 3].map(d => `<option value="${d}" ${d === (sp.duree ?? 1.5) ? 'selected' : ''}>${L.heures(d)}</option>`).join('')}</select></label>`)}</div>
       <p class="aide">Pas de sport : l’onglet Sport disparaît (tu pourras le remettre dans Notes › Modules).</p>`,
-      lire: f => f.get('oui') === 'non' ? { non: true, jours: [] } : { nom: f.get('nom').trim(), jours: f.getAll('jours').map(Number), heure: L.versHeure(f.get('heure'), 4), duree: +f.get('duree') } },
+      lire: f => f.get('oui') === 'non' ? { non: true, jours: [] } : f.get('memes') ? { nom: f.get('nom').trim(), jours: f.getAll('jours').map(Number), heure: L.versHeure(f.get('heure'), 4), duree: +f.get('duree') }
+        : { nom: f.get('nom').trim(), parJour: lirePJ(f, [['heure']], true, {}), duree: +f.get('duree') } },
     { cle: null, titre: 'Le reste', corps: `<p><b>Travail perso</b> (révisions), <b>loisirs</b>, <b>détente</b>, <b>ménage</b> : ajoute-les au doigt dans Semaine, ou en créneaux types dans Semaine › Modifier.</p>
       <p class="aide">Une tâche qui revient (lessive, poubelles) ? Bouton + › Tâche, puis « Revient chaque semaine ».</p>` },
   ];
@@ -1626,7 +1662,8 @@ function construire(etape = 0, r = {}) {
     if (choix === 'passer') delete r[e.cle];
     else if (e.lire) {
       const v = e.lire(f);
-      if (Object.values(v).some(x => Number.isNaN(x))) { dire('Une heure manque.'); return false; }
+      const manque = o => Object.values(o || {}).some(x => typeof x === 'number' ? Number.isNaN(x) : x && typeof x === 'object' && manque(x));
+      if (manque(v)) { dire('Une heure manque.'); return false; }
       r[e.cle] = v;
     }
     if (!dernier) { construire(etape + 1, r); return false; }
@@ -1636,6 +1673,10 @@ function construire(etape = 0, r = {}) {
   const cacher = () => dlg.querySelectorAll('[data-si-oui]').forEach(z => { z.hidden = dlg.querySelector('input[name="oui"]:checked')?.value === 'non'; });
   dlg.querySelectorAll('input[name="oui"]').forEach(i => i.addEventListener('change', cacher));
   cacher();
+  // « Mêmes horaires » coché : un seul réglage ; décoché : une ligne par jour.
+  const bascule = () => { const m = !!dlg.querySelector('input[name="memes"]')?.checked; dlg.querySelectorAll('[data-memes]').forEach(z => { z.hidden = !m; }); dlg.querySelectorAll('[data-par-jour]').forEach(z => { z.hidden = m; }); };
+  dlg.querySelector('input[name="memes"]')?.addEventListener('change', bascule);
+  bascule();
 }
 const catTravailId = () => data.cats.find(x => x.id === 'job')?.id || 'travail';
 function appliquerConstruction(r) {

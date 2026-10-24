@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.3';
+export const VERSION = '1.10.4';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -64,6 +64,26 @@ export function placer(slots, c) {
 const copieDe = slots => slots.map(s => ({ ...s, id: uid(), src: s.id, fait: null }));
 // Le créneau déjà posé qui recouvre c, s'il y en a un (V1.10.3 : deux créneaux ne partagent plus un moment).
 export const chevauche = (slots, c) => slots.find(x => x.id !== c.id && x.j === c.j && x.s < c.e && x.e > c.s) || null;
+// Un créneau sur plusieurs jours (samedi 16 h › dimanche 17 h) : coupé jour par jour, il laisse la place aux repas et au
+// sommeil déjà posés. Rend les morceaux, ou le créneau qui gêne (tout autre créneau sur le chemin).
+const GARDES = ['sommeil', 'repas'];
+export function morceauxMultiJours(slots, c, jFin, [p0, p1]) {
+  const morceaux = [];
+  for (let j = c.j; j <= jFin; j++) {
+    const a = j === c.j ? c.s : p0, b = j === jFin ? c.e : p1;
+    let libres = [[a, b]];
+    for (const x of slots.filter(x => x.j === j && x.id !== c.id && GARDES.includes(x.cat) && x.s < b && x.e > a)) {
+      libres = libres.flatMap(([s, e]) => x.e <= s || x.s >= e ? [[s, e]] : [[s, x.s], [x.e, e]].filter(([u, v]) => v - u >= .25));
+    }
+    for (const [s, e] of libres) {
+      const m = { j, s, e };
+      const gene = slots.find(x => x.id !== c.id && !GARDES.includes(x.cat) && x.j === j && x.s < e && x.e > s);
+      if (gene) return { gene };
+      morceaux.push(m);
+    }
+  }
+  return { morceaux };
+}
 
 // ---------- Créneaux types (V1.10) ----------
 // Ce qui revient chaque semaine (sommeil de 23 h à 7 h, repas, cours…) : data.recurrents, une ligne par créneau type
@@ -117,21 +137,31 @@ export function recurrentsDepuis(slots, exemple = false) {
 // r = { sommeil: { coucher, lever, leverWe }, repas: { petitDej, dej: [s, e], diner: [s, e] }, cours: { jours, debut, fin, trajet },
 //       job: { jours, debut, fin }, sport: { nom, jours, heure, duree } } ; une rubrique absente n'est pas réglée.
 const TOUS = [0, 1, 2, 3, 4, 5, 6], SEMAINE = [0, 1, 2, 3, 4], WEEKEND = [5, 6];
+// V1.10.4 : chaque rubrique peut aussi donner ses horaires jour par jour (parJour : 7 cases, null = pas ce jour-là) ;
+// les jours aux mêmes horaires forment un seul créneau type.
+const parJourDe = (jours = [], v) => TOUS.map(j => jours.includes(j) ? v : null);
+function grouper(parJour, cle) {
+  const g = new Map();
+  parJour.forEach((v, j) => { if (!v) return; const k = cle(v); if (k === null) return; if (!g.has(k)) g.set(k, { v, jours: [] }); g.get(k).jours.push(j); });
+  return [...g.values()];
+}
 export function creneauxDeBase(r, catJob = 'job') {
   const out = [], aj = (origine, cat, titre, s, e, jours, plus = {}) => { if (e > s && jours.length) out.push({ id: uid(), titre, cat, s, e, jours: [...jours], salle: '', affaires: '', origine, ...plus }); };
   if (r.sommeil) {
     const { coucher, lever, leverWe = lever } = r.sommeil;
-    if (lever > 6) aj('sommeil', 'sommeil', 'Sommeil', 6, lever, leverWe === lever ? TOUS : SEMAINE);
-    if (leverWe !== lever && leverWe > 6) aj('sommeil', 'sommeil', 'Sommeil', 6, leverWe, WEEKEND);
-    if (coucher < 25) aj('sommeil', 'sommeil', 'Sommeil', coucher, 25, TOUS);
+    const pj = r.sommeil.parJour || TOUS.map(j => ({ coucher, lever: WEEKEND.includes(j) ? leverWe : lever }));
+    for (const { v, jours } of grouper(pj, v => v.lever > 6 ? v.lever : null)) aj('sommeil', 'sommeil', 'Sommeil', 6, v.lever, jours);
+    for (const { v, jours } of grouper(pj, v => v.coucher < 25 ? v.coucher : null)) aj('sommeil', 'sommeil', 'Sommeil', v.coucher, 25, jours);
   }
-  if (r.cours?.jours?.length) {
-    const { jours, debut, fin, trajet = 0 } = r.cours, t = trajet / 60;
-    if (t) { aj('cours', 'cours', 'Trajet', debut - t, debut, jours); aj('cours', 'cours', 'Trajet', fin, fin + t, jours); }
-    aj('cours', 'cours', 'Cours', debut, fin, jours);
+  if (r.cours) {
+    const t = (r.cours.trajet || 0) / 60;
+    for (const { v, jours } of grouper(r.cours.parJour || parJourDe(r.cours.jours, r.cours), v => `${v.debut}-${v.fin}`)) {
+      if (t) { aj('cours', 'cours', 'Trajet', v.debut - t, v.debut, jours); aj('cours', 'cours', 'Trajet', v.fin, v.fin + t, jours); }
+      aj('cours', 'cours', 'Cours', v.debut, v.fin, jours);
+    }
   }
-  if (r.job?.jours?.length) aj('job', catJob, 'Travail', r.job.debut, r.job.fin, r.job.jours);
-  if (r.sport?.jours?.length) aj('sport', 'sport', `Entraînement · ${r.sport.nom || 'sport'}`, r.sport.heure, r.sport.heure + r.sport.duree, r.sport.jours, { club: true });
+  if (r.job) for (const { v, jours } of grouper(r.job.parJour || parJourDe(r.job.jours, r.job), v => `${v.debut}-${v.fin}`)) aj('job', catJob, 'Travail', v.debut, v.fin, jours);
+  if (r.sport) for (const { v, jours } of grouper(r.sport.parJour || parJourDe(r.sport.jours, r.sport), v => v.heure)) aj('sport', 'sport', `Entraînement · ${r.sport.nom || 'sport'}`, v.heure, v.heure + r.sport.duree, jours, { club: true });
   if (r.repas) {
     const { petitDej, dej, diner } = r.repas;
     if (petitDej != null) aj('repas', 'repas', 'Petit-déjeuner', petitDej, petitDej + .5, TOUS);
