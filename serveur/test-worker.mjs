@@ -4,11 +4,13 @@ import { traiter, tourner, lireInscription, ENVOIS_MAX } from './worker.js';
 import { b64 } from './webpush.js';
 
 // Faux stockage KV de Cloudflare.
-const stock = new Map();
+const stock = new Map(), ops = { put: 0, get: 0, delete: 0, list: 0 };
 const KV = {
-  put: async (k, v) => { stock.set(k, v); }, get: async (k, type) => stock.has(k) ? (type === 'json' ? JSON.parse(stock.get(k)) : stock.get(k)) : null,
-  delete: async k => { stock.delete(k); }, list: async ({ prefix }) => ({ keys: [...stock.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }),
+  put: async (k, v) => { ops.put++; stock.set(k, v); }, get: async (k, type) => { ops.get++; return stock.has(k) ? (type === 'json' ? JSON.parse(stock.get(k)) : stock.get(k)) : null; },
+  delete: async k => { ops.delete++; stock.delete(k); }, list: async ({ prefix }) => { ops.list++; return { keys: [...stock.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
 };
+const abonnes = () => [...stock.keys()].filter(k => k.startsWith('a:'));
+const index = () => JSON.parse(stock.get('index:a') ?? 'null');
 // Clés VAPID et clés d'un téléphone, générées pour le test.
 const vapid = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign']);
 const vj = await crypto.subtle.exportKey('jwk', vapid.privateKey);
@@ -29,7 +31,8 @@ assert.equal(lireInscription({ id, abonnement, rappels: [s0 + 60, 'x', s0 - 999,
 
 // Inscription : seules l'adresse d'abonnement et les heures sont gardées, sous l'empreinte de l'identifiant.
 assert.equal((await traiter(requete('/abonnement', { id, abonnement, rappels: [s0 + 600, s0 + 3600], titre: 'Cours de stats' }), env, T0)).status, 204);
-const [cle] = [...stock.keys()];
+const [cle] = abonnes();
+assert.deepEqual(index(), [cle]);
 assert.ok(cle.startsWith('a:') && !cle.includes(id));
 assert.ok(!stock.get(cle).includes('stats'));
 assert.deepEqual(JSON.parse(stock.get(cle)).rappels, [s0 + 600, s0 + 3600]);
@@ -55,10 +58,10 @@ assert.deepEqual(JSON.parse(new TextDecoder().decode(clair.slice(0, -1))), { t: 
 // Abonnement mort (410) : il est effacé. Désabonnement : effacé aussi.
 await traiter(requete('/abonnement', { id, abonnement, rappels: [s0 + 3600] }), env, T0);
 assert.equal(await tourner(env, T0 + 3600_000, async () => ({ status: 410 })), 1);
-assert.equal(stock.size, 0);
+assert.equal(abonnes().length, 0); assert.deepEqual(index(), []);
 await traiter(requete('/abonnement', { id, abonnement, rappels: [s0 + 7200] }), env, T0);
 assert.equal((await traiter(requete('/desabonnement', { id }), env, T0)).status, 204);
-assert.equal(stock.size, 0);
+assert.equal(abonnes().length, 0); assert.deepEqual(index(), []);
 // Beaucoup de rappels à la même minute : au plus ENVOIS_MAX par passage, les autres au passage suivant, aucun en double.
 {
   const ids = Array.from({ length: ENVOIS_MAX + 3 }, (_, i) => `appareil-numero-${String(i).padStart(10, '0')}`);
@@ -82,6 +85,40 @@ assert.equal(stock.size, 0);
   let essais = 0;
   const panne = async () => { if (essais++ === 0) throw new Error('réseau'); return { status: 201 }; };
   assert.equal(await tourner(env, T0 + 3000_000, panne), 1);
+  stock.clear();
+}
+
+// L'index des abonnements : le minuteur le lit au lieu de lister le stockage.
+{
+  stock.clear();
+  for (const k in ops) ops[k] = 0;
+  await traiter(requete('/abonnement', { id, abonnement, rappels: [s0 + 600] }), env, T0);
+  assert.equal(ops.list, 1);                                  // l'index n'existait pas : construit une fois
+  const ecritures = ops.put;
+  await traiter(requete('/abonnement', { id, abonnement, rappels: [s0 + 900] }), env, T0);
+  assert.equal(ops.put, ecritures + 1);                       // l'abonnement seulement : l'index n'a pas changé
+  for (let k = 1; k <= 30; k++) await tourner(env, T0 + k * 120_000, async () => ({ status: 201 }));
+  assert.equal(ops.list, 1);                                  // une heure de passages : aucun « list »
+  // L'index perdu est reconstruit une fois, au passage suivant.
+  stock.delete('index:a');
+  await tourner(env, T0 + 4000_000, async () => ({ status: 201 }));
+  await tourner(env, T0 + 4120_000, async () => ({ status: 201 }));
+  assert.equal(ops.list, 2);
+  assert.equal(index().length, 1);
+  // Réparation de 3 h UTC : un abonnement absent de l'index (deux arrivés en même temps) y entre ; un expiré en sort ;
+  // un tout neuf que la liste ne montre pas encore reste.
+  const neuf = 'a:' + 'f'.repeat(64);
+  stock.set('a:' + '0'.repeat(64), JSON.stringify({ abonnement, rappels: [] }));
+  stock.set('index:a', JSON.stringify([...index(), 'a:' + 'e'.repeat(64), neuf]));
+  stock.set(neuf, JSON.stringify({ abonnement, rappels: [] }));
+  const kvLent = { ...KV, list: async o => { const r = await KV.list(o); return { ...r, keys: r.keys.filter(k => k.name !== neuf) }; } };
+  const trois = Date.UTC(2026, 9, 27, 3, 0);
+  await tourner({ ...env, RAPPELS: kvLent }, trois, async () => ({ status: 201 }));
+  assert.deepEqual(new Set(index()), new Set([...abonnes()]));
+  assert.ok(index().includes(neuf) && !index().includes('a:' + 'e'.repeat(64)));
+  const listes = ops.list;
+  await tourner(env, trois + 120_000, async () => ({ status: 201 }));
+  assert.equal(ops.list, listes);                             // une seule réparation par jour
   stock.clear();
 }
 

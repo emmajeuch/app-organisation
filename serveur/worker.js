@@ -28,6 +28,29 @@ const egal = (a, b) => { if (a.length !== b.length) return false; let d = 0; for
 const idValide = id => typeof id === 'string' && id.length >= 22 && id.length <= 64 && B64URL.test(id);
 const B64 = /^[A-Za-z0-9+/=]+$/;
 
+// La liste des abonnements tient dans une seule clé : le minuteur la lit (une lecture) au lieu de lister
+// le stockage à chaque passage (720 « list » par jour, sur 1 000 permis par l'offre gratuite).
+const INDEX = 'index:a';
+async function listerAbonnements(env) {
+  const cles = [];
+  let curseur;
+  do {
+    const page = await env.RAPPELS.list({ prefix: 'a:', cursor: curseur });
+    cles.push(...page.keys.map(k => k.name));
+    curseur = page.list_complete ? undefined : page.cursor;
+  } while (curseur);
+  return cles;
+}
+const memes = (a, b) => a.length === b.length && a.every(k => b.includes(k));
+// L'index n'est réécrit que s'il change : chaque écriture compte (1 000 par jour).
+async function changerIndex(env, changer) {
+  const avant = await env.RAPPELS.get(INDEX, 'json');
+  const apres = changer(avant ?? await listerAbonnements(env));
+  if (!avant || !memes(apres, avant)) await env.RAPPELS.put(INDEX, JSON.stringify(apres));
+}
+const ajouterIndex = (env, cle) => changerIndex(env, l => l.includes(cle) ? l : [...l, cle]);
+const retirerIndex = (env, cle) => changerIndex(env, l => l.filter(k => k !== cle));
+
 // Vérifie et réduit ce qu'envoie le téléphone ; tout le reste est ignoré.
 export function lireInscription(o, maintenant) {
   if (!o || typeof o !== 'object') return null;
@@ -95,12 +118,16 @@ export async function traiter(req, env, maintenant = Date.now()) {
   if (chemin === '/abonnement') {
     const ins = lireInscription(o, maintenant);
     if (!ins) return repondre(422);
-    await env.RAPPELS.put(await cleDe(ins.id), JSON.stringify({ abonnement: ins.abonnement, rappels: ins.rappels }), { expirationTtl: GARDE });
+    const cle = await cleDe(ins.id);
+    await env.RAPPELS.put(cle, JSON.stringify({ abonnement: ins.abonnement, rappels: ins.rappels }), { expirationTtl: GARDE });
+    await ajouterIndex(env, cle);
     return repondre(204);
   }
   if (chemin === '/desabonnement') {
     if (typeof o.id !== 'string' || !B64URL.test(o.id) || o.id.length > 64) return repondre(422);
-    await env.RAPPELS.delete(await cleDe(o.id));
+    const cle = await cleDe(o.id);
+    await env.RAPPELS.delete(cle);
+    await retirerIndex(env, cle);
     return repondre(204);
   }
   return repondre(404);
@@ -114,36 +141,46 @@ export const ENVOIS_MAX = 5;
 // Le rappel est retiré AVANT l'envoi : si le passage s'arrête en route, il ne repart pas une deuxième fois.
 export async function tourner(env, maintenant = Date.now(), faireFetch = fetch) {
   const s = Math.floor(maintenant / 1000), cles = { publique: env.VAPID_PUBLIQUE.trim(), privee: env.VAPID_PRIVEE.trim(), sujet: 'https://emmajeuch.github.io/app-organisation/' };
-  let curseur, envoyes = 0;
-  do {
-    const page = await env.RAPPELS.list({ prefix: 'a:', cursor: curseur });
-    for (const { name } of page.keys) {
-      if (envoyes >= ENVOIS_MAX) return envoyes;
-      try {
-        const entree = await env.RAPPELS.get(name, 'json');
-        if (!entree) continue;
-        const dus = entree.rappels.filter(t => t <= s);
-        if (!dus.length) continue;
-        const restants = entree.rappels.filter(t => t > s);
-        // Un seul message par passage : le plus récent ; un rappel de plus de 15 minutes de retard est abandonné.
-        const t = dus.at(-1);
-        let retire = true;
-        try { await env.RAPPELS.put(name, JSON.stringify({ abonnement: entree.abonnement, rappels: restants }), { expirationTtl: GARDE }); }
-        catch { retire = false; console.log('écriture refusée'); } // quota du jour atteint, par exemple
-        // Si le rappel n'a pas pu être retiré, il ne part qu'au premier passage après son heure, pour ne pas le répéter.
-        if (s - t > 900 || (!retire && s - t >= 120)) continue;
-        const statut = await envoyer(entree.abonnement, JSON.stringify({ t }), cles, faireFetch);
-        envoyes++;
-        console.log('envoi', statut); // seul le code de réponse du service, pour savoir si Apple accepte
-        if (statut === 404 || statut === 410) await env.RAPPELS.delete(name);
-      } catch (e) { console.log('échec', e?.name); } // un abonnement en panne n'arrête pas les autres
-    }
-    curseur = page.list_complete ? undefined : page.cursor;
-  } while (curseur);
+  // Une fois par jour (le passage de 3 h 00 UTC), l'index est complété par une liste du stockage : il rattrape deux
+  // abonnements arrivés au même moment. Un abonnement expiré (30 jours sans nouvelle) en sort ce jour-là, s'il manque
+  // à la fois dans la liste et à la lecture : le stockage peut mettre une minute à montrer un abonnement tout neuf.
+  const h = new Date(maintenant), reparer = h.getUTCHours() === 3 && h.getUTCMinutes() < 2;
+  const avant = await env.RAPPELS.get(INDEX, 'json');
+  let index = avant, liste = null;
+  if (!index || reparer) {
+    liste = await listerAbonnements(env);
+    index = [...new Set([...(avant || []), ...liste])];
+    if (!avant || !memes(index, avant)) await env.RAPPELS.put(INDEX, JSON.stringify(index));
+  }
+  let envoyes = 0;
+  const perdus = [];
+  for (const name of index) {
+    if (envoyes >= ENVOIS_MAX) break;
+    try {
+      const entree = await env.RAPPELS.get(name, 'json');
+      if (!entree) { if (liste && !liste.includes(name)) perdus.push(name); continue; }
+      const dus = entree.rappels.filter(t => t <= s);
+      if (!dus.length) continue;
+      const restants = entree.rappels.filter(t => t > s);
+      // Un seul message par passage : le plus récent ; un rappel de plus de 15 minutes de retard est abandonné.
+      const t = dus.at(-1);
+      let retire = true;
+      try { await env.RAPPELS.put(name, JSON.stringify({ abonnement: entree.abonnement, rappels: restants }), { expirationTtl: GARDE }); }
+      catch { retire = false; console.log('écriture refusée'); } // quota du jour atteint, par exemple
+      // Si le rappel n'a pas pu être retiré, il ne part qu'au premier passage après son heure, pour ne pas le répéter.
+      if (s - t > 900 || (!retire && s - t >= 120)) continue;
+      const statut = await envoyer(entree.abonnement, JSON.stringify({ t }), cles, faireFetch);
+      envoyes++;
+      console.log('envoi', statut); // seul le code de réponse du service, pour savoir si Apple accepte
+      if (statut === 404 || statut === 410) { await env.RAPPELS.delete(name); perdus.push(name); }
+    } catch (e) { console.log('échec', e?.name); } // un abonnement en panne n'arrête pas les autres
+  }
+  // Les abonnements morts sortent de l'index en une seule écriture.
+  if (perdus.length) { try { await changerIndex(env, l => l.filter(k => !perdus.includes(k))); } catch { console.log('écriture refusée'); } }
   return envoyes;
 }
 
 export default {
   fetch: (req, env) => traiter(req, env),
-  scheduled: (evt, env, ctx) => ctx.waitUntil(tourner(env)),
+  scheduled: (evt, env, ctx) => ctx.waitUntil(tourner(env, evt.scheduledTime)),
 };
