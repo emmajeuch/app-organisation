@@ -468,7 +468,7 @@ button:active, .chip:active, [role="button"]:active { transform: scale(.95); }
 #semaine { overflow-x: hidden; }
 /* Le compagnon qui se promène, au-dessus des onglets ; il ne bloque aucun tap */
 /* V1.10.5 : plus gros, et chaque créature a son comportement (animerBalade dans app.js choisit l'action) */
-.balade { position: fixed; left: 0; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); width: 96px; z-index: 4; pointer-events: none; }
+.balade { position: fixed; left: 0; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); width: 96px; z-index: 6; pointer-events: none; }
 .balade .compagnon { width: 96px; }
 .balade .sens { transform: scaleX(var(--sens, 1)); transition: transform .2s; }
 .balade .bulle { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); white-space: nowrap; font-size: 12px; font-weight: 700; color: var(--ink-2); animation: bulle 1.8s ease-in-out infinite; }
@@ -597,3 +597,21 @@ dialog .choix-couleur .nuances { height: 200px; }
 .niveau-fete .btn { width: 100%; }
 @keyframes badge-arrive { 0% { transform: scale(0) rotate(-200deg); } 60% { transform: scale(1.25) rotate(15deg); } 100% { transform: scale(1) rotate(0); } }
 @keyframes badge-brille { 50% { transform: scale(1.06); box-shadow: 0 0 0 16px color-mix(in srgb, var(--flamme) 15%, transparent), 0 10px 60px color-mix(in srgb, var(--flamme) 80%, transparent); } }
+
+/* Perché sur le +, il ne gêne pas : on touche le bouton à travers lui (V1.10.16) */
+.balade.perche .compagnon { pointer-events: none; }
+
+/* V1.10.16 : le compagnon fête un succès au milieu de l'écran, et danse sur le badge d'un nouveau niveau */
+.fete-compagnon { position: fixed; left: 50%; top: 42%; z-index: 35; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
+.fete-compagnon .compagnon { width: 150px; }
+.fete-saut { animation: fete-arrive .7s cubic-bezier(.3, 1.6, .5, 1), fete-bonds .6s ease-in-out .7s 3, fete-part .5s ease-in 2.9s forwards; }
+.fete-bulle { display: flex; flex-direction: column; align-items: center; background: var(--surface); color: var(--ink); padding: 10px 16px; border-radius: 16px; box-shadow: var(--shadow); text-align: center; max-width: 260px;
+  animation: fete-bulle .5s cubic-bezier(.3, 1.6, .5, 1) .3s both, fete-part .5s ease-in 2.9s forwards; }
+.fete-bulle b { font-size: 20px; }
+.fete-bulle small { color: var(--ink-2); }
+@keyframes fete-arrive { from { transform: translateY(60vh) scale(.3) rotate(-90deg); } }
+@keyframes fete-bonds { 0%, 100% { transform: translateY(0) rotate(0); } 40% { transform: translateY(-40px) rotate(-12deg) scale(1.08); } 70% { transform: translateY(0) rotate(10deg) scale(1.05, .92); } }
+@keyframes fete-bulle { from { transform: scale(0); opacity: 0; } }
+@keyframes fete-part { to { transform: translateY(-30px) scale(.6); opacity: 0; } }
+.niveau-compagnon { margin-bottom: -26px; position: relative; z-index: 1; animation: fete-arrive .8s cubic-bezier(.3, 1.6, .5, 1), fete-bonds .7s ease-in-out .8s infinite; }
+.niveau-compagnon .compagnon { width: 96px; }

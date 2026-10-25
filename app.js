@@ -64,7 +64,7 @@ function maj() {
   // Un succès débloqué ou un tirage gagné : on le dit, on le fête (V1.10.3).
   if (dernier && actif('motivation')) {
     const nouveaux = L.succesObtenus(st).filter(n => !L.succesObtenus(dernier).includes(n));
-    if (nouveaux.length) { feter(); setTimeout(() => dire(`Succès : ${nouveaux[0]} ! Un tirage t’attend dans Profil`), 900); }
+    if (nouveaux.length) { feter(); const vu = feteCompagnon('Succès !', nouveaux[0]); setTimeout(() => dire(vu ? 'Un tirage t’attend dans Profil' : `Succès : ${nouveaux[0]} ! Un tirage t’attend dans Profil`), vu ? 3000 : 900); }
     else if (L.droitsTirage(data, st).length > L.droitsTirage(data, dernier).length) setTimeout(() => dire('Un tirage t’attend dans Profil'), 900);
   }
   verifierNiveau(st);
@@ -192,10 +192,23 @@ function verifierNiveau(st = L.stats(data, new Date())) {
   data.niveauVu = n; sauver();
   setTimeout(() => feterNiveau(n), 700);
 }
+const monCompagnon = () => actif('compagnon') && data.compagnon?.id && L.CREATURES.find(x => x.id === data.compagnon.id);
+// V1.10.16 : pour un succès, le compagnon surgit au milieu de l'écran, bondit, tourne et annonce la nouvelle.
+function feteCompagnon(titre, texte) {
+  const c = monCompagnon();
+  if (!c || matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  const el = Object.assign(document.createElement('div'), { className: 'fete-compagnon' });
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = `<div class="fete-bulle"><b>${esc(titre)}</b>${texte ? `<small>${esc(texte)}</small>` : ''}</div><div class="fete-saut">${compagnonFig(c, data.compagnon.stade || 0)}</div>`;
+  (dlg.open ? dlg : document.body).append(el);
+  setTimeout(() => el.remove(), 3400);
+  return true;
+}
 function feterNiveau(n) {
   navigator.vibrate?.([30, 60, 30, 60, 80]);
   reagirBalade('fete');
-  ouvrirDlg(`<form class="niveau-fete"><div class="badge-niveau"><small>Niveau</small><b>${n}</b></div>
+  const c = monCompagnon();
+  ouvrirDlg(`<form class="niveau-fete">${c ? `<div class="niveau-compagnon">${compagnonFig(c, data.compagnon.stade || 0)}</div>` : ''}<div class="badge-niveau"><small>Niveau</small><b>${n}</b></div>
     <h2>Niveau ${n} !</h2><p>Bravo, tu montes d’un niveau. Un tirage t’attend : une nouvelle créature pour ta collection.</p>
     <button type="button" class="btn plein" data-choix="tirage">Ouvrir mon tirage</button><button type="button" class="btn gris" data-fermer>Plus tard</button></form>`, choix => {
     if (choix === 'tirage') { setTimeout(ouvrirTirage); }
@@ -1959,6 +1972,7 @@ function ouvrir(id) {
   const v = document.getElementById(id);
   v.classList.remove('apparait'); void v.offsetWidth; v.classList.add('apparait');
   clearTimeout(ouvrir.fin); ouvrir.fin = setTimeout(() => v.classList.remove('apparait'), 700);
+  requestAnimationFrame(ajusterBalade);
   scrollTo(0, 0);
   try { localStorage.setItem('orga-onglet', id); } catch {}
 }
@@ -2002,23 +2016,55 @@ const REPLIQUES = {
 // Ce qu'il fait quand toi tu fais quelque chose.
 const REACTIONS = { touche: null, content: ['Bravo !', 'Bien joué !', 'Yes !', 'Trop fort !'], fete: ['Wouhou !!', 'Incroyable !', 'Champion·ne !'], surpris: ['Oh !', 'Tiens ?'] };
 const auHasard = t => t[Math.floor(Math.random() * t.length)];
-const positionBalade = el => { const m = getComputedStyle(el).transform; return m && m !== 'none' ? new DOMMatrix(m).m41 : 0; };
+const positionBalade = el => { const m = getComputedStyle(el).transform; if (!m || m === 'none') return { x: 0, y: 0 }; const d = new DOMMatrix(m); return { x: d.m41, y: d.m42 }; };
+// V1.10.16 : il marche sur le bouton + quand il passe dessus (il le gravit, le traverse par le haut, puis redescend).
+function hauteurBalade(el, x) {
+  const fab = document.querySelector('.fab');
+  if (!fab || getComputedStyle(fab).display === 'none') return 0;
+  const f = fab.getBoundingClientRect(), centre = x + 48;
+  if (centre < f.left - 6 || centre > f.right + 6) return 0;
+  const sol = innerHeight - parseFloat(getComputedStyle(el).bottom);   // le bas du compagnon quand il est par terre (sans son déplacement)
+  return Math.min(0, Math.round(f.top - sol + 10));
+}
+// Un trajet qui suit le relief : par terre, puis sur le +, puis par terre ; la montée et la descente prennent leur temps.
+function trajetBalade(el, x1, vitesse) {
+  const x0 = balade.x, pts = [[x0, balade.y || 0]], n = Math.max(1, Math.ceil(Math.abs(x1 - x0) / 6));
+  for (let k = 1; k <= n; k++) {
+    const x = x0 + (x1 - x0) * k / n, y = hauteurBalade(el, x), [px, py] = pts.at(-1);
+    if (y !== py) pts.push([px, y]);
+    pts.push([x, y]);
+  }
+  const couts = pts.map((p, i) => i ? Math.abs(p[0] - pts[i - 1][0]) + 1.8 * Math.abs(p[1] - pts[i - 1][1]) : 0);
+  const total = couts.reduce((a, b) => a + b, 0) || 1;
+  let cumul = 0;
+  const images = pts.map((p, i) => { cumul += couts[i]; return { transform: `translate(${p[0]}px, ${p[1]}px)`, offset: cumul / total }; });
+  const duree = Math.max(700, total / vitesse * 1000), fin = pts.at(-1);
+  balade.anim?.cancel();
+  el.style.transition = 'none';
+  el.style.transform = `translate(${fin[0]}px, ${fin[1]}px)`;
+  balade.anim = el.animate(images, { duration: duree, easing: 'linear' });
+  balade.x = fin[0]; balade.y = fin[1];
+  el.classList.toggle('perche', fin[1] < 0);
+  return duree;
+}
+// Si le + disparaît (autre onglet) pendant qu'il est perché dessus, il redescend.
+function ajusterBalade() {
+  if (!balade?.el.isConnected) return;
+  const y = hauteurBalade(balade.el, balade.x);
+  if (y !== (balade.y || 0)) trajetBalade(balade.el, balade.x, 80);
+}
 function animerBalade(el, c) {
   clearTimeout(baladeMinuteur);
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const poids = { ...(COMPORTEMENTS[c.id] || { marcher: 1 }), visiter: 1.5 };
   const total = Object.values(poids).reduce((a, b) => a + b, 0);
   const choisir = () => { let t = Math.random() * total; for (const [k, p] of Object.entries(poids)) if ((t -= p) <= 0) return k; return 'marcher'; };
-  balade = { el, c, x: Math.round(innerWidth * .3) };
-  el.style.transform = `translateX(${balade.x}px)`;
+  balade = { el, c, x: Math.round(innerWidth * .3), y: 0 };
+  el.style.transform = `translate(${balade.x}px, 0px)`;
   const aller = (x1, vitesse, classe) => {
-    const duree = Math.max(700, Math.abs(x1 - balade.x) / vitesse * 1000);
     el.style.setProperty('--sens', x1 < balade.x ? -1 : 1);
     el.className = `balade ${classe}`;
-    el.style.transition = `transform ${duree}ms linear`;
-    el.style.transform = `translateX(${x1}px)`;
-    balade.x = x1;
-    return duree;
+    return trajetBalade(el, x1, vitesse);
   };
   const etape = () => {
     if (!el.isConnected) return;
@@ -2043,7 +2089,7 @@ function animerBalade(el, c) {
       // Il reste surtout sur les bords du téléphone, un peu caché, et traverse de temps en temps (V1.10.6).
       const w = innerWidth, bords = [-22, w - 74];
       duree = aller(Math.round(Math.random() < .8 ? bords[Math.random() < .5 ? 0 : 1] + (Math.random() * 30 - 15) : 20 + Math.random() * (w - 136)), v, action);
-    } else { el.className = `balade ${action}`; el.style.transition = 'none'; }
+    } else { el.className = `balade ${action}${balade.y < 0 ? ' perche' : ''}`; }
     baladeMinuteur = setTimeout(etape, duree + 300 + Math.random() * 700);
   };
   balade.etape = etape;
@@ -2054,10 +2100,12 @@ function reagirBalade(type) {
   const b = balade;
   if (!b?.el.isConnected || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   clearTimeout(baladeMinuteur);
-  b.x = positionBalade(b.el);
+  const p = positionBalade(b.el);
+  b.anim?.cancel();
+  b.x = p.x; b.y = p.y;
   b.el.style.transition = 'none';
-  b.el.style.transform = `translateX(${b.x}px)`;
-  b.el.className = `balade reagit-${type}`;
+  b.el.style.transform = `translate(${b.x}px, ${b.y}px)`;
+  b.el.className = `balade reagit-${type}${b.y < 0 ? ' perche' : ''}`;
   b.el.querySelector('.bulle').textContent = type === 'touche' ? auHasard(REPLIQUES[b.c.id] || ['♥']) : auHasard(REACTIONS[type]);
   baladeMinuteur = setTimeout(b.etape, type === 'fete' ? 2600 : 1900);
 }
