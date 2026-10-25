@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.12';
+export const VERSION = '1.10.13';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -129,8 +129,7 @@ export function resoudre(slots, c, mode) {
   const gene = x => x.id !== c.id && x.j === c.j && x.s < c.e && x.e > c.s && GARDES.includes(x.cat) === garde;
   const genants = slots.filter(gene).sort((a, b) => a.s - b.s);
   let res = slots.filter(x => !gene(x));
-  if (mode === 'raccourcir') res.push(...genants.flatMap(x => [[x.s, Math.min(x.e, c.s)], [Math.max(x.s, c.e), x.e]]
-    .filter(([s, e]) => e - s >= .25).map(([s, e], i) => ({ ...x, s, e, id: i ? uid() : x.id }))));
+  if (mode === 'raccourcir') res.push(...genants.flatMap(x => { const t = [[x.s, Math.min(x.e, c.s)], [Math.max(x.s, c.e), x.e]].filter(([s, e]) => e - s >= .25); return t.map(([s, e], i) => morceau(x, { s, e }, i, t.length)); }));
   if (mode === 'decaler') {
     let t = c.e;
     for (const x of genants) {
@@ -145,6 +144,12 @@ export function resoudre(slots, c, mode) {
   const p = poser(res, c);
   return p.gene ? { gene: p.gene } : { slots: p.slots };
 }
+// Un morceau d'un créneau coupé : le premier garde l'identifiant ; tous partagent « groupe » s'il y en a plusieurs.
+export function morceau(c, m, i, n) {
+  const x = { ...c, ...m, id: i ? uid() : c.id };
+  if (n > 1) x.groupe = c.groupe || c.id; else delete x.groupe;
+  return x;
+}
 // Poser un créneau (V1.10.9). Le sommeil et les repas passent en premier : ils coupent ce qu'ils recouvrent, et un autre
 // créneau posé sur eux se coupe autour (des cours de 9 h 30 à 17 h laissent la place au déjeuner). Deux créneaux qui ne
 // sont ni sommeil ni repas, ou deux repas, ne se partagent pas un moment : rend { gene } sans rien changer.
@@ -157,7 +162,7 @@ export function poser(slots, c) {
   const { morceaux } = morceauxMultiJours(slots, c, c.j, [c.s, c.e]);
   if (!morceaux?.length) return { gene: dessous[0] };
   const res = slots.filter(x => x.id !== c.id);
-  morceaux.forEach((m, i) => res.push({ ...c, ...m, id: i ? uid() : c.id }));
+  morceaux.forEach((m, i) => res.push(morceau(c, m, i, morceaux.length)));
   return { slots: res.sort((a, b) => a.j - b.j || a.s - b.s) };
 }
 
@@ -299,7 +304,7 @@ const ENTRE = (a, b) => v => NUM(v) !== undefined && v >= a && v <= b ? v : unde
 const UN_DE = (...ok) => v => ok.includes(v) ? v : undefined;
 const NUM_OU_VIDE = v => v === '' ? '' : NUM(v);
 const HEURE_OU_RIEN = v => v === null ? null : ENTRE(0, 26)(v);
-const SLOT = { id: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID, titre: TXT, salle: TXT, affaires: TXT, notes: TXT,
+const SLOT = { id: ID, groupe: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID, titre: TXT, salle: TXT, affaires: TXT, notes: TXT,
   fait: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT };
 const SCHEMA = {
   version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID,

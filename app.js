@@ -423,7 +423,7 @@ const occupe = x => `Ce moment est déjà pris : ${x.titre} (${L.hhmm(x.s)} – 
 const SANS_LIEU = ['sommeil', 'repas', 'menage'];
 const suivreLieu = () => dlg.querySelectorAll('input[name="cat"]').forEach(r => r.addEventListener('change', () => { const z = dlg.querySelector('.zone-lieu'); if (z) z.hidden = SANS_LIEU.includes(r.value); }));
 // Le moment est déjà pris (V1.10.12) : raccourcir, décaler ou remplacer ce qui est là, ou annuler.
-function conflit(sem, c, gene, suite) {
+function conflit(slots, c, gene, suite) {
   const n = `« ${esc(gene.titre)} »`, raccourci = gene.s < c.s || gene.e > c.e;
   ouvrirDlg(`<form><h2>Ce moment est déjà pris</h2>
     <p class="muted">${n} est prévu de ${L.hhmm(gene.s)} à ${L.hhmm(gene.e)}. Que faire pour poser « ${esc(c.titre)} » de ${L.hhmm(c.s)} à ${L.hhmm(c.e)} ?</p>
@@ -431,15 +431,19 @@ function conflit(sem, c, gene, suite) {
     <button type="button" class="btn ${raccourci ? 'gris' : 'plein'}" data-choix="decaler">Décaler ${n} juste après</button>
     <button type="button" class="btn rouge" data-choix="remplacer">Remplacer ${n}</button>
     <button type="button" class="btn gris" data-fermer>Annuler</button></form>`, choix => {
-    const r = L.resoudre(sem.slots, c, choix);
+    const r = L.resoudre(slots, c, choix);
     if (r.gene) { dire(`Impossible : ${occupe(r.gene)}`); return false; }
-    sem.slots = r.slots;
-    suite();
+    suite(r.slots);
   });
 }
 function editerSlot(slot, cle) {
   const neuf = !!slot.neuf;
   const sem = semaineDe(cle), rec = !neuf && L.recurrentDe(data, slot.src);
+  // V1.10.13 : un créneau coupé autour des repas ou du sommeil se modifie d'un seul tenant.
+  const morceaux = slot.groupe ? sem.slots.filter(x => x.groupe === slot.groupe).sort((a, b) => a.j - b.j || a.s - b.s) : [];
+  const jfInit = morceaux.length > 1 && morceaux.at(-1).j !== morceaux[0].j ? morceaux.at(-1).j : null;
+  if (morceaux.length > 1) slot = { ...slot, j: morceaux[0].j, s: morceaux[0].s, e: morceaux.at(-1).e };
+  const sansMorceaux = sem.slots.filter(x => !(slot.groupe && x.groupe === slot.groupe && x.id !== slot.id));
   const [p0, p1] = data.plage;
   const heure = (nom, h) => `<input type="time" name="${nom}" value="${L.hhmm(h)}" step="300" required>`;
   const liees = slot.titre ? notesLiees(slot.titre) : [];
@@ -451,7 +455,8 @@ function editerSlot(slot, cle) {
       <label class="champ">Début${heure('s', slot.s)}</label>
       <label class="champ">Fin${heure('e', slot.e)}</label>
     </div>
-    <label class="champ">Finit le<select name="jf"><option value="">même jour</option>${JOURS.map((n, j) => `<option value="${j}">${n}</option>`).join('')}</select></label>
+    <label class="champ">Finit le<select name="jf"><option value="">même jour</option>${JOURS.map((n, j) => `<option value="${j}" ${j === jfInit ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+    ${morceaux.length > 1 ? `<p class="aide">Ce créneau est en ${morceaux.length} morceaux autour des repas et du sommeil : tout se modifie ensemble.</p>` : ''}
     <div class="zone-lieu" ${SANS_LIEU.includes(slot.cat) ? 'hidden' : ''}><label class="champ">Lieu<input name="salle" value="${esc(slot.salle)}" autocomplete="off"></label>
     <label class="champ">Affaires à prendre<input name="affaires" value="${esc(slot.affaires)}" autocomplete="off"></label></div>
     <label class="champ">Notes<textarea name="notes">${esc(slot.notes)}</textarea></label>
@@ -468,7 +473,7 @@ function editerSlot(slot, cle) {
   </form>`, (choix, f) => {
     const versType = !!f.get('type');
     if (choix === 'suppr') {
-      sem.slots = sem.slots.filter(x => x.id !== slot.id);
+      sem.slots = sansMorceaux.filter(x => x.id !== slot.id);
       // Supprimé aussi du créneau type : ce jour-là ne revient plus (et le créneau type disparaît s'il n'a plus de jour).
       if (versType && rec) {
         rec.jours = rec.jours.filter(j => j !== slot.j);
@@ -487,22 +492,25 @@ function editerSlot(slot, cle) {
       if (versType) { dire('Un créneau sur plusieurs jours ne change pas le créneau type : décoche « Modifier aussi le créneau type ».'); return false; }
       if (c.cat === 'sport') { c.seance = f.get('seance') || null; c.club = !!f.get('club'); }
       if (c.cat === catTravail()?.id) c.collegue = (f.get('collegue') || '').trim();
-      const { morceaux, gene } = L.morceauxMultiJours(sem.slots, { ...c, e: c.e }, jf, data.plage);
+      if (slot.groupe) c.groupe = slot.groupe;
+      const { morceaux: m2, gene } = L.morceauxMultiJours(sansMorceaux, { ...c, e: c.e }, jf, data.plage);
       if (gene) { dire(occupe(gene)); return false; }
-      if (!morceaux.length) { dire('Il ne reste aucun moment libre entre ces deux heures.'); return false; }
-      sem.slots = sem.slots.filter(x => x.id !== slot.id);
-      morceaux.forEach((m, i) => { sem.slots = L.placer(sem.slots, { ...c, ...m, id: i ? L.uid() : c.id }); });
+      if (!m2.length) { dire('Il ne reste aucun moment libre entre ces deux heures.'); return false; }
+      sem.slots = sansMorceaux.filter(x => x.id !== slot.id);
+      m2.forEach((m, i) => { sem.slots = L.placer(sem.slots, L.morceau(c, m, i, m2.length)); });
       noterUsage(neuf ? 'creneau-ajout' : 'creneau-deplace');
       ui.derniereCat = c.cat;
-      maj(); dire(`Créneau posé en ${morceaux.length} morceaux, autour des repas et du sommeil`); return;
+      maj(); dire(`Créneau posé en ${m2.length} morceaux, autour des repas et du sommeil`); return;
     }
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
     if (slot.src) c.src = slot.src;
     if (slot.tache) c.tache = slot.tache;
     if (c.cat === 'sport') { c.seance = f.get('seance') || null; c.club = !!f.get('club'); }
     if (c.cat === catTravail()?.id) c.collegue = (f.get('collegue') || '').trim();
-    const pris = L.poser(sem.slots, c).gene;
-    if (pris) { setTimeout(() => conflit(sem, c, pris, finir)); return; }
+    if (slot.groupe) c.groupe = slot.groupe;
+    let courant = sansMorceaux;
+    const pris = L.poser(courant, c).gene;
+    if (pris) { setTimeout(() => conflit(courant, c, pris, s => { courant = s; finir(); })); return; }
     finir();
     function finir() {
     if (c.fait && c.tache) { const t = data.taches.find(x => x.id === c.tache); if (t && !t.fait) cocherTache(t); }
@@ -521,7 +529,7 @@ function editerSlot(slot, cle) {
     if (!neuf && (c.j !== slot.j || c.s !== slot.s || c.e !== slot.e)) noterUsage('creneau-deplace');
     else if (!neuf && (c.cat !== slot.cat || c.titre !== slot.titre || c.salle !== (slot.salle || '') || c.affaires !== (slot.affaires || '') || c.notes !== (slot.notes || ''))) noterUsage('creneau-corrige');
     if (!neuf && slot.fait && !c.fait) noterUsage('creneau-decoche');
-    sem.slots = L.poser(sem.slots, c).slots || sem.slots;
+    sem.slots = L.poser(courant, c).slots || courant;
     if (recId) { L.regenerer(data); L.propager(data, [recId]); }
     ui.derniereCat = c.cat;
     maj();
@@ -678,8 +686,10 @@ vueSem.addEventListener('pointerup', () => {
   finDernierGeste = Date.now();
   if (g.mode === 'creer') return editerSlot(nouveauSlot(c.j, c.s, c.e), cle);
   const sem = data.semaines[cle];
-  const pose = L.poser(sem.slots, { ...g.slot, j: c.j, s: c.s, e: c.e });
-  if (pose.gene) { rendre(); return conflit(sem, { ...g.slot, j: c.j, s: c.s, e: c.e }, pose.gene, () => { noterUsage('creneau-deplace'); maj(); }); }
+  // Un morceau glissé seul se détache de son créneau.
+  const deplace = { ...g.slot, j: c.j, s: c.s, e: c.e }; delete deplace.groupe;
+  const pose = L.poser(sem.slots, deplace);
+  if (pose.gene) { rendre(); return conflit(sem.slots, deplace, pose.gene, s => { sem.slots = s; noterUsage('creneau-deplace'); maj(); }); }
   sem.slots = pose.slots;
   noterUsage('creneau-deplace');
   maj();

@@ -507,4 +507,13 @@ for (const fond of ['#F4F5F8', '#F3EAD9', '#FFE3EE', '#E9E3FF', '#DDF5E8', '#DDE
   assert.equal(L.resoudre(plein, c, 'decaler').gene.id, 'lo');   // décaler tomberait sur les loisirs
 }
 
+// Les morceaux d'un créneau coupé partagent un groupe ; un seul morceau n'en a pas.
+{
+  const s = [{ id: 'dej', j: 0, s: 12, e: 13, cat: 'repas', titre: 'Déjeuner' }];
+  const r = L.poser(s, { id: 'ev', j: 0, s: 10, e: 15, cat: 'loisirs', titre: 'Sortie' }).slots.filter(x => x.titre === 'Sortie');
+  assert.equal(r.length, 2);
+  assert.ok(r.every(x => x.groupe === 'ev'));
+  assert.equal(L.poser(s, { id: 'ev', j: 0, s: 14, e: 15, cat: 'loisirs', titre: 'Sortie', groupe: 'ev' }).slots.find(x => x.titre === 'Sortie').groupe, undefined);
+}
+
 console.log('ok');
