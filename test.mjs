@@ -495,4 +495,16 @@ for (const fond of ['#F4F5F8', '#F3EAD9', '#FFE3EE', '#E9E3FF', '#DDF5E8', '#DDE
   assert.ok(!L.CATS_DEPART.some(c => c.id === 'detente'));
 }
 
+// Moment déjà pris : raccourcir, décaler juste après, ou remplacer.
+{
+  const s = [{ id: 'rev', j: 0, s: 14, e: 16, cat: 'travail', titre: 'Révisions' }, { id: 'din', j: 0, s: 19, e: 20, cat: 'repas', titre: 'Dîner' }];
+  const c = { id: 'sp', j: 0, s: 15, e: 16.5, cat: 'sport', titre: 'Sport' };
+  const voir = r => r.slots.map(x => [x.titre, x.s, x.e]);
+  assert.deepEqual(voir(L.resoudre(s, c, 'raccourcir')), [['Révisions', 14, 15], ['Sport', 15, 16.5], ['Dîner', 19, 20]]);
+  assert.deepEqual(voir(L.resoudre(s, c, 'decaler')), [['Sport', 15, 16.5], ['Révisions', 16.5, 18.5], ['Dîner', 19, 20]]);
+  assert.deepEqual(voir(L.resoudre(s, c, 'remplacer')), [['Sport', 15, 16.5], ['Dîner', 19, 20]]);
+  const plein = [...s, { id: 'lo', j: 0, s: 17, e: 18, cat: 'loisirs', titre: 'Loisirs' }];
+  assert.equal(L.resoudre(plein, c, 'decaler').gene.id, 'lo');   // décaler tomberait sur les loisirs
+}
+
 console.log('ok');

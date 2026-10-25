@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.11';
+export const VERSION = '1.10.12';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -121,6 +121,29 @@ export function morceauxMultiJours(slots, c, jFin, [p0, p1]) {
     }
   }
   return { morceaux };
+}
+// Un moment déjà pris (V1.10.12) : on remplace ce qui gêne, on le raccourcit autour du nouveau créneau, ou on le décale
+// juste après. Rend les créneaux, ou { gene } si le décalage tombe à son tour sur autre chose.
+export function resoudre(slots, c, mode) {
+  const garde = GARDES.includes(c.cat);
+  const gene = x => x.id !== c.id && x.j === c.j && x.s < c.e && x.e > c.s && GARDES.includes(x.cat) === garde;
+  const genants = slots.filter(gene).sort((a, b) => a.s - b.s);
+  let res = slots.filter(x => !gene(x));
+  if (mode === 'raccourcir') res.push(...genants.flatMap(x => [[x.s, Math.min(x.e, c.s)], [Math.max(x.s, c.e), x.e]]
+    .filter(([s, e]) => e - s >= .25).map(([s, e], i) => ({ ...x, s, e, id: i ? uid() : x.id }))));
+  if (mode === 'decaler') {
+    let t = c.e;
+    for (const x of genants) {
+      const m = { ...x, s: t, e: t + x.e - x.s };
+      if (m.e > 26) return { gene: x };
+      const p = poser([...res, c], m);
+      if (p.gene) return { gene: p.gene };
+      res = p.slots.filter(y => y.id !== c.id);
+      t = m.e;
+    }
+  }
+  const p = poser(res, c);
+  return p.gene ? { gene: p.gene } : { slots: p.slots };
 }
 // Poser un créneau (V1.10.9). Le sommeil et les repas passent en premier : ils coupent ce qu'ils recouvrent, et un autre
 // créneau posé sur eux se coupe autour (des cours de 9 h 30 à 17 h laissent la place au déjeuner). Deux créneaux qui ne

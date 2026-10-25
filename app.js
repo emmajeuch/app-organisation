@@ -422,6 +422,21 @@ const occupe = x => `Ce moment est déjà pris : ${x.titre} (${L.hhmm(x.s)} – 
 // Ni lieu ni affaires à prendre pour dormir, manger ou faire le ménage (V1.10.10).
 const SANS_LIEU = ['sommeil', 'repas', 'menage'];
 const suivreLieu = () => dlg.querySelectorAll('input[name="cat"]').forEach(r => r.addEventListener('change', () => { const z = dlg.querySelector('.zone-lieu'); if (z) z.hidden = SANS_LIEU.includes(r.value); }));
+// Le moment est déjà pris (V1.10.12) : raccourcir, décaler ou remplacer ce qui est là, ou annuler.
+function conflit(sem, c, gene, suite) {
+  const n = `« ${esc(gene.titre)} »`, raccourci = gene.s < c.s || gene.e > c.e;
+  ouvrirDlg(`<form><h2>Ce moment est déjà pris</h2>
+    <p class="muted">${n} est prévu de ${L.hhmm(gene.s)} à ${L.hhmm(gene.e)}. Que faire pour poser « ${esc(c.titre)} » de ${L.hhmm(c.s)} à ${L.hhmm(c.e)} ?</p>
+    ${raccourci ? `<button type="button" class="btn plein" data-choix="raccourcir">Raccourcir ${n}</button>` : ''}
+    <button type="button" class="btn ${raccourci ? 'gris' : 'plein'}" data-choix="decaler">Décaler ${n} juste après</button>
+    <button type="button" class="btn rouge" data-choix="remplacer">Remplacer ${n}</button>
+    <button type="button" class="btn gris" data-fermer>Annuler</button></form>`, choix => {
+    const r = L.resoudre(sem.slots, c, choix);
+    if (r.gene) { dire(`Impossible : ${occupe(r.gene)}`); return false; }
+    sem.slots = r.slots;
+    suite();
+  });
+}
 function editerSlot(slot, cle) {
   const neuf = !!slot.neuf;
   const sem = semaineDe(cle), rec = !neuf && L.recurrentDe(data, slot.src);
@@ -448,7 +463,7 @@ function editerSlot(slot, cle) {
     <label class="champ" id="zone-travail" ${slot.cat === catTravail()?.id ? '' : 'hidden'}>Collègue<input name="collegue" value="${esc(slot.collegue)}" autocomplete="off"></label>
     ${slot.tache ? `<p class="muted">Tâche planifiée : valider ce créneau la coche.</p>` : ''}
     ${neuf ? '' : `<label class="coche"><input type="checkbox" class="chk" name="fait" ${slot.fait ? 'checked' : ''}>Réalisé comme prévu</label>`}
-    <label class="coche"><input type="checkbox" class="chk" name="type" ${neuf && !slot.tache ? 'checked' : ''}>${rec ? `Modifier aussi le créneau type (${esc(L.joursTexte(rec.jours))})` : 'Répéter chaque semaine (créneau type)'}</label>
+    ${rec ? `<label class="coche"><input type="checkbox" class="chk" name="type">Modifier aussi le créneau type (${esc(L.joursTexte(rec.jours))})</label>` : ''}
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div>
   </form>`, (choix, f) => {
     const versType = !!f.get('type');
@@ -469,7 +484,7 @@ function editerSlot(slot, cle) {
     const jf = f.get('jf') === '' ? c.j : +f.get('jf');
     if (jf < c.j) { dire('Le jour de fin doit être après le jour de début (même semaine).'); return false; }
     if (jf > c.j) {
-      if (versType) { dire('Un créneau sur plusieurs jours ne se répète pas : décoche « Répéter chaque semaine ».'); return false; }
+      if (versType) { dire('Un créneau sur plusieurs jours ne change pas le créneau type : décoche « Modifier aussi le créneau type ».'); return false; }
       if (c.cat === 'sport') { c.seance = f.get('seance') || null; c.club = !!f.get('club'); }
       if (c.cat === catTravail()?.id) c.collegue = (f.get('collegue') || '').trim();
       const { morceaux, gene } = L.morceauxMultiJours(sem.slots, { ...c, e: c.e }, jf, data.plage);
@@ -482,12 +497,14 @@ function editerSlot(slot, cle) {
       maj(); dire(`Créneau posé en ${morceaux.length} morceaux, autour des repas et du sommeil`); return;
     }
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
-    const pris = L.poser(sem.slots, c).gene;
-    if (pris) { dire(occupe(pris)); return false; }
     if (slot.src) c.src = slot.src;
     if (slot.tache) c.tache = slot.tache;
     if (c.cat === 'sport') { c.seance = f.get('seance') || null; c.club = !!f.get('club'); }
     if (c.cat === catTravail()?.id) c.collegue = (f.get('collegue') || '').trim();
+    const pris = L.poser(sem.slots, c).gene;
+    if (pris) { setTimeout(() => conflit(sem, c, pris, finir)); return; }
+    finir();
+    function finir() {
     if (c.fait && c.tache) { const t = data.taches.find(x => x.id === c.tache); if (t && !t.fait) cocherTache(t); }
     // Le créneau type suit (heures, titre, catégorie, salle ; un jour déplacé remplace l'ancien), ou il est créé.
     let recId = null;
@@ -496,10 +513,6 @@ function editerSlot(slot, cle) {
       if (c.j !== slot.j) rec.jours = [...new Set([...rec.jours.filter(j => j !== slot.j), c.j])];
       delete rec.exemple;
       recId = rec.id;
-    } else if (versType) {
-      const r = { id: L.uid(), titre: c.titre, cat: c.cat, s: c.s, e: c.e, jours: [c.j], salle: c.salle, affaires: c.affaires, ...(c.club ? { club: true } : {}) };
-      data.recurrents.push(r);
-      recId = r.id;
     }
     if (recId) c.src = `${recId}-${c.j}`;
     // Ce qui a servi : ajouté, déplacé (jour ou heures), corrigé (le reste), décoché.
@@ -512,6 +525,7 @@ function editerSlot(slot, cle) {
     if (recId) { L.regenerer(data); L.propager(data, [recId]); }
     ui.derniereCat = c.cat;
     maj();
+    }
   });
   dlg.querySelectorAll('input[name="cat"]').forEach(r => r.addEventListener('change', () => { $('#zone-sport').hidden = r.value !== 'sport'; $('#zone-travail').hidden = r.value !== catTravail()?.id; }));
   suivreLieu();
@@ -621,7 +635,7 @@ function apercu() {
   f.style.cssText = `${teinte(geste.slot ? geste.slot.cat : ui.derniereCat || data.cats[0]?.id)};--s:${c.s - data.plage[0]};--d:${c.e - c.s}`;
   const pris = geste.mode === 'deplacer' && L.poser(data.semaines[L.isoJour(ui.lundi)].slots, { ...geste.slot, j: c.j, s: c.s, e: c.e }).gene;
   f.classList.toggle('refus', !!pris);
-  f.textContent = pris ? `Pris : ${pris.titre}` : `${L.hhmm(c.s)}–${L.hhmm(c.e)}`;
+  f.textContent = pris ? `Sur : ${pris.titre}` : `${L.hhmm(c.s)}–${L.hhmm(c.e)}`;
   if (f.parentNode !== c.col) c.col.append(f);
 }
 function finGeste() {
@@ -665,7 +679,7 @@ vueSem.addEventListener('pointerup', () => {
   if (g.mode === 'creer') return editerSlot(nouveauSlot(c.j, c.s, c.e), cle);
   const sem = data.semaines[cle];
   const pose = L.poser(sem.slots, { ...g.slot, j: c.j, s: c.s, e: c.e });
-  if (pose.gene) { dire(occupe(pose.gene)); return rendre(); }
+  if (pose.gene) { rendre(); return conflit(sem, { ...g.slot, j: c.j, s: c.s, e: c.e }, pose.gene, () => { noterUsage('creneau-deplace'); maj(); }); }
   sem.slots = pose.slots;
   noterUsage('creneau-deplace');
   maj();
