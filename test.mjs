@@ -31,7 +31,6 @@ data.types.push({ id: 't', nom: 'Cours', slots: [c('a', 0, 8, 9)] });
 const sem = L.semaine(data, '2026-10-19');
 assert.equal(sem.slots[0].src, 'a');
 assert.notEqual(sem.slots[0].id, 'a');
-assert.deepEqual(L.copierJour(sem.slots, 0, 2).map(x => x.j), [0, 2]);
 assert.throws(() => L.valider({ hello: 1 }));
 assert.equal(L.valider(JSON.parse(JSON.stringify(data))).version, 1);
 
@@ -465,7 +464,7 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   L.propager(d, ['yoga']);
   const sl = d.semaines[lun].slots;
   assert.ok(sl.some(x => x.j === 0 && x.titre === 'Sommeil' && x.s === 6 && x.e === 8));   // le sommeil reste entier
-  assert.ok(!sl.some(x => x.titre === 'Yoga'));
+  assert.deepEqual(sl.filter(x => x.titre === 'Yoga').map(x => [x.s, x.e]), [[8, 9]]);    // le yoga se coupe autour (V1.10.9)
 }
 // Palette des couleurs : textes lisibles sur tous les fonds proposés, avec toutes les couleurs de boutons.
 for (const fond of ['#F4F5F8', '#F3EAD9', '#FFE3EE', '#E9E3FF', '#DDF5E8', '#DDEEFF', '#0B0D11', '#1E2430', '#0B1630', '#1B0B33', '#07170F', '#220811']) {
@@ -476,13 +475,14 @@ for (const fond of ['#F4F5F8', '#F3EAD9', '#FFE3EE', '#E9E3FF', '#DDF5E8', '#DDE
   }
 }
 
-// Journées types : copier le lundi type vers le mardi remplace le mardi type.
+// Poser : un cours de 9 h 30 à 17 h laisse la place au déjeuner ; deux cours ne se chevauchent pas ; un repas coupe un cours.
 {
-  const d = L.vide();
-  d.recurrents = [{ id: 'a', titre: 'Sommeil', s: 6, e: 8, jours: [0, 1] }, { id: 'b', titre: 'Cours', s: 9, e: 12, jours: [0] }, { id: 'c', titre: 'Piscine', s: 18, e: 19, jours: [1] }];
-  const t = L.copierJourType(d, 0, 1);
-  assert.deepEqual(t.sort(), ['a', 'b', 'c']);
-  assert.deepEqual(d.recurrents.map(r => [r.id, r.jours]), [['a', [0, 1]], ['b', [0, 1]]]);   // la piscine du mardi part
+  const s = [{ id: 'dej', j: 0, s: 12, e: 13, cat: 'repas', titre: 'Déjeuner' }];
+  assert.deepEqual(L.poser(s, { id: 'c', j: 0, s: 9.5, e: 17, cat: 'cours', titre: 'Cours' }).slots.filter(x => x.cat === 'cours').map(x => [x.s, x.e]), [[9.5, 12], [13, 17]]);
+  const s2 = [{ id: 'td', j: 0, s: 9, e: 11, cat: 'cours', titre: 'TD' }];
+  assert.equal(L.poser(s2, { id: 'tp', j: 0, s: 10, e: 12, cat: 'cours', titre: 'TP' }).gene.id, 'td');
+  assert.deepEqual(L.poser(s2, { id: 'pdj', j: 0, s: 10, e: 10.5, cat: 'repas', titre: 'Goûter' }).slots.map(x => [x.titre, x.s, x.e]), [['TD', 9, 10], ['Goûter', 10, 10.5], ['TD', 10.5, 11]]);
+  assert.equal(L.poser([...s], { id: 'd2', j: 0, s: 12.5, e: 13.5, cat: 'repas' }).gene.id, 'dej');
 }
 
 console.log('ok');

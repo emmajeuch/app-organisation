@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.8';
+export const VERSION = '1.10.9';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -104,7 +104,7 @@ const copieDe = slots => slots.map(s => ({ ...s, id: uid(), src: s.id, fait: nul
 export const chevauche = (slots, c) => slots.find(x => x.id !== c.id && x.j === c.j && x.s < c.e && x.e > c.s) || null;
 // Un créneau sur plusieurs jours (samedi 16 h › dimanche 17 h) : coupé jour par jour, il laisse la place aux repas et au
 // sommeil déjà posés. Rend les morceaux, ou le créneau qui gêne (tout autre créneau sur le chemin).
-const GARDES = ['sommeil', 'repas'];
+export const GARDES = ['sommeil', 'repas'];
 export function morceauxMultiJours(slots, c, jFin, [p0, p1]) {
   const morceaux = [];
   for (let j = c.j; j <= jFin; j++) {
@@ -122,6 +122,21 @@ export function morceauxMultiJours(slots, c, jFin, [p0, p1]) {
   }
   return { morceaux };
 }
+// Poser un créneau (V1.10.9). Le sommeil et les repas passent en premier : ils coupent ce qu'ils recouvrent, et un autre
+// créneau posé sur eux se coupe autour (des cours de 9 h 30 à 17 h laissent la place au déjeuner). Deux créneaux qui ne
+// sont ni sommeil ni repas, ou deux repas, ne se partagent pas un moment : rend { gene } sans rien changer.
+export function poser(slots, c) {
+  const garde = GARDES.includes(c.cat);
+  const dessous = slots.filter(x => x.id !== c.id && x.j === c.j && x.s < c.e && x.e > c.s);
+  const gene = dessous.find(x => GARDES.includes(x.cat) === garde);
+  if (gene) return { gene };
+  if (garde) return { slots: placer(slots, c) };
+  const { morceaux } = morceauxMultiJours(slots, c, c.j, [c.s, c.e]);
+  if (!morceaux?.length) return { gene: dessous[0] };
+  const res = slots.filter(x => x.id !== c.id);
+  morceaux.forEach((m, i) => res.push({ ...c, ...m, id: i ? uid() : c.id }));
+  return { slots: res.sort((a, b) => a.j - b.j || a.s - b.s) };
+}
 
 // ---------- Créneaux types (V1.10) ----------
 // Ce qui revient chaque semaine (sommeil de 23 h à 7 h, repas, cours…) : data.recurrents, une ligne par créneau type
@@ -131,7 +146,7 @@ export const ID_BASE = 'base';
 const slotDe = (r, j) => ({ j, s: r.s, e: r.e, cat: r.cat, titre: r.titre, salle: r.salle || '', affaires: r.affaires || '', notes: '', ...(r.club ? { club: true } : {}) });
 export function modele(recurrents) {
   let slots = [];
-  for (const r of recurrents) for (const j of [...new Set(r.jours)].sort()) slots = placer(slots, { id: `${r.id}-${j}`, ...slotDe(r, j) });
+  for (const r of recurrents) for (const j of [...new Set(r.jours)].sort()) { const p = poser(slots, { id: `${r.id}-${j}`, ...slotDe(r, j) }); if (p.slots) slots = p.slots; }
   return slots;
 }
 export function regenerer(data) {
@@ -154,22 +169,16 @@ export function propager(data, ids, maintenant = new Date()) {
     for (const r of data.recurrents.filter(r => ids.includes(r.id))) for (const j of [...new Set(r.jours)].sort()) {
       if (!ouvert(j) || slots.some(x => x.j === j && x.fait && de(x, r.id))) continue;
       const c = { id: uid(), src: `${r.id}-${j}`, ...slotDe(r, j), fait: null };
-      if (chevauche(slots.filter(autre), c)) continue;
-      slots = placer(slots, c);
+      // Hors de ce qu'on repose : un repas ou le sommeil ne coupe jamais ce qui est déjà là ; un autre créneau type
+      // se coupe autour des repas et du sommeil déjà posés, et saute s'il tombe sur autre chose.
+      const horsLot = slots.filter(autre);
+      if (chevauche(GARDES.includes(c.cat) ? horsLot : horsLot.filter(x => !GARDES.includes(x.cat)), c)) continue;
+      const p = poser(slots, c);
+      if (p.gene) continue;
+      slots = p.slots;
     }
     sem.slots = slots;
   }
-}
-// Journées types (V1.10.5) : le lundi type devient aussi le mardi type. Le jour d'arrivée perd ses créneaux types,
-// puis reçoit ceux du jour de départ. Rend les créneaux types touchés, à reposer dans les semaines.
-export function copierJourType(data, de, vers) {
-  const touches = data.recurrents.filter(r => r.jours.includes(de) || r.jours.includes(vers)).map(r => r.id);
-  for (const r of data.recurrents) {
-    r.jours = r.jours.filter(j => j !== vers);
-    if (r.jours.includes(de)) r.jours = [...r.jours, vers].sort((a, b) => a - b);
-  }
-  data.recurrents = data.recurrents.filter(r => r.jours.length);
-  return touches;
 }
 // Des créneaux de semaine regroupés en créneaux types : même titre, catégorie, heures et salle = un créneau type et ses jours.
 export function recurrentsDepuis(slots, exemple = false) {
@@ -239,10 +248,6 @@ export function semaine(data, cle) {
 export function appliquerType(data, cle, typeId) {
   const t = data.types.find(t => t.id === typeId);
   data.semaines[cle] = { type: typeId, slots: copieDe(t.slots) };
-}
-export function copierJour(slots, de, vers) {
-  const copies = slots.filter(s => s.j === de).map(s => ({ ...s, id: uid(), j: vers, fait: null }));
-  return [...slots.filter(s => s.j !== vers), ...copies].sort((a, b) => a.j - b.j || a.s - b.s);
 }
 
 export function heuresParCat(slots) {

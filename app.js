@@ -450,7 +450,7 @@ function editerSlot(slot, cle) {
       maj(); dire(`Créneau posé en ${morceaux.length} morceaux, autour des repas et du sommeil`); return;
     }
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
-    const pris = L.chevauche(sem.slots, c);
+    const pris = L.poser(sem.slots, c).gene;
     if (pris) { dire(occupe(pris)); return false; }
     if (slot.src) c.src = slot.src;
     if (slot.tache) c.tache = slot.tache;
@@ -476,7 +476,7 @@ function editerSlot(slot, cle) {
     if (!neuf && (c.j !== slot.j || c.s !== slot.s || c.e !== slot.e)) noterUsage('creneau-deplace');
     else if (!neuf && (c.cat !== slot.cat || c.titre !== slot.titre || c.salle !== (slot.salle || '') || c.affaires !== (slot.affaires || '') || c.notes !== (slot.notes || ''))) noterUsage('creneau-corrige');
     if (!neuf && slot.fait && !c.fait) noterUsage('creneau-decoche');
-    sem.slots = L.placer(sem.slots, c);
+    sem.slots = L.poser(sem.slots, c).slots || sem.slots;
     if (recId) { L.regenerer(data); L.propager(data, [recId]); }
     ui.derniereCat = c.cat;
     maj();
@@ -499,7 +499,6 @@ function planifier(t) {
 function actionsSemaine(jt = ui.jourType ?? L.jourSemaine(new Date())) {
   ui.jourType = jt;
   const cle = L.isoJour(ui.lundi), sem = semaineDe(cle);
-  const jours = JOURS.map((n, j) => `<option value="${j}">${n}</option>`).join('');
   const recs = data.recurrents.filter(r => r.jours.includes(jt)).sort((a, b) => a.s - b.s);
   const autres = r => r.jours.filter(j => j !== jt);
   ouvrirDlg(`<form><h2>Ta semaine</h2>
@@ -507,42 +506,19 @@ function actionsSemaine(jt = ui.jourType ?? L.jourSemaine(new Date())) {
       <div class="jours-type">${JOURS.map((n, j) => `<button type="button" data-choix="jt:${j}" aria-pressed="${j === jt}">${n.slice(0, 3)}</button>`).join('')}</div>
       ${recs.length ? `<ul class="list">${recs.map(r => `<li><button type="button" class="txt gauche" data-choix="r:${r.id}"><b><span class="dot" style="${teinte(r.cat)}"></span> ${esc(r.titre)}</b><small>${L.hhmm(r.s)} – ${L.hhmm(r.e)}${autres(r).length ? ` · aussi ${esc(L.joursTexte(autres(r)))}` : ' · seulement ce jour-là'}</small></button></li>`).join('')}</ul>` : `<p class="aide">Rien le ${JOURS[jt]} pour l’instant.</p>`}
       <button type="button" class="btn gris" data-choix="nouveau">Ajouter au ${JOURS[jt]} type</button>
-      <div class="champs" style="grid-template-columns: 1fr auto; align-items: end">
-        <label class="champ">Copier le ${JOURS[jt]} type vers le<select name="versType">${jours}</select></label>
-        <button type="button" class="btn gris" data-choix="copier-type">Copier</button>
-      </div>
       <button type="button" class="btn gris" data-choix="construire">Régler par catégories</button></div>
     <button type="button" class="btn gris" data-choix="precedente">Copier la semaine précédente</button>
-    <div class="champs" style="grid-template-columns: 1fr 1fr auto; align-items: end">
-      <label class="champ">Copier le<select name="de">${jours}</select></label>
-      <label class="champ">vers le<select name="vers">${jours}</select></label>
-      <button type="button" class="btn gris" data-choix="jour">Copier</button>
-    </div>
     <button type="button" class="btn plein" data-fermer>Fermer</button>
   </form>`, (choix, f) => {
     if (choix.startsWith('jt:')) { setTimeout(() => actionsSemaine(+choix.slice(3))); return; }
     if (choix.startsWith('r:')) { editerRecurrent(data.recurrents.find(r => r.id === choix.slice(2)), jt); return false; }
     if (choix === 'nouveau') { editerRecurrent(null, jt); return false; }
-    if (choix === 'copier-type') {
-      const vers = +f.get('versType');
-      if (vers === jt) { dire('Choisis un autre jour.'); return false; }
-      const touches = L.copierJourType(data, jt, vers);
-      L.regenerer(data); L.propager(data, touches);
-      noterUsage('creneau-type');
-      maj(); dire(`Le ${JOURS[vers]} type est maintenant comme le ${JOURS[jt]} type`); return;
-    }
     if (choix === 'construire') { construire(); return false; }
     if (choix === 'precedente') {
       const prec = data.semaines[L.isoJour(L.ajouterJours(ui.lundi, -7))];
       if (!prec || !prec.slots.length) { dire('La semaine précédente est vide.'); return false; }
       sem.slots = prec.slots.map(x => ({ ...x, id: L.uid(), fait: null }));
       maj(); dire('Semaine précédente copiée'); return;
-    }
-    if (choix === 'jour') {
-      const de = +f.get('de'), vers = +f.get('vers');
-      if (de === vers) { dire('Choisis deux jours différents.'); return false; }
-      sem.slots = L.copierJour(sem.slots, de, vers);
-      maj(); dire(`${JOURS[de]} copié vers ${JOURS[vers]}`); return;
     }
   });
 }
@@ -552,19 +528,17 @@ const joursChoix = (nom, sel = []) => `<div class="jours-choix">${JOURS.map((n, 
 // Un créneau type : ce qui revient chaque semaine, les jours cochés.
 function editerRecurrent(r, jt = null) {
   const neuf = !r, v = r || { titre: '', cat: ui.derniereCat || data.cats[0]?.id, s: 8, e: 9, jours: [jt ?? L.jourSemaine(new Date())], salle: '', affaires: '' };
-  // Depuis une journée type (V1.10.6) : seul ce jour change ; un créneau type commun à plusieurs jours se sépare.
-  const separable = !neuf && jt !== null && r.jours.length > 1;
+  // V1.10.9 : on coche les jours ; un ancien jour décoché garde l'ancien réglage (le créneau type se sépare en deux).
   ouvrirDlg(`<form><h2>${neuf ? (jt !== null ? `Nouveau, le ${JOURS[jt]}` : 'Nouveau créneau type') : 'Créneau type'}</h2>
     <p class="muted">Il revient chaque semaine, les jours cochés. Le changer met à jour ta semaine à partir d’aujourd’hui ; le passé et ce qui est déjà validé ne bougent pas.</p>
     <label class="champ">Titre<input name="titre" value="${esc(v.titre)}" placeholder="${esc(cat(v.cat).nom)}" autocomplete="off"></label>
     <div class="cats" role="radiogroup" aria-label="Catégorie">${data.cats.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${c.id === v.cat ? 'checked' : ''}><span style="${teinte(c.id)}">${esc(c.nom)}</span></label>`).join('')}</div>
-    ${jt === null ? `<div class="champ">Jours${joursChoix('jours', v.jours)}</div>` : `<p class="aide">Seulement le ${JOURS[jt]} type. Pour le reprendre un autre jour : « Copier le ${JOURS[jt]} type ».</p>`}
+    <div class="champ">Jours${joursChoix('jours', v.jours)}${neuf ? '' : '<p class="aide">Un jour décoché garde son réglage d’avant.</p>'}</div>
     <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Début<input type="time" name="s" value="${L.hhmm(v.s)}" step="300" required></label><label class="champ">Fin<input type="time" name="e" value="${L.hhmm(v.e)}" step="300" required></label></div>
     <label class="champ">Salle, lieu<input name="salle" value="${esc(v.salle)}" autocomplete="off"></label>
     <label class="champ">Affaires à prendre<input name="affaires" value="${esc(v.affaires)}" autocomplete="off"></label>
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
-    const seul = separable;
-    if (choix === 'suppr' && seul) {
+    if (choix === 'suppr' && jt !== null && r.jours.length > 1) {
       r.jours = r.jours.filter(j => j !== jt);
       L.regenerer(data); L.propager(data, [r.id]);
       maj(); dire(`Retiré du ${JOURS[jt]} type`); return;
@@ -575,17 +549,18 @@ function editerRecurrent(r, jt = null) {
       maj(); dire('Créneau type supprimé, à partir d’aujourd’hui'); return;
     }
     const p0 = data.plage[0];
-    const c = { cat: f.get('cat') || v.cat, s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), jours: jt !== null ? [jt] : f.getAll('jours').map(Number), salle: f.get('salle').trim(), affaires: f.get('affaires').trim() };
+    const c = { cat: f.get('cat') || v.cat, s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), jours: f.getAll('jours').map(Number), salle: f.get('salle').trim(), affaires: f.get('affaires').trim() };
     c.titre = f.get('titre').trim() || cat(c.cat).nom;
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
     if (!c.jours.length) { dire('Coche au moins un jour.'); return false; }
-    const gene = data.recurrents.find(y => y !== r && y.jours.some(j => c.jours.includes(j)) && y.s < c.e && y.e > c.s);
-    // ponytail: avec « seulement ce jour-là », r garde encore ce jour pendant la vérification ; il est exclu, c'est lui qu'on sépare.
+    // Un cours peut passer sur le déjeuner (il se coupera autour) ; deux créneaux types ordinaires, ou deux repas, non.
+    const gene = data.recurrents.find(y => y !== r && y.jours.some(j => c.jours.includes(j)) && y.s < c.e && y.e > c.s && L.GARDES.includes(y.cat) === L.GARDES.includes(c.cat));
     if (gene) { dire(`Ce moment est déjà pris par le créneau type « ${gene.titre} » (${L.hhmm(gene.s)} – ${L.hhmm(gene.e)}, ${L.joursTexte(gene.jours.filter(j => c.jours.includes(j)))}).`); return false; }
     let x = r;
-    if (seul) { r.jours = r.jours.filter(j => j !== jt); x = { id: L.uid(), ...c }; data.recurrents.push(x); }
+    const gardes = neuf ? [] : r.jours.filter(j => !c.jours.includes(j));
+    if (gardes.length) { r.jours = gardes; x = { id: L.uid(), ...c }; data.recurrents.push(x); }
     else if (neuf) { x = { id: L.uid(), ...c }; data.recurrents.push(x); } else { Object.assign(r, c); delete r.exemple; }
-    L.regenerer(data); L.propager(data, seul ? [r.id, x.id] : [x.id]);
+    L.regenerer(data); L.propager(data, gardes.length ? [r.id, x.id] : [x.id]);
     ui.derniereCat = c.cat;
     noterUsage('creneau-type');
     maj(); dire(neuf ? 'Créneau type ajouté' : 'Créneau type modifié');
@@ -602,7 +577,7 @@ function cible(g) {
   const h = Math.min(Math.max(heureA(col, g.cy), p0), p1 - .5);
   if (g.mode === 'creer') return { col, j: g.j, s: Math.min(g.h0, h), e: Math.max(g.h0, h) + .5 };
   // Étirer s'arrête au créneau voisin (V1.10.5) : on ne recouvre jamais un autre créneau.
-  const voisins = data.semaines[L.isoJour(ui.lundi)].slots.filter(x => x.j === g.slot?.j && x.id !== g.slot?.id);
+  const voisins = data.semaines[L.isoJour(ui.lundi)].slots.filter(x => x.j === g.slot?.j && x.id !== g.slot?.id && (L.GARDES.includes(g.slot.cat) || !L.GARDES.includes(x.cat)));
   if (g.mode === 'etirer') return { col, j: g.slot.j, s: g.slot.s, e: Math.min(Math.max(g.slot.s + .5, h + .5), ...voisins.filter(x => x.s >= g.slot.e).map(x => x.s), p1) };
   if (g.mode === 'etirer-haut') return { col, j: g.slot.j, s: Math.max(Math.min(g.slot.e - .5, h), ...voisins.filter(x => x.e <= g.slot.s).map(x => x.e), p0), e: g.slot.e };
   const d = g.slot.e - g.slot.s;
@@ -612,7 +587,7 @@ function cible(g) {
 function apercu() {
   const c = cible(geste), f = geste.fantome;
   f.style.cssText = `${teinte(geste.slot ? geste.slot.cat : ui.derniereCat || data.cats[0]?.id)};--s:${c.s - data.plage[0]};--d:${c.e - c.s}`;
-  const pris = geste.mode === 'deplacer' && L.chevauche(data.semaines[L.isoJour(ui.lundi)].slots, { ...geste.slot, j: c.j, s: c.s, e: c.e });
+  const pris = geste.mode === 'deplacer' && L.poser(data.semaines[L.isoJour(ui.lundi)].slots, { ...geste.slot, j: c.j, s: c.s, e: c.e }).gene;
   f.classList.toggle('refus', !!pris);
   f.textContent = pris ? `Pris : ${pris.titre}` : `${L.hhmm(c.s)}–${L.hhmm(c.e)}`;
   if (f.parentNode !== c.col) c.col.append(f);
@@ -657,9 +632,9 @@ vueSem.addEventListener('pointerup', () => {
   finDernierGeste = Date.now();
   if (g.mode === 'creer') return editerSlot(nouveauSlot(c.j, c.s, c.e), cle);
   const sem = data.semaines[cle];
-  const pris = L.chevauche(sem.slots, { ...g.slot, j: c.j, s: c.s, e: c.e });
-  if (pris) { dire(occupe(pris)); return rendre(); }
-  sem.slots = L.placer(sem.slots, { ...g.slot, j: c.j, s: c.s, e: c.e });
+  const pose = L.poser(sem.slots, { ...g.slot, j: c.j, s: c.s, e: c.e });
+  if (pose.gene) { dire(occupe(pose.gene)); return rendre(); }
+  sem.slots = pose.slots;
   noterUsage('creneau-deplace');
   maj();
 });
