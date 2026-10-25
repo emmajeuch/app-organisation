@@ -562,4 +562,55 @@ assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune'
   assert.deepEqual(r, [...r].sort((a, b) => a - b));
 }
 
+// Une tâche qui revient ne se coche pas en boucle : à son jour, puis plus avant la fois suivante.
+{
+  const d = L.vide(), auj = new Date();
+  const t = { id: 'lessive', titre: 'Lessive', rep: [{ j: L.jourSemaine(L.momentLogique(auj).date), h: null }], echeance: L.isoJour(L.momentLogique(auj).date), faits: [], priorite: 2, sous: [] };
+  let x = L.cocher(t, auj);
+  assert.equal(x.faits.length, 1);
+  assert.ok(x.echeance > t.echeance);                     // la fois suivante, dans une semaine
+  for (let k = 0; k < 20; k++) x = L.cocher(x, auj);      // cocher en boucle : rien de plus
+  assert.equal(x.faits.length, 1);
+  assert.equal(L.joursAvant(x.echeance, auj), 7);
+  assert.ok(!L.cochable(x, auj));
+  d.taches.push(x);
+  assert.equal(L.stats(d, auj).sources.taches, 20);
+}
+// La réserve d'XP ne fait pas gagner en boucle : cocher et décocher sous un niveau gagné revient toujours au même.
+{
+  const d = L.vide(); d.niveauVu = 4;
+  d.taches = [{ id: 'a', titre: 'A', fait: true, faits: ['2026-10-25'] }, { id: 'b', titre: 'B', fait: true, faits: ['2026-10-25'] }];
+  const tour = () => { const st = L.stats(d, new Date()); d.xpGarde = st.xpGarde; return st.total; };
+  const totaux = [];
+  for (let k = 0; k < 6; k++) {
+    d.taches.forEach(t => { t.fait = false; t.faits = []; }); tour();
+    d.taches.forEach(t => { t.fait = true; t.faits = ['2026-10-25']; }); totaux.push(tour());
+  }
+  assert.ok(totaux.every(x => x === totaux[0]), 'le total ne grimpe pas à chaque tour : ' + totaux);
+}
+// Séances : au plus deux par jour comptent.
+{
+  const d = L.vide();
+  for (let k = 0; k < 6; k++) d.journal.push({ id: 's' + k, date: '2026-10-25', series: [{ exo: 'p', sets: [{ reps: 1 }] }] });
+  d.journal.push({ id: 'z', date: '2026-10-24', series: [] });
+  assert.equal(L.stats(d, new Date(2026, 9, 25)).sources.sport, 3 * L.XP.seance);
+}
+
+// Une sauvegarde se réimporte sans rien perdre : créneaux types, morceaux reliés, niveaux, réserve d'XP, couleurs, répétitions.
+{
+  const d = L.vide();
+  d.recurrents = [{ id: 'din', titre: 'Dîner', cat: 'repas', s: 19, e: 20, jours: [0, 1], salle: '', affaires: '' }];
+  d.semaines['2026-10-26'] = { type: 'base', slots: [{ id: 'a', groupe: 'a', j: 5, s: 16, e: 19, cat: 'loisirs', titre: 'Tournoi' }, { id: 'b', groupe: 'a', j: 5, s: 20, e: 25, cat: 'loisirs', titre: 'Tournoi' }] };
+  Object.assign(d, { niveauVu: 6, xpGarde: 120, couleurs: { fond: '#1b0b33', accent: '#ff9600' } });
+  d.taches.push({ id: 't', titre: 'Lessive', rep: [{ j: 6, h: 10 }], echeance: '2026-11-01', heure: 10, faits: ['2026-10-25'], priorite: 2, sous: [] });
+  d.habitudes.push({ id: 'h', nom: 'Lire', freq: 'jour', faits: ['2026-10-25'], horaires: [{ j: 0, h: 22 }] });
+  const o = L.validerImport(JSON.parse(JSON.stringify(d)));
+  assert.deepEqual(o.recurrents[0].jours, [0, 1]);
+  assert.deepEqual(o.semaines['2026-10-26'].slots.map(x => x.groupe), ['a', 'a']);
+  assert.deepEqual([o.niveauVu, o.xpGarde, o.couleurs.fond], [6, 120, '#1b0b33']);
+  assert.deepEqual(o.taches[0].rep, [{ j: 6, h: 10 }]);
+  assert.deepEqual(o.habitudes[0].horaires, [{ j: 0, h: 22 }]);
+  assert.equal(o.notifs.actif, false);   // jamais l'abonnement d'un autre téléphone
+}
+
 console.log('ok');

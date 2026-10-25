@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.21';
+export const VERSION = '1.10.22';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -616,7 +616,10 @@ export function prochaineOccurrence(rep, apresIso, apresH, inclus = false) {
   return null;
 }
 // Cocher une tâche : finie, ou, si elle se répète, reportée à sa prochaine fois après celle-ci et après maintenant.
+// V1.10.22 : une tâche qui revient ne se coche que si son échéance est aujourd'hui ou passée.
+export const cochable = (t, auj) => !repDe(t).length || !t.echeance || t.echeance <= isoJour(momentLogique(auj).date);
 export function cocher(t, auj) {
+  if (!cochable(t, auj)) return { ...t };
   const faits = [...(t.faits || []), isoJour(auj)], rep = repDe(t);
   if (!rep.length) return { ...t, fait: true, faitLe: isoJour(auj), faits };
   const cur = [t.echeance || isoJour(auj), t.echeance ? t.heure ?? -1 : -1], now = [isoJour(auj), auj.getHours() + auj.getMinutes() / 60];
@@ -722,7 +725,7 @@ export function stats(data, auj) {
   const sources = {
     creneaux: slots.filter(x => x.fait).length * XP.creneau,
     taches: data.taches.reduce((k, t) => k + completions(t) * (important(t) ? XP.tacheImportante : XP.tache), 0),
-    sport: (data.journal.length + club) * XP.seance,
+    sport: (Object.values(data.journal.reduce((n, e) => ({ ...n, [e.date]: (n[e.date] || 0) + 1 }), {})).reduce((k, n) => k + Math.min(n, 2), 0) + club) * XP.seance,
     habitudes: data.habitudes.reduce((k, h) => k + h.faits.length, 0) * XP.habitude,
     objectifs: data.objectifs.filter(o => o.fait).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
     bonus: valides.size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,

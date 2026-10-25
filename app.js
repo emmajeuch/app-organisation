@@ -56,9 +56,10 @@ function maj() {
   rendre();
   if (data.compagnon?.id && data.compagnon.stade > (avant || 0) && actif('compagnon')) setTimeout(() => dire(`Ton compagnon grandit : stade ${data.compagnon.stade} !`), 1200);
   if (dernier && st.total > dernier.total && actif('motivation')) {
-    const gain = `+${st.total - dernier.total} XP`;
+    if (toast.hidden) gainAffiche = 0;
+    gainAffiche += st.total - dernier.total;
     reagirBalade(st.niveau.n > dernier.niveau.n ? 'fete' : 'content');
-    dire(toast.hidden ? gain : `${toast.textContent} · ${gain}`);
+    dire(`+${gainAffiche} XP`);
     son();
   }
   if (dernier && !dernier.valides.has(aujIso()) && st.valides.has(aujIso())) { document.querySelectorAll('.flamme').forEach(f => f.classList.add('allume')); if (actif('motivation')) setTimeout(() => dire('Journée validée : ta flamme est allumée'), 600); }
@@ -120,20 +121,23 @@ const ecrireSauvAuto = s => { try { s ? localStorage.setItem(CLE_SAUV, JSON.stri
 const aujIso = () => L.isoJour(L.momentLogique(new Date()).date);
 const noterUsage = cle => L.noter(data, aujIso(), cle);
 const dateDuSlot = (cle, j) => L.isoJour(L.ajouterJours(L.deIso(cle), j));
+// Un créneau déjà commencé (V1.10.22) : on ne valide pas à l'avance ce qui n'a pas encore eu lieu.
+const commence = (cle, x) => { const { date, h } = L.momentLogique(new Date()), iso = dateDuSlot(cle, x.j), auj = L.isoJour(date); return iso < auj || (iso === auj && x.s <= h); };
 
 // Relecture d'une journée : chaque créneau se coche un par un ; ceux déjà validés arrivent cochés.
 // Seuls les créneaux cochés rapportent de l'XP ; la relecture seule ne fait pas compter la journée.
 function relecture(jour) {
   const d = L.deIso(jour), cle = cleSem(d), j = L.jourSemaine(d), sem = semaineDe(cle);
   const slots = sem.slots.filter(x => x.j === j && !L.auto(x));
-  const hier = jour !== aujIso();
+  const hier = jour !== aujIso(), aVenir = x => !commence(cle, x);
   const servi = L.utiliseEnJournee(data, jour);
   ouvrirDlg(`<form><h2>${hier ? 'Relire hier' : 'Relire ta journée'}</h2>
     <p class="muted">Coche ce que tu as vraiment fait, puis confirme. ${servi ? 'Cette journée a servi pendant la journée : validée, elle comptera dans l’essai.' : 'Aucun créneau n’a été touché pendant cette journée : validée, elle ne comptera pas dans l’essai.'}</p>
-    <ul class="list">${slots.map(x => `<li><input type="checkbox" class="chk" name="fait" value="${x.id}" ${x.fait ? 'checked' : ''} aria-label="${esc(x.titre)} fait"><span class="dot" style="${teinte(x.cat)}"></span><div class="txt"><b>${esc(x.titre)}</b><small>${L.hhmm(x.s)} – ${L.hhmm(x.e)}</small></div></li>`).join('')}</ul>
+    <ul class="list">${slots.map(x => `<li${aVenir(x) ? ' class="pas-encore"' : ''}><input type="checkbox" class="chk" name="fait" value="${x.id}" ${x.fait ? 'checked' : ''} ${aVenir(x) ? 'disabled' : ''} aria-label="${esc(x.titre)} ${aVenir(x) ? 'à venir' : 'fait'}"><span class="dot" style="${teinte(x.cat)}"></span><div class="txt"><b>${esc(x.titre)}</b><small>${L.hhmm(x.s)} – ${L.hhmm(x.e)}</small></div></li>`).join('')}</ul>
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Confirmer</button></div></form>`, (choix, f) => {
     const faits = new Set(f.getAll('fait'));
     for (const x of slots) {
+      if (aVenir(x)) continue;   // à venir : il se validera quand il aura eu lieu
       const avant = !!x.fait;
       x.fait = faits.has(x.id) ? true : null;
       const t = x.fait && !avant && x.tache && data.taches.find(y => y.id === x.tache);
@@ -158,7 +162,8 @@ function pillEcheance(t) {
 const tacheHtml = t => {
   const ns = (t.sous || []).length, nf = (t.sous || []).filter(s => s.fait).length, rep = L.repDe(t);
   const sous = [t.fac && 'Fac', t.travail && 'Travail', ns && `${nf}/${ns} étapes`, rep.length && `Revient : ${L.horairesTexte(rep)}`].filter(Boolean).join(' · ');
-  return `<li><input type="checkbox" class="chk" data-act="tache" data-id="${t.id}" ${t.fait ? 'checked' : ''} aria-label="Fait">
+  const pasEncore = !t.fait && !L.cochable(t, new Date());
+  return `<li${pasEncore ? ' class="pas-encore"' : ''}><input type="checkbox" class="chk" data-act="tache" data-id="${t.id}" ${t.fait ? 'checked' : ''} ${pasEncore ? 'disabled' : ''} aria-label="${pasEncore ? 'Pas encore : revient plus tard' : 'Fait'}">
     <div class="txt" data-act="editer-tache" data-id="${t.id}" role="button" tabindex="0"><b>${t.priorite === 1 ? '<span class="prio" title="Priorité haute"></span>' : ''}${esc(t.titre)}</b>${sous ? `<small>${esc(sous)}</small>` : ''}</div>
     ${t.echeance && !t.fait ? pillEcheance(t) : ''}</li>`;
 };
@@ -238,7 +243,8 @@ function feter() {
 const toast = $('#toast');
 let tt;
 // Le message reste assez longtemps pour être lu : 2,2 s, plus pour un long message (une erreur à corriger, par exemple).
-function dire(msg) { const ici = dlg.open ? dlg : document.body; if (toast.parentNode !== ici) ici.append(toast); toast.textContent = msg; toast.hidden = false; clearTimeout(tt); tt = setTimeout(() => toast.hidden = true, Math.max(2200, msg.length * 60)); }
+function dire(msg) { const ici = dlg.open ? dlg : document.body; if (toast.parentNode !== ici) ici.append(toast); toast.textContent = msg; toast.hidden = false; clearTimeout(tt); tt = setTimeout(() => { toast.hidden = true; gainAffiche = 0; }, Math.min(4000, Math.max(2200, msg.length * 60))); }
+let gainAffiche = 0;   // les XP additionnées tant que la bulle reste à l'écran (V1.10.22)
 
 const dlg = $('#dlg');
 // Ouvre une fenêtre du bas. onChoix(choix, champs) ; renvoyer false la garde ouverte.
@@ -483,7 +489,7 @@ function editerSlot(slot, cle) {
     </div>
     <label class="champ" id="zone-travail" ${slot.cat === catTravail()?.id ? '' : 'hidden'}>Collègue<input name="collegue" value="${esc(slot.collegue)}" autocomplete="off"></label>
     ${slot.tache ? `<p class="muted">Tâche planifiée : valider ce créneau la coche.</p>` : ''}
-    ${neuf ? '' : `<label class="coche"><input type="checkbox" class="chk" name="fait" ${slot.fait ? 'checked' : ''}>Réalisé comme prévu</label>`}
+    ${neuf || !commence(cle, slot) ? '' : `<label class="coche"><input type="checkbox" class="chk" name="fait" ${slot.fait ? 'checked' : ''}>Réalisé comme prévu</label>`}
     ${rec ? `<label class="coche"><input type="checkbox" class="chk" name="type">Modifier aussi le créneau type (${esc(L.joursTexte(rec.jours))})</label>` : ''}
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div>
   </form>`, (choix, f) => {
@@ -2164,7 +2170,7 @@ document.addEventListener('click', e => {
     case 'slot': { const r = trouverSlot(id); if (r) editerSlot(r.slot, r.cle); return; }
     case 'valider': {
       const r = trouverSlot(id);
-      if (!r) return rendre();
+      if (!r || (!r.slot.fait && !commence(r.cle, r.slot))) return rendre();
       r.slot.fait = r.slot.fait ? null : true;
       // Validé par son bouton peu après sa fin, le jour même : la journée a servi.
       const { date, h } = L.momentLogique(new Date());
@@ -2184,6 +2190,7 @@ document.addEventListener('click', e => {
     case 'editer-tache': return editerTache(data.taches.find(t => t.id === id));
     case 'habitude': {
       const hb = data.habitudes.find(x => x.id === id), jour = el.dataset.jour;
+      if (!hb || !jour || jour > aujIso()) return rendre();
       hb.faits = hb.faits.includes(jour) ? hb.faits.filter(d => d !== jour) : [...hb.faits, jour].sort();
       noterUsage('habitudes');
       return maj();
@@ -2258,7 +2265,7 @@ document.addEventListener('change', e => {
   if (act === 'item') data.listes.find(l => l.id === t.dataset.liste).items.find(i => i.id === id).fait = t.checked;
   if (act === 'tache') {
     const x = data.taches.find(y => y.id === id);
-    if (t.checked) cocherTache(x); else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); }
+    if (t.checked) { if (!L.cochable(x, new Date())) return rendre(); cocherTache(x); } else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); }
   }
   if (act === 'son') data.son = t.checked;
   if (act === 'rappel') data.notifs[id] = t.type === 'checkbox' ? t.checked : +t.value;

@@ -647,3 +647,7 @@ dialog .choix-couleur .nuances { height: 200px; }
 .balade.tombe .pas { transform: scale(.9, 1.12) rotate(-8deg); }
 .balade.atterrit .pas { animation: atterrit .6s cubic-bezier(.3, 1.6, .5, 1); }
 @keyframes atterrit { 0% { transform: scale(1.35, .6); } 50% { transform: scale(.9, 1.12) translateY(-10px); } 100% { transform: scale(1); } }
+
+/* Pas encore : une tâche qui revient avant son jour, un créneau à venir dans la relecture (V1.10.22) */
+li.pas-encore .chk { opacity: .35; }
+li.pas-encore .txt b { color: var(--ink-2); }
