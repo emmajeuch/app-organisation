@@ -616,3 +616,35 @@ dialog .choix-couleur .nuances { height: 200px; }
 @keyframes fete-part { to { transform: translateY(-30px) scale(.6); opacity: 0; } }
 .niveau-compagnon { margin-bottom: -26px; position: relative; z-index: 1; animation: fete-arrive .8s cubic-bezier(.3, 1.6, .5, 1), fete-bonds .7s ease-in-out .8s infinite; }
 .niveau-compagnon .compagnon { width: 96px; }
+
+/* V1.10.18 : de nouveaux dessins. <b> porte ce qui dépasse du corps : cornes, oreilles, antennes, ailes, bras, couronne. */
+.crea { position: relative; }
+.crea i { z-index: 1; }
+.crea b { position: absolute; left: 50%; top: 50%; width: 58%; aspect-ratio: 1; transform: translate(-50%, -50%); pointer-events: none; }
+.crea b::before, .crea b::after { content: none; position: absolute; }
+.crea.forme-4 b::before, .crea.forme-4 b::after { content: ""; top: -16%; width: 20%; height: 30%; background: #F3E9D2; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.crea.forme-4 b::before { left: 18%; transform: rotate(-18deg); }
+.crea.forme-4 b::after { right: 18%; transform: rotate(18deg); }
+.crea.forme-5 b::before, .crea.forme-5 b::after { content: ""; top: -14%; width: 26%; height: 30%; background: color-mix(in srgb, var(--c) 80%, #000); clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.crea.forme-5 b::before { left: 8%; transform: rotate(-14deg); }
+.crea.forme-5 b::after { right: 8%; transform: rotate(14deg); }
+.crea.forme-6 b::before, .crea.forme-6 b::after { content: ""; top: -30%; width: 16%; height: 38%;
+  background: radial-gradient(circle at 50% 16%, color-mix(in srgb, var(--c) 60%, #fff) 0 22%, transparent 24%), linear-gradient(to right, transparent 44%, #15171C 44% 56%, transparent 56%) 0 30% / 100% 70% no-repeat; }
+.crea.forme-6 b::before { left: 20%; transform: rotate(-12deg); }
+.crea.forme-6 b::after { right: 20%; transform: rotate(12deg); }
+.crea.forme-7 b::before, .crea.forme-7 b::after { content: ""; top: 6%; width: 48%; height: 58%; background: color-mix(in srgb, var(--c) 50%, #fff); opacity: .9; animation: aile .5s ease-in-out infinite alternate; }
+.crea.forme-7 b::before { left: -36%; border-radius: 80% 20% 60% 40%; transform-origin: 100% 50%; }
+.crea.forme-7 b::after { right: -36%; border-radius: 20% 80% 40% 60%; transform-origin: 0 50%; }
+@keyframes aile { from { transform: rotate(-10deg) scaleY(1); } to { transform: rotate(10deg) scaleY(.8); } }
+.crea.forme-8 i { opacity: .9; border-radius: 50% 50% 30% 30% / 62% 62% 38% 38%; box-shadow: 0 6px 14px color-mix(in srgb, var(--c) 45%, transparent); }
+.crea.forme-8 b::before, .crea.forme-8 b::after { content: ""; top: 52%; width: 22%; height: 18%; border-radius: 50%; background: var(--c); opacity: .85; }
+.crea.forme-8 b::before { left: -10%; transform: rotate(-30deg); }
+.crea.forme-8 b::after { right: -10%; transform: rotate(30deg); }
+.crea.forme-9 b::before { content: ""; top: -20%; left: 14%; width: 72%; height: 30%; background: #FFD447; clip-path: polygon(0 100%, 0 30%, 20% 70%, 35% 0, 50% 60%, 65% 0, 80% 70%, 100% 30%, 100% 100%); }
+.crea.epique { box-shadow: inset 0 0 0 2px #B04CFF, 0 0 14px color-mix(in srgb, #B04CFF 55%, transparent); }
+.pill.epique { background: #B04CFF; color: #fff; }
+/* La promenade : voleter, tomber du + et atterrir */
+.balade.voleter .pas { animation: flotte 1s ease-in-out infinite; }
+.balade.tombe .pas { transform: scale(.9, 1.12) rotate(-8deg); }
+.balade.atterrit .pas { animation: atterrit .6s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes atterrit { 0% { transform: scale(1.35, .6); } 50% { transform: scale(.9, 1.12) translateY(-10px); } 100% { transform: scale(1); } }

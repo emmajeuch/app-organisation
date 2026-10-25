@@ -534,4 +534,15 @@ for (const fond of ['#F4F5F8', '#F3EAD9', '#FFE3EE', '#E9E3FF', '#DDF5E8', '#DDE
   assert.ok(sl.filter(x => x.titre === 'Week-end').every(x => x.groupe === 'ev'));
 }
 
+// Un niveau gagné reste : décocher retire l'XP, jamais sous le plus haut niveau atteint.
+{
+  const d = L.vide(); d.bonusXp = 650; d.niveauVu = L.stats(d, new Date()).niveau.n;
+  d.bonusXp = 0;
+  assert.equal(L.stats(d, new Date()).niveau.n, d.niveauVu);
+}
+// 32 créatures, quatre raretés.
+assert.equal(L.CREATURES.length, 32);
+assert.equal(L.tirer([], () => .1).rarete, 'epique');
+assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune', 'epique', 'legendaire', 'rare']);
+
 console.log('ok');

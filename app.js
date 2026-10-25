@@ -1255,9 +1255,9 @@ document.addEventListener('pointerdown', e => {
 });
 const SOURCES = { creneaux: ['Créneaux', '#35C6DF'], taches: ['Tâches', '#EC4A46'], sport: ['Sport', '#B5DF2B'],
   habitudes: ['Habitudes', '#FF8AC1'], objectifs: ['Objectifs', '#6766F0'], bonus: ['Journées et bilans', '#FFD447'] };
-const RARETE = { commune: 'Commune', rare: 'Rare', legendaire: 'Légendaire' };
+const RARETE = { commune: 'Commune', rare: 'Rare', epique: 'Épique', legendaire: 'Légendaire' };
 const slug = t => String(t || '').toLowerCase().normalize('NFD').replace(/[^a-z]+/g, '-');
-const creaHtml = (c, sport) => `<div class="crea forme-${c.forme} ${c.rarete}${sport ? ` acc acc-${slug(sport)}` : ''}" style="--c:${c.couleur}"${sport ? ` title="Version ${esc(sport)}"` : ''}><i></i></div>`;
+const creaHtml = (c, sport) => `<div class="crea forme-${c.forme} ${c.rarete}${sport ? ` acc acc-${slug(sport)}` : ''}" style="--c:${c.couleur}"${sport ? ` title="Version ${esc(sport)}"` : ''}><b></b><i></i></div>`;
 const flamme = allumee => `<svg class="flamme${allumee ? '' : ' eteinte'}" viewBox="0 0 24 24" aria-hidden="true"><path class="f-ext" d="M12 1.8c.7 2.9 2.6 4.6 4.3 6.5 1.9 2.1 3.7 4.2 3.7 7.4 0 4.3-3.5 7-8 7s-8-2.7-8-7c0-2.8 1.3-4.9 2.9-6.4.3 1.5 1.2 2.6 2.4 3-.5-3.9.8-7.5 2.7-10.5z"/><path class="f-int" d="M12.2 11.2c.4 1.6 1.5 2.6 2.4 3.6 1 1.1 1.6 2 1.6 3.4 0 2.2-1.8 3.5-4.2 3.5S7.8 20.4 7.8 18.2c0-1.6.8-2.8 1.9-3.6.1.9.6 1.5 1.3 1.7-.2-1.9.3-3.6 1.2-5.1z"/></svg>`;
 
 // Le bilan est dû le dimanche dès 16 h, et encore le lundi et le mardi pour la semaine passée.
@@ -2005,9 +2005,14 @@ const COMPORTEMENTS = {
   mirabelle: { sauter: 4, danser: 3, marcher: 2 }, tourbillon: { tourner: 5, courir: 2 }, pepite: { briller: 4, marcher: 2, sauter: 1 },
   nuage: { flotter: 5, dormir: 2 }, cactou: { flaner: 3, regarder: 3, sauter: 1 }, lumino: { briller: 4, flotter: 3, sauter: 1 },
   zephyr: { flotter: 3, courir: 3, tourner: 2 },
+  moufle: { dormir: 3, flaner: 3, bailler: 2 }, bulle: { flotter: 4, sauter: 2, regarder: 1 }, pistache: { manger: 4, sauter: 2, marcher: 2 },
+  gribouille: { ecrire: 4, danser: 2, marcher: 2 }, noisette: { manger: 3, courir: 3, regarder: 2 }, brume: { voleter: 4, dormir: 2, regarder: 1 },
+  corniche: { courir: 3, sauter: 3, bricoler: 1 }, papilla: { voleter: 5, danser: 2 }, grelot: { danser: 4, sauter: 3 }, frimas: { voleter: 3, briller: 2, flaner: 2 },
+  draconet: { voleter: 3, courir: 2, briller: 2, sauter: 1 }, astro: { regarder: 3, briller: 3, flotter: 2 }, vortex: { tourner: 4, courir: 3 }, sylphe: { voleter: 4, danser: 3 },
+  phenix: { voleter: 4, briller: 3, tourner: 1 }, comete: { courir: 4, briller: 3, tourner: 2 },
 };
-const VITESSES = { marcher: 45, flaner: 22, courir: 150, rouler: 70, flotter: 30 };   // pixels par seconde ; les autres restent sur place
-const BULLES = { dormir: 'z z z', bailler: 'Ouaaah', ecrire: '✎', manger: 'miam', bricoler: '♪', regarder: '?', danser: '♪ ♫', briller: '✦' };
+const VITESSES = { marcher: 45, flaner: 22, courir: 150, rouler: 70, flotter: 30, voleter: 60 };   // pixels par seconde ; les autres restent sur place
+const BULLES = { dormir: 'z z z', bailler: 'Ouaaah', ecrire: '✎', manger: 'miam', bricoler: '♪', regarder: '?', danser: '♪ ♫', briller: '✦', voleter: '~' };
 let baladeMinuteur = null, balade = null;
 // Ce que dit chaque créature quand on la touche (V1.10.7).
 const REPLIQUES = {
@@ -2016,6 +2021,12 @@ const REPLIQUES = {
   bricolo: ['Je répare un truc !', 'Passe-moi le marteau !'], caillou: ['…', 'Je suis solide.'], brindille: ['Doucement, je suis fragile !', 'Le vent se lève !'],
   mirabelle: ['On danse ?', 'Youpi !'], tourbillon: ['Ça tourne !', 'Wouhou !'], pepite: ['Je brille, hein ?', 'Précieuse !'],
   nuage: ['Pfiou…', 'Je flotte…'], cactou: ['Attention, ça pique !', 'Câlin ? Non.'], lumino: ['Tadaa !', 'Je m’allume !'], zephyr: ['Fiouuu !', 'Attrape-moi !'],
+  moufle: ['Ronron…', 'Encore une caresse !'], bulle: ['Plop !', 'Je vais éclater de rire !'], pistache: ['Croc !', 'C’est l’heure du goûter ?'],
+  gribouille: ['Regarde mon dessin !', 'Zigzag !'], noisette: ['Je fais des réserves !', 'Tu as vu un gland ?'], brume: ['Bouh !', 'Tu m’as vu ?'],
+  corniche: ['Attention, je fonce !', 'Cornes en avant !'], papilla: ['Je virevolte !', 'Tout doux, mes ailes !'], grelot: ['Ding ding !', 'On fait de la musique ?'],
+  frimas: ['Brrr, il fait frais !', 'Un flocon pour toi.'], draconet: ['Grrr… je suis un vrai dragon !', 'Pfff, de la fumée !'], astro: ['Je capte des étoiles…', 'Bip bip !'],
+  vortex: ['Accroche-toi !', 'Tout tourne !'], sylphe: ['Le vent me porte…', 'Légère comme l’air !'],
+  phenix: ['Je renais toujours !', 'Regarde mes flammes !'], comete: ['Je passe en coup de vent !', 'Fais un vœu !'],
 };
 // Ce qu'il fait quand toi tu fais quelque chose.
 const REACTIONS = { touche: null, content: ['Bravo !', 'Bien joué !', 'Yes !', 'Trop fort !'], fete: ['Wouhou !!', 'Incroyable !', 'Champion·ne !'], surpris: ['Oh !', 'Tiens ?'] };
@@ -2054,8 +2065,18 @@ function trajetBalade(el, x1, vitesse) {
 // Si le + disparaît (autre onglet) pendant qu'il est perché dessus, il redescend.
 function ajusterBalade() {
   if (!balade?.el.isConnected) return;
-  const y = hauteurBalade(balade.el, balade.x);
-  if (y !== (balade.y || 0)) trajetBalade(balade.el, balade.x, 80);
+  const el = balade.el, y = hauteurBalade(el, balade.x), y0 = balade.y || 0;
+  if (y === y0) return;
+  if (y < y0) { trajetBalade(el, balade.x, 80); return; }   // le + revient : il remonte dessus
+  // V1.10.18 : une petite chute, comme si le sol s'était dérobé.
+  clearTimeout(baladeMinuteur);
+  balade.anim?.cancel();
+  el.style.transform = `translate(${balade.x}px, ${y}px)`;
+  balade.anim = el.animate([{ transform: `translate(${balade.x}px, ${y0}px)` }, { transform: `translate(${balade.x}px, ${y}px)` }], { duration: 420, easing: 'cubic-bezier(.55, 0, 1, .45)' });
+  balade.y = y;
+  el.className = 'balade tombe';
+  el.querySelector('.bulle').textContent = auHasard(['Aïe !', 'Oups !', 'Waaah !', 'Hé !']);
+  baladeMinuteur = setTimeout(() => { el.className = 'balade atterrit'; baladeMinuteur = setTimeout(balade.etape, 1300); }, 420);
 }
 function animerBalade(el, c) {
   clearTimeout(baladeMinuteur);

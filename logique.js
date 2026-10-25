@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.17';
+export const VERSION = '1.10.18';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -727,7 +727,8 @@ export function stats(data, auj) {
     objectifs: data.objectifs.filter(o => o.fait).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
     bonus: valides.size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,
   };
-  const total = Object.values(sources).reduce((a, b) => a + b, 0);
+  // V1.10.18 : décocher retire l'XP gagnée, mais jamais sous le plus haut niveau atteint (niveauVu) : un niveau gagné reste.
+  const total = Math.max(Object.values(sources).reduce((a, b) => a + b, 0), data.niveauVu ? seuil(data.niveauVu) : 0);
   return {
     sources, total, niveau: niveau(total), ...se, valides, joursValides: valides.size,
     semainesCompletes: cles.filter(c => joursValidesSemaine(valides, c) === 7).length,
@@ -773,12 +774,18 @@ export const CREATURES = [
   ['tourbillon', 'Tourbillon', '#3C8CE7', 2, 'rare'], ['pepite', 'Pépite', '#D9A520', 3, 'rare'],
   ['nuage', 'Nuage', '#A9C4E8', 1, 'rare'], ['cactou', 'Cactou', '#2E9E6A', 0, 'rare'],
   ['lumino', 'Lumino', '#FFE066', 2, 'legendaire'], ['zephyr', 'Zéphyr', '#8E7CF0', 3, 'legendaire'],
+  // V1.10.18 : seize de plus, avec de nouveaux dessins (formes 4 à 9 : cornes, oreilles, antennes, ailes, fantôme, couronne).
+  ['moufle', 'Moufle', '#F4A6C8', 5, 'commune'], ['bulle', 'Bulle', '#7FD3F7', 6, 'commune'], ['pistache', 'Pistache', '#9ED36A', 5, 'commune'],
+  ['gribouille', 'Gribouille', '#B8A2F0', 6, 'commune'], ['noisette', 'Noisette', '#C08457', 5, 'commune'], ['brume', 'Brume', '#C9D1DC', 8, 'commune'],
+  ['corniche', 'Corniche', '#E2574C', 4, 'rare'], ['papilla', 'Papilla', '#FF9ED1', 7, 'rare'], ['grelot', 'Grelot', '#F5C542', 6, 'rare'], ['frimas', 'Frimas', '#BFE6FF', 8, 'rare'],
+  ['draconet', 'Draconet', '#8E44AD', 4, 'epique'], ['astro', 'Astro', '#3B4BD8', 6, 'epique'], ['vortex', 'Vortex', '#00B3A4', 9, 'epique'], ['sylphe', 'Sylphe', '#7BE0B5', 7, 'epique'],
+  ['phenix', 'Phénix', '#FF6A3D', 7, 'legendaire'], ['comete', 'Comète', '#FFD166', 9, 'legendaire'],
 ].map(([id, nom, couleur, forme, rarete]) => ({ id, nom, couleur, forme, rarete }));
 
 // Légendaire 5 %, rare 25 %, commune 70 % ; une créature pas encore possédée si possible.
 export function tirer(possedes, rand = Math.random) {
   const r = rand();
-  const rarete = r < .05 ? 'legendaire' : r < .3 ? 'rare' : 'commune';
+  const rarete = r < .04 ? 'legendaire' : r < .14 ? 'epique' : r < .39 ? 'rare' : 'commune';
   const pool = CREATURES.filter(c => c.rarete === rarete);
   const neuves = pool.filter(c => !possedes.includes(c.id));
   const liste = neuves.length ? neuves : pool;
