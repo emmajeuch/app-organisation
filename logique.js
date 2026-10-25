@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.9';
+export const VERSION = '1.10.10';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -490,6 +490,15 @@ export function migrer(o) {
       regenerer(o);
     }
   }
+  // V1.10.10 : plus de catégorie Détente (ses créneaux passent en Loisirs) ; « Travail perso » s'appelle « Révisions ».
+  if (Array.isArray(o.cats) && o.cats.some(c => c.id === 'detente')) {
+    o.cats = o.cats.filter(c => c.id !== 'detente');
+    const vers = o.cats.some(c => c.id === 'loisirs') ? 'loisirs' : o.cats[0]?.id;
+    const tous = [...Object.values(o.semaines || {}).flatMap(x => x.slots || []), ...(o.recurrents || []), ...(o.types || []).flatMap(t => t.slots || [])];
+    for (const s of tous) if (s.cat === 'detente') s.cat = vers;
+  }
+  const revisions = (o.cats || []).find(c => c.id === 'travail' && c.nom === 'Travail perso');
+  if (revisions) revisions.nom = 'Révisions';
   return o;
 }
 
@@ -744,8 +753,8 @@ export const CONSEILS = {
 export const SPORTS = [...new Set(['Sabre laser', ...Object.keys(CONSEILS)])];
 
 export const CATS_DEPART = [
-  ['cours', 'Transport et cours', '#EC4A46'], ['sommeil', 'Sommeil', '#FF9B3D'], ['detente', 'Détente', '#FFD447'],
-  ['repas', 'Repas', '#34BD67'], ['travail', 'Travail perso', '#35C6DF'], ['loisirs', 'Loisirs', '#6261EE'],
+  ['cours', 'Transport et cours', '#EC4A46'], ['sommeil', 'Sommeil', '#FF9B3D'],
+  ['repas', 'Repas', '#34BD67'], ['travail', 'Révisions', '#35C6DF'], ['loisirs', 'Loisirs', '#6261EE'],
   ['menage', 'Ménage', '#FF8AC1'], ['sport', 'Sport', '#B5DF2B'],
 ].map(([id, nom, couleur]) => ({ id, nom, couleur }));
 
@@ -762,15 +771,15 @@ export const vide = () => migrer({
 
 // Semaine d'exemple proposée au premier lancement : [début, fin, catégorie, titre, salle].
 const matin = [[6, 7.5, 'sommeil', 'Sommeil'], [7.5, 8, 'repas', 'Petit-déjeuner']];
-const soir = [[19, 20, 'repas', 'Dîner'], [20, 22, 'loisirs', 'Loisirs'], [22, 23, 'detente', 'Série'], [23, 25, 'sommeil', 'Sommeil']];
+const soir = [[19, 20, 'repas', 'Dîner'], [20, 22, 'loisirs', 'Loisirs'], [22, 23, 'loisirs', 'Série'], [23, 25, 'sommeil', 'Sommeil']];
 const EXEMPLE = [
   [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'Cours magistral', 'Amphi'], [10.5, 12.5, 'cours', 'TD', 'Salle A'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'TP', 'Salle info'], [15.5, 16, 'cours', 'Trajet'], [16, 18, 'travail', 'Révisions'], [18, 19, 'sport', 'Course à pied'], ...soir],
   [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'Cours magistral', 'Amphi'], [10.5, 12.5, 'cours', 'Langue vivante', 'Salle B'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'TD', 'Salle A'], [15.5, 16, 'cours', 'Trajet'], [16, 17.5, 'travail', 'TD'], [17.5, 19, 'loisirs', 'Lecture'], ...soir],
-  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'TP', 'Salle info'], [10.5, 12.5, 'travail', 'Travail perso'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Cours magistral', 'Amphi'], [15.5, 16, 'cours', 'Trajet'], [16, 17, 'detente', 'Pause'], [17, 18.5, 'sport', 'Renfo'], [18.5, 19, 'menage', 'Rangement'], ...soir],
+  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'TP', 'Salle info'], [10.5, 12.5, 'travail', 'Révisions'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Cours magistral', 'Amphi'], [15.5, 16, 'cours', 'Trajet'], [16, 17, 'loisirs', 'Pause'], [17, 18.5, 'sport', 'Renfo'], [18.5, 19, 'menage', 'Rangement'], ...soir],
   [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'TD', 'Salle A'], [10.5, 12.5, 'cours', 'Projet de groupe', 'Salle C'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Cours magistral', 'Amphi'], [15.5, 16, 'cours', 'Trajet'], [16, 18, 'travail', 'Révisions'], [18, 19, 'menage', 'Ménage'], ...soir],
-  [...matin, [8, 9.5, 'detente', 'Matinée calme'], [9.5, 10, 'cours', 'Trajet'], [10, 12, 'cours', 'Cours magistral', 'Amphi'], [12, 13, 'repas', 'Déjeuner'], [13, 14, 'cours', 'TD', 'Salle B'], [14, 14.5, 'cours', 'Trajet'], [14.5, 16, 'travail', 'Projet de groupe'], [16, 17, 'sport', 'Course à pied'], [17, 19, 'loisirs', 'Loisirs'], ...soir],
-  [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'menage', 'Courses et lessive'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 17, 'loisirs', 'Loisirs'], [17, 18, 'sport', 'Renfo'], [18, 19, 'detente', 'Pause'], ...soir],
-  [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'detente', 'Balade'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 16, 'travail', 'Révisions'], [16, 16.5, 'travail', 'Bilan de la semaine'], [16.5, 19, 'loisirs', 'Loisirs'], ...soir],
+  [...matin, [8, 9.5, 'loisirs', 'Matinée calme'], [9.5, 10, 'cours', 'Trajet'], [10, 12, 'cours', 'Cours magistral', 'Amphi'], [12, 13, 'repas', 'Déjeuner'], [13, 14, 'cours', 'TD', 'Salle B'], [14, 14.5, 'cours', 'Trajet'], [14.5, 16, 'travail', 'Projet de groupe'], [16, 17, 'sport', 'Course à pied'], [17, 19, 'loisirs', 'Loisirs'], ...soir],
+  [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'menage', 'Courses et lessive'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 17, 'loisirs', 'Loisirs'], [17, 18, 'sport', 'Renfo'], [18, 19, 'loisirs', 'Pause'], ...soir],
+  [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'loisirs', 'Balade'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 16, 'travail', 'Révisions'], [16, 16.5, 'travail', 'Bilan de la semaine'], [16.5, 19, 'loisirs', 'Loisirs'], ...soir],
 ];
 // La semaine d'exemple, en créneaux types marqués « exemple » : la construction par catégories les remplace.
 export const recurrentsExemple = () => recurrentsDepuis(slotsExemple(), true).recurrents;

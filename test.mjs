@@ -157,7 +157,7 @@ const avant = base.listes.length;
 const ajoute = L.appliquerProfil(base, prof, new Date(2026, 9, 23));
 assert.equal(base.taches.filter(t => t.titre === 'Ménage').length, 1);   // déjà là : pas en double
 assert.equal(base.listes.length, avant + 1);                              // « Films » ajoutée, « Courses » existait
-assert.ok(base.cats.some(c => c.nom === 'Travail') && base.cats.some(c => c.nom === 'Travail perso'));
+assert.ok(base.cats.some(c => c.nom === 'Travail') && base.cats.some(c => c.nom === 'Révisions'));
 const semType = base.types.at(-1);
 assert.ok(semType.slots.some(x => x.j === 5 && x.titre === 'Travail' && x.cat === base.cats.find(c => c.nom === 'Travail').id));
 assert.ok(semType.slots.some(x => x.j === 0 && x.titre === 'Déjeuner' && x.s === 12));  // le déjeuner coupe les cours
@@ -483,6 +483,16 @@ for (const fond of ['#F4F5F8', '#F3EAD9', '#FFE3EE', '#E9E3FF', '#DDF5E8', '#DDE
   assert.equal(L.poser(s2, { id: 'tp', j: 0, s: 10, e: 12, cat: 'cours', titre: 'TP' }).gene.id, 'td');
   assert.deepEqual(L.poser(s2, { id: 'pdj', j: 0, s: 10, e: 10.5, cat: 'repas', titre: 'Goûter' }).slots.map(x => [x.titre, x.s, x.e]), [['TD', 9, 10], ['Goûter', 10, 10.5], ['TD', 10.5, 11]]);
   assert.equal(L.poser([...s], { id: 'd2', j: 0, s: 12.5, e: 13.5, cat: 'repas' }).gene.id, 'dej');
+}
+
+// Plus de Détente : ses créneaux passent en Loisirs ; « Travail perso » s'appelle « Révisions ».
+{
+  const o = L.migrer({ cats: [{ id: 'detente', nom: 'Détente' }, { id: 'loisirs', nom: 'Loisirs' }, { id: 'travail', nom: 'Travail perso' }],
+    semaines: { '2026-10-26': { slots: [{ id: 'a', j: 0, s: 20, e: 22, cat: 'detente' }] } }, recurrents: [{ id: 'r', cat: 'detente', s: 22, e: 23, jours: [0] }] });
+  assert.deepEqual(o.cats.map(c => c.nom), ['Loisirs', 'Révisions']);
+  assert.equal(o.semaines['2026-10-26'].slots[0].cat, 'loisirs');
+  assert.equal(o.recurrents[0].cat, 'loisirs');
+  assert.ok(!L.CATS_DEPART.some(c => c.id === 'detente'));
 }
 
 console.log('ok');

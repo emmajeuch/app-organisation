@@ -105,7 +105,7 @@ const MODULES = [['taches', 'Tâches'], ['habitudes', 'Habitudes'], ['objectifs'
   ['notes', 'Notes libres'], ['sport', 'Sport (l’onglet)'], ['travail', 'Travail (job, extras)'], ['motivation', 'XP, niveaux, collection et succès'],
   ['stats', 'Statistiques (semaine, mois, année)'], ['compagnon', 'Compagnon']];
 const actif = m => m in data.modules ? data.modules[m] : m !== 'travail';
-// La catégorie Travail (distincte de « Travail perso », les révisions) n'existe que si le module est actif.
+// La catégorie Travail (distincte de « Révisions ») n'existe que si le module est actif.
 function catTravail() {
   let c = data.cats.find(x => x.id === 'job') || data.cats.find(x => x.nom.trim().toLowerCase() === 'travail');
   if (!c && actif('travail')) { c = { id: 'job', nom: 'Travail', couleur: '#8C6A4F' }; data.cats.push(c); sauver(); }
@@ -194,13 +194,14 @@ function feter() {
 const toast = $('#toast');
 let tt;
 // Le message reste assez longtemps pour être lu : 2,2 s, plus pour un long message (une erreur à corriger, par exemple).
-function dire(msg) { toast.textContent = msg; toast.hidden = false; clearTimeout(tt); tt = setTimeout(() => toast.hidden = true, Math.max(2200, msg.length * 60)); }
+function dire(msg) { const ici = dlg.open ? dlg : document.body; if (toast.parentNode !== ici) ici.append(toast); toast.textContent = msg; toast.hidden = false; clearTimeout(tt); tt = setTimeout(() => toast.hidden = true, Math.max(2200, msg.length * 60)); }
 
 const dlg = $('#dlg');
 // Ouvre une fenêtre du bas. onChoix(choix, champs) ; renvoyer false la garde ouverte.
 // collant : ne se ferme pas d'un tap à côté (séance en cours).
 function ouvrirDlg(html, onChoix, { collant = false } = {}) {
   if (dlg.open) dlg.close();
+  if (toast.parentNode === dlg) document.body.append(toast);   // le message ne part pas avec l'ancien contenu
   dlg.dataset.collant = collant ? '1' : '';
   dlg.innerHTML = html;
   const form = dlg.querySelector('form');
@@ -390,6 +391,9 @@ function vueSemaine() {
 const nouveauSlot = (j, s, e) => ({ id: L.uid(), j, s, e, cat: ui.derniereCat || data.cats[0]?.id, titre: '', salle: '', affaires: '', notes: '', fait: null, neuf: true });
 
 const occupe = x => `Ce moment est déjà pris : ${x.titre} (${L.hhmm(x.s)} – ${L.hhmm(x.e)}). Déplace-le ou raccourcis-le d’abord.`;
+// Ni lieu ni affaires à prendre pour dormir, manger ou faire le ménage (V1.10.10).
+const SANS_LIEU = ['sommeil', 'repas', 'menage'];
+const suivreLieu = () => dlg.querySelectorAll('input[name="cat"]').forEach(r => r.addEventListener('change', () => { const z = dlg.querySelector('.zone-lieu'); if (z) z.hidden = SANS_LIEU.includes(r.value); }));
 function editerSlot(slot, cle) {
   const neuf = !!slot.neuf;
   const sem = semaineDe(cle), rec = !neuf && L.recurrentDe(data, slot.src);
@@ -405,8 +409,8 @@ function editerSlot(slot, cle) {
       <label class="champ">Fin${heure('e', slot.e)}</label>
     </div>
     <label class="champ">Finit le<select name="jf"><option value="">même jour</option>${JOURS.map((n, j) => `<option value="${j}">${n}</option>`).join('')}</select></label>
-    <label class="champ">Salle, bâtiment<input name="salle" value="${esc(slot.salle)}" autocomplete="off"></label>
-    <label class="champ">Affaires à prendre<input name="affaires" value="${esc(slot.affaires)}" autocomplete="off"></label>
+    <div class="zone-lieu" ${SANS_LIEU.includes(slot.cat) ? 'hidden' : ''}><label class="champ">Lieu<input name="salle" value="${esc(slot.salle)}" autocomplete="off"></label>
+    <label class="champ">Affaires à prendre<input name="affaires" value="${esc(slot.affaires)}" autocomplete="off"></label></div>
     <label class="champ">Notes<textarea name="notes">${esc(slot.notes)}</textarea></label>
     ${liees.length ? `<div class="champ">Notes liées<div class="liens">${liees.map(n => `<button type="button" data-act="note" data-id="${n.id}">${esc(n.titre || 'Sans titre')}</button>`).join('')}</div></div>` : ''}
     <div class="champ" id="zone-sport" ${slot.cat === 'sport' ? '' : 'hidden'}>
@@ -482,6 +486,7 @@ function editerSlot(slot, cle) {
     maj();
   });
   dlg.querySelectorAll('input[name="cat"]').forEach(r => r.addEventListener('change', () => { $('#zone-sport').hidden = r.value !== 'sport'; $('#zone-travail').hidden = r.value !== catTravail()?.id; }));
+  suivreLieu();
 }
 
 // Une tâche se planifie en créneau ; valider le créneau coche la tâche.
@@ -535,14 +540,9 @@ function editerRecurrent(r, jt = null) {
     <div class="cats" role="radiogroup" aria-label="Catégorie">${data.cats.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${c.id === v.cat ? 'checked' : ''}><span style="${teinte(c.id)}">${esc(c.nom)}</span></label>`).join('')}</div>
     <div class="champ">Jours${joursChoix('jours', v.jours)}${neuf ? '' : '<p class="aide">Un jour décoché garde son réglage d’avant.</p>'}</div>
     <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Début<input type="time" name="s" value="${L.hhmm(v.s)}" step="300" required></label><label class="champ">Fin<input type="time" name="e" value="${L.hhmm(v.e)}" step="300" required></label></div>
-    <label class="champ">Salle, lieu<input name="salle" value="${esc(v.salle)}" autocomplete="off"></label>
-    <label class="champ">Affaires à prendre<input name="affaires" value="${esc(v.affaires)}" autocomplete="off"></label>
+    <div class="zone-lieu" ${SANS_LIEU.includes(v.cat) ? 'hidden' : ''}><label class="champ">Lieu<input name="salle" value="${esc(v.salle)}" autocomplete="off"></label>
+    <label class="champ">Affaires à prendre<input name="affaires" value="${esc(v.affaires)}" autocomplete="off"></label></div>
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
-    if (choix === 'suppr' && jt !== null && r.jours.length > 1) {
-      r.jours = r.jours.filter(j => j !== jt);
-      L.regenerer(data); L.propager(data, [r.id]);
-      maj(); dire(`Retiré du ${JOURS[jt]} type`); return;
-    }
     if (choix === 'suppr') {
       data.recurrents = data.recurrents.filter(x => x !== r);
       L.regenerer(data); L.propager(data, [r.id]);
@@ -555,6 +555,9 @@ function editerRecurrent(r, jt = null) {
     if (!c.jours.length) { dire('Coche au moins un jour.'); return false; }
     // Un cours peut passer sur le déjeuner (il se coupera autour) ; deux créneaux types ordinaires, ou deux repas, non.
     const gene = data.recurrents.find(y => y !== r && y.jours.some(j => c.jours.includes(j)) && y.s < c.e && y.e > c.s && L.GARDES.includes(y.cat) === L.GARDES.includes(c.cat));
+    // Entièrement sous le sommeil ou un repas, il ne resterait rien à poser.
+    const couvert = !L.GARDES.includes(c.cat) && data.recurrents.find(y => y !== r && L.GARDES.includes(y.cat) && y.jours.some(j => c.jours.includes(j)) && y.s <= c.s && y.e >= c.e);
+    if (couvert) { dire(`Ce moment est pris par « ${couvert.titre} » (${L.hhmm(couvert.s)} – ${L.hhmm(couvert.e)}, ${L.joursTexte(couvert.jours.filter(j => c.jours.includes(j)))}).`); return false; }
     if (gene) { dire(`Ce moment est déjà pris par le créneau type « ${gene.titre} » (${L.hhmm(gene.s)} – ${L.hhmm(gene.e)}, ${L.joursTexte(gene.jours.filter(j => c.jours.includes(j)))}).`); return false; }
     let x = r;
     const gardes = neuf ? [] : r.jours.filter(j => !c.jours.includes(j));
@@ -565,6 +568,7 @@ function editerRecurrent(r, jt = null) {
     noterUsage('creneau-type');
     maj(); dire(neuf ? 'Créneau type ajouté' : 'Créneau type modifié');
   });
+  suivreLieu();
 }
 
 // Gestes sur la grille : appui long (320 ms) pour remplir, déplacer ou étirer ; sinon le doigt fait défiler.
@@ -1722,7 +1726,7 @@ function construire(etape = 0, r = {}) {
       <p class="aide">Pas de sport : l’onglet Sport disparaît (tu pourras le remettre dans Notes › Modules).</p>`,
       lire: f => f.get('oui') === 'non' ? { non: true, jours: [] } : f.get('memes') ? { nom: f.get('nom').trim(), jours: f.getAll('jours').map(Number), heure: L.versHeure(f.get('heure'), 4), duree: +f.get('duree') }
         : { nom: f.get('nom').trim(), parJour: lirePJ(f, [['heure']], true, {}), duree: +f.get('duree') } },
-    { cle: null, titre: 'Le reste', corps: `<p><b>Travail perso</b> (révisions), <b>loisirs</b>, <b>détente</b>, <b>ménage</b> : ajoute-les au doigt dans Semaine, ou en créneaux types dans Semaine › Modifier.</p>
+    { cle: null, titre: 'Le reste', corps: `<p><b>Révisions</b>, <b>loisirs</b>, <b>ménage</b> : ajoute-les au doigt dans Semaine, ou en créneaux types dans Semaine › Modifier.</p>
       <p class="aide">Une tâche qui revient (lessive, poubelles) ? Bouton + › Tâche, puis « Revient chaque semaine ».</p>` },
   ];
   const e = ETAPES[etape], dernier = etape === ETAPES.length - 1;
