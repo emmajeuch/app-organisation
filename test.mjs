@@ -513,7 +513,25 @@ for (const fond of ['#F4F5F8', '#F3EAD9', '#FFE3EE', '#E9E3FF', '#DDF5E8', '#DDE
   const r = L.poser(s, { id: 'ev', j: 0, s: 10, e: 15, cat: 'loisirs', titre: 'Sortie' }).slots.filter(x => x.titre === 'Sortie');
   assert.equal(r.length, 2);
   assert.ok(r.every(x => x.groupe === 'ev'));
-  assert.equal(L.poser(s, { id: 'ev', j: 0, s: 14, e: 15, cat: 'loisirs', titre: 'Sortie', groupe: 'ev' }).slots.find(x => x.titre === 'Sortie').groupe, undefined);
+}
+
+// Déplacer le dîner type : il reste là le samedi malgré l'événement du week-end, qui se réarrange autour.
+{
+  const d = L.vide();
+  const lun = L.isoJour(L.lundiDe(L.ajouterJours(new Date(), 7)));
+  d.recurrents = [{ id: 'din', titre: 'Dîner', cat: 'repas', s: 19, e: 20, jours: [5, 6] }];
+  d.semaines[lun] = { type: 'base', slots: [] };
+  L.propager(d, ['din']);
+  // L'événement du samedi 16 h au dimanche 17 h, coupé autour des deux dîners (ici, il finit avant celui du dimanche).
+  const ev = { id: 'ev', j: 5, s: 16, e: 17, cat: 'loisirs', titre: 'Week-end' };
+  const { morceaux } = L.morceauxMultiJours(d.semaines[lun].slots, ev, 6, [6, 25]);
+  morceaux.forEach((m, i) => { d.semaines[lun].slots = L.placer(d.semaines[lun].slots, L.morceau(ev, m, i, morceaux.length)); });
+  d.recurrents[0].s = 20; d.recurrents[0].e = 21;
+  L.propager(d, ['din']);
+  const sl = d.semaines[lun].slots;
+  assert.deepEqual(sl.filter(x => x.titre === 'Dîner').map(x => [x.j, x.s, x.e]), [[5, 20, 21], [6, 20, 21]]);
+  assert.deepEqual(sl.filter(x => x.titre === 'Week-end').map(x => [x.j, x.s, x.e]), [[5, 16, 20], [5, 21, 25], [6, 6, 17]]);
+  assert.ok(sl.filter(x => x.titre === 'Week-end').every(x => x.groupe === 'ev'));
 }
 
 console.log('ok');
