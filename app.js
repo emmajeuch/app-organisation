@@ -100,10 +100,7 @@ const objectifs = (horizon, per) => data.objectifs.filter(o => o.horizon === hor
 const tagsDe = s => [...new Set(String(s).split(',').map(t => t.trim()).filter(Boolean))];
 const exo = id => data.exos.find(e => e.id === id);
 
-// Modules masquables (Profil › Réglages › Modules) : masqués, ils gardent leurs données.
-const MODULES = [['taches', 'Tâches'], ['habitudes', 'Habitudes'], ['objectifs', 'Objectifs'], ['listes', 'Listes'],
-  ['notes', 'Notes libres'], ['sport', 'Sport (l’onglet)'], ['travail', 'Travail (job, extras)'], ['motivation', 'XP, niveaux, collection et succès'],
-  ['stats', 'Statistiques (semaine, mois, année)'], ['compagnon', 'Compagnon']];
+// Modules : il n'y a plus de réglage (V1.10.15) ; seuls le sport et le travail suivent le profil (Régler par catégories).
 const actif = m => m in data.modules ? data.modules[m] : m !== 'travail';
 // La catégorie Travail (distincte de « Révisions ») n'existe que si le module est actif.
 function catTravail() {
@@ -813,10 +810,6 @@ function corpsNotes() {
   if (actif('listes')) h += `<div class="sec"><h2>Listes <span><button class="plus-sec" data-act="ajouter" data-id="liste" aria-label="Ajouter une liste">${I.plus}</button></span></h2>${data.listes.filter(garde).map(listeHtml).join('') || '<p class="vide">Aucune liste. Ajoute-en avec le + à côté du titre.</p>'}</div>`;
   const notes = data.notes.filter(garde).sort((a, b) => (b.epingle ? 1 : 0) - (a.epingle ? 1 : 0) || (b.maj || 0) - (a.maj || 0));
   if (actif('notes')) h += `<div class="sec"><h2>Notes libres <span><button class="plus-sec" data-act="ajouter" data-id="note" aria-label="Ajouter une note">${I.plus}</button></span></h2>${notes.length ? `<div class="notes">${notes.map(noteHtml).join('')}</div>` : '<p class="vide">Aucune note. Ajoute-en avec le + à côté du titre.</p>'}</div>`;
-  // Les modules : ce que l'app affiche (déplacés ici depuis les Réglages, retour des testeurs, 24/10).
-  h += `<div class="sec">${groupe('modules', 'Modules', `${MODULES.filter(([id]) => actif(id)).length} sur ${MODULES.length} affichés · ce que l’app montre`,
-    `<ul class="list">${MODULES.map(([id, nom]) => `<li><label class="coche" style="flex:1"><input type="checkbox" class="chk" data-act="module" data-id="${id}" ${actif(id) ? 'checked' : ''}>${nom}</label></li>`).join('')}</ul>
-     <p class="aide">Un module masqué disparaît de l’app, mais ses données restent là : le réactiver les fait revenir. Sport masqué : l’onglet Sport disparaît.</p>`)}</div>`;
   el.innerHTML = h;
 }
 
@@ -1775,7 +1768,7 @@ function construire(etape = 0, r = {}) {
       ${memes('sport', `<div class="champ">Les jours d’entraînement${joursChoix('jours', sp.jours ?? [])}</div>
       <label class="champ">À${hm('heure', sp.heure ?? 18)}</label>`, [['heure', 'À', () => 18]], { jours: sp.jours ?? [] }, true)}
       ${deux('', `<label class="champ">Durée<select name="duree">${[1, 1.5, 2, 2.5, 3].map(d => `<option value="${d}" ${d === (sp.duree ?? 1.5) ? 'selected' : ''}>${L.heures(d)}</option>`).join('')}</select></label>`)}</div>
-      <p class="aide">Pas de sport : l’onglet Sport disparaît (tu pourras le remettre dans Notes › Modules).</p>`,
+      <p class="aide">Pas de sport : l’onglet Sport disparaît (réponds Oui ici plus tard pour le remettre).</p>`,
       lire: f => f.get('oui') === 'non' ? { non: true, jours: [] } : f.get('memes') ? { nom: f.get('nom').trim(), jours: f.getAll('jours').map(Number), heure: L.versHeure(f.get('heure'), 4), duree: +f.get('duree') }
         : { nom: f.get('nom').trim(), parJour: lirePJ(f, [['heure']], true, {}), duree: +f.get('duree') } },
     { cle: null, titre: 'Le reste', corps: `<p><b>Révisions</b>, <b>loisirs</b>, <b>ménage</b> : ajoute-les au doigt dans Semaine, ou en créneaux types dans Semaine › Modifier.</p>
@@ -1946,7 +1939,6 @@ function editerObjectif(o) {
 }
 
 // Un onglet dont tous les modules sont masqués disparaît de la barre.
-// Notes reste toujours là : c'est là que se règlent les modules.
 const ONGLETS_MODULES = { sport: ['sport'] };
 const ongletVisible = v => !ONGLETS_MODULES[v] || ONGLETS_MODULES[v].some(actif);
 // Une pastille sur Profil tant qu'un tirage attend.
@@ -2123,7 +2115,7 @@ document.addEventListener('click', e => {
     }
     case 'editer-habitude': return editerHabitude(data.habitudes.find(x => x.id === id));
     case 'editer-objectif': return editerObjectif(data.objectifs.find(x => x.id === id));
-    case 'masquer-sport': data.modules.sport = false; maj(); return dire('Onglet Sport masqué. Pour le remettre : Notes › Modules.');
+    case 'masquer-sport': data.modules.sport = false; maj(); return dire('Onglet Sport masqué. Pour le remettre : Profil › ⚙ › Régler par catégories › Sport.');
     case 'seance': return commencerSeance(el.dataset.seance || (trouverSlot(el.dataset.slot)?.slot.seance), el.dataset.slot || null);
     case 'seance-type': return editerSeanceType(data.seances.find(s => s.id === id));
     case 'exo': return editerExo(exo(id));
@@ -2196,7 +2188,6 @@ document.addEventListener('change', e => {
   if (act === 'son') data.son = t.checked;
   if (act === 'rappel') data.notifs[id] = t.type === 'checkbox' ? t.checked : +t.value;
   if (act === 'taux') data.taux = Math.max(0, parseFloat(t.value.replace(',', '.')) || 0);
-  if (act === 'module') data.modules[id] = t.checked;
   if (act === 'prog-exo') ui.progExo = t.value;
   if (act === 'repos') data.repos = +t.value;
   if (act === 'cat-couleur') cat(id).couleur = t.value;

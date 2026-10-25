@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.14';
+export const VERSION = '1.10.15';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -541,6 +541,8 @@ export function migrer(o) {
       regenerer(o);
     }
   }
+  // V1.10.15 : plus de réglage Modules ; ce qui avait été masqué revient, sauf le sport et le travail, qui suivent le profil.
+  if (o.modules && typeof o.modules === 'object') o.modules = Object.fromEntries(Object.entries(o.modules).filter(([k]) => k === 'sport' || k === 'travail'));
   // V1.10.10 : plus de catégorie Détente (ses créneaux passent en Loisirs) ; « Travail perso » s'appelle « Révisions ».
   if (Array.isArray(o.cats) && o.cats.some(c => c.id === 'detente')) {
     o.cats = o.cats.filter(c => c.id !== 'detente');
