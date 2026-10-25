@@ -208,11 +208,15 @@ function feterNiveau(n) {
   navigator.vibrate?.([30, 60, 30, 60, 80]);
   reagirBalade('fete');
   const c = monCompagnon();
-  ouvrirDlg(`<form class="niveau-fete">${c ? `<div class="niveau-compagnon">${compagnonFig(c, data.compagnon.stade || 0)}</div>` : ''}<div class="badge-niveau"><small>Niveau</small><b>${n}</b></div>
-    <h2>Niveau ${n} !</h2><p>Bravo, tu montes d’un niveau. Un tirage t’attend : une nouvelle créature pour ta collection.</p>
-    <button type="button" class="btn plein" data-choix="tirage">Ouvrir mon tirage</button><button type="button" class="btn gris" data-fermer>Plus tard</button></form>`, choix => {
-    if (choix === 'tirage') { setTimeout(ouvrirTirage); }
-  });
+  // V1.10.17 : plus de fenêtre à fermer ; la fête s'affiche au milieu de l'écran et repart seule. La toucher ouvre le tirage.
+  const el = Object.assign(document.createElement('button'), { type: 'button', className: 'niveau-fete' });
+  el.setAttribute('aria-label', `Niveau ${n} ! Ouvrir le tirage`);
+  el.innerHTML = `${c ? `<div class="niveau-compagnon">${compagnonFig(c, data.compagnon.stade || 0)}</div>` : ''}<div class="badge-niveau"><small>Niveau</small><b>${n}</b></div>
+    <b class="niveau-titre">Niveau ${n} !</b><small class="niveau-aide">Un tirage t’attend · touche pour l’ouvrir</small>`;
+  const fermer = () => { el.classList.add('part'); setTimeout(() => el.remove(), 450); };
+  el.addEventListener('click', () => { fermer(); ouvrirTirage(); });
+  (dlg.open ? dlg : document.body).append(el);
+  setTimeout(fermer, 4500);
   feter(); setTimeout(feter, 700);
   // Une vraie notification aussi, si les notifications sont autorisées (elle reste dans le centre de notifications).
   try { if (Notification.permission === 'granted') navigator.serviceWorker.ready.then(r => r.showNotification(`Niveau ${n} !`, { body: 'Un tirage t’attend dans Profil.', icon: 'icone-180.png', tag: 'niveau-' + n })); } catch {}

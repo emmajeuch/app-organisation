@@ -587,14 +587,15 @@ dialog .choix-couleur { padding: 14px 14px 4px; }
 dialog .choix-couleur .nuances { height: 200px; }
 
 /* V1.10.11 : la fête du passage de niveau */
-.niveau-fete { align-items: center; text-align: center; }
+.niveau-fete { position: fixed; left: 50%; top: 45%; z-index: 35; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 18px 26px 20px; border-radius: 28px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: var(--shadow); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); animation: fete-bulle .5s cubic-bezier(.3, 1.6, .5, 1); }
+.niveau-fete.part { animation: fete-part .45s ease-in forwards; }
+.niveau-titre { font-size: 26px; margin-top: 6px; }
+.niveau-aide { color: var(--ink-2); }
 .badge-niveau { display: grid; place-items: center; width: 132px; height: 132px; margin: 6px auto 0; border-radius: 50%; background: var(--flamme); color: #fff;
   box-shadow: 0 0 0 8px color-mix(in srgb, var(--flamme) 25%, transparent), 0 10px 40px color-mix(in srgb, var(--flamme) 60%, transparent);
   animation: badge-arrive .9s cubic-bezier(.3, 1.6, .5, 1), badge-brille 1.8s ease-in-out .9s infinite; }
 .badge-niveau small { font-weight: 800; letter-spacing: .1em; text-transform: uppercase; font-size: 12px; margin-bottom: -18px; }
 .badge-niveau b { font-family: var(--f-num); font-size: 64px; line-height: 1; }
-.niveau-fete h2 { font-size: 26px; margin: 8px 0 0; animation: apparait .5s ease-out .3s both; }
-.niveau-fete .btn { width: 100%; }
 @keyframes badge-arrive { 0% { transform: scale(0) rotate(-200deg); } 60% { transform: scale(1.25) rotate(15deg); } 100% { transform: scale(1) rotate(0); } }
 @keyframes badge-brille { 50% { transform: scale(1.06); box-shadow: 0 0 0 16px color-mix(in srgb, var(--flamme) 15%, transparent), 0 10px 60px color-mix(in srgb, var(--flamme) 80%, transparent); } }
 
