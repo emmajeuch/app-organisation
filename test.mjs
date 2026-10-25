@@ -631,4 +631,14 @@ assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune'
   assert.ok(vus.every(v => v === base + gain), 'toujours le même total : ' + vus);
 }
 
+// Habitude cochée et décochée en boucle : 5 XP une seule fois pour ce jour-là.
+{
+  const d = L.vide(), hb = { id: 'h', nom: 'Lire', freq: 'jour', faits: [], horaires: [] };
+  d.habitudes.push(hb);
+  const t = () => { L.retenirXp(d); return L.stats(d, new Date()).sources.habitudes; };
+  const vus = [];
+  for (let k = 0; k < 7; k++) { hb.faits = hb.faits.length ? [] : ['2026-10-25']; vus.push(t()); }
+  assert.ok(vus.every(v => v === L.XP.habitude), 'habitude : ' + vus);
+}
+
 console.log('ok');

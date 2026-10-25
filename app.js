@@ -273,6 +273,7 @@ dlg.addEventListener('click', e => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.matches('[data-retirer]')) b.closest('[data-ligne]').remove();
+  if (b.matches('[data-vider]')) { const c = dlg.querySelector(`[name="${b.dataset.vider}"]`); if (c) { c.value = ''; c.dispatchEvent(new Event('input', { bubbles: true })); } }
   if (b.matches('[data-fait]')) {
     const on = b.getAttribute('aria-pressed') !== 'true';
     b.setAttribute('aria-pressed', on);
@@ -875,6 +876,7 @@ function editerTache(t, defaut = {}) {
       <label class="champ">${L.repDe(v).length ? 'Prochaine fois' : 'Échéance'}<input type="date" name="echeance" value="${v.echeance || ''}"></label>
       <label class="champ">Heure (facultatif)<input type="time" name="heure" step="300" value="${typeof v.heure === 'number' ? L.hhmm(v.heure) : ''}"></label>
     </div>
+    <div class="rangee"><button type="button" class="btn gris petit" data-vider="echeance">Retirer l’échéance</button><button type="button" class="btn gris petit" data-vider="heure">Retirer l’heure</button></div>
     ${horairesChamp('Revient chaque semaine', L.repDe(v), 'Plusieurs jours possibles, chacun avec son heure. Cochée, la tâche passe toute seule à la fois suivante.')}
     <div class="champ">Priorité${radios('priorite', { 1: 'Haute', 2: 'Normale', 3: 'Basse' }, v.priorite || 2)}</div>
     ${data.profil.etudes === false && !v.fac ? '' : `<label class="coche"><input type="checkbox" class="chk" name="fac" ${v.fac ? 'checked' : ''}>Rendu ou partiel de fac (compte à rebours)</label>`}

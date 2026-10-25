@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.24';
+export const VERSION = '1.10.25';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -346,7 +346,7 @@ const SCHEMA = {
   seances: [{ id: ID, nom: TXT, sport: TXT, exos: [{ exo: ID, series: ENTRE(1, 50), cible: NUM_OU_VIDE }] }],
   journal: [{ id: ID, date: DATE, seance: ID, nom: TXT, slot: ID, ressenti: ENTRE(1, 5), notes: TXT,
     series: [{ exo: ID, sets: [{ reps: NUM, sec: NUM, km: NUM, kg: NUM }] }] }],
-  habitudes: [{ id: ID, nom: TXT, freq: v => v === 'jour' ? v : ENTRE(1, 6)(v), faits: [DATE], horaires: [{ j: ENTRE(0, 6), h: HEURE_OU_RIEN }], heure: ENTRE(0, 26), duree: ENTRE(.25, 4), jours: [ENTRE(0, 6)] }],
+  habitudes: [{ id: ID, nom: TXT, freq: v => v === 'jour' ? v : ENTRE(1, 6)(v), faits: [DATE], xpJours: [DATE], horaires: [{ j: ENTRE(0, 6), h: HEURE_OU_RIEN }], heure: ENTRE(0, 26), duree: ENTRE(.25, 4), jours: [ENTRE(0, 6)] }],
   tirages: [TXT], collection: [{ id: ID, date: DATE, raison: TXT, sport: TXT }],
   bilans: { '*': { date: DATE, ailleurs: ENTRE(0, 7), ailleursNote: TXT, comptent: ENTRE(0, 7), validees: TXT, usage: { '*': NUM } } },
   usage: { '*': { '*': NUM } }, modules: { '*': BOOL },
@@ -720,6 +720,7 @@ const completionsXp = t => repDe(t).length ? completions(t) : (t.xpDonne || comp
 export function retenirXp(data) {
   for (const s of Object.values(data.semaines)) for (const x of s.slots) if (x.fait) x.xpDonne = true;
   for (const o of data.objectifs) if (o.fait) o.xpDonne = true;
+  for (const h of data.habitudes) h.xpJours = [...new Set([...(h.xpJours || []), ...h.faits])].sort();   // V1.10.25
   for (const t of data.taches) if (!repDe(t).length && completions(t) > 0) t.xpDonne = true;
   // Le bonus d'une journée validée, lui aussi une seule fois par jour.
   const vus = new Set([...(data.joursBonus || []), ...joursValides(data)]);
@@ -738,7 +739,7 @@ export function stats(data, auj) {
     creneaux: slots.filter(x => x.fait || x.xpDonne).length * XP.creneau,
     taches: data.taches.reduce((k, t) => k + completionsXp(t) * (important(t) ? XP.tacheImportante : XP.tache), 0),
     sport: (Object.values(data.journal.reduce((n, e) => ({ ...n, [e.date]: (n[e.date] || 0) + 1 }), {})).reduce((k, n) => k + Math.min(n, 2), 0) + club) * XP.seance,
-    habitudes: data.habitudes.reduce((k, h) => k + h.faits.length, 0) * XP.habitude,
+    habitudes: data.habitudes.reduce((k, h) => k + new Set([...h.faits, ...(h.xpJours || [])]).size, 0) * XP.habitude,
     objectifs: data.objectifs.filter(o => o.fait || o.xpDonne).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
     bonus: new Set([...valides, ...(data.joursBonus || [])]).size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,
   };
