@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.22';
+export const VERSION = '1.10.23';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -338,9 +338,9 @@ const SCHEMA = {
   semaines: { '*': { type: ID, slots: [SLOT] } },
   notes: [{ id: ID, titre: TXT, texte: TXT, couleur: TXT, epingle: BOOL, tags: [TXT], lien: TXT, maj: NUM }],
   listes: [{ id: ID, nom: TXT, tags: [TXT], items: [{ id: ID, txt: TXT, fait: BOOL }] }],
-  objectifs: [{ id: ID, txt: TXT, horizon: UN_DE('semaine', 'mois', 'annee'), periode: DATE, fait: BOOL, parent: ID }],
+  objectifs: [{ id: ID, txt: TXT, horizon: UN_DE('semaine', 'mois', 'annee'), periode: DATE, fait: BOOL, parent: ID, cree: NUM, rapide: BOOL }],
   taches: [{ id: ID, titre: TXT, echeance: DATE, heure: ENTRE(0, 26), priorite: UN_DE(1, 2, 3), fac: BOOL, travail: BOOL, recurrence: ENTRE(0, 6), rep: [{ j: ENTRE(0, 6), h: HEURE_OU_RIEN }], projet: ID,
-    sous: [{ txt: TXT, fait: BOOL }], fait: BOOL, faitLe: DATE, faits: [DATE] }],
+    sous: [{ txt: TXT, fait: BOOL }], fait: BOOL, faitLe: DATE, faits: [DATE], cree: NUM, rapides: ENTRE(0, 10000) }],
   projets: [{ id: ID, nom: TXT, type: UN_DE('projet', 'divertissement'), statut: UN_DE('idee', 'en-cours', 'pause', 'termine'), etape: TXT, notes: TXT }],
   exos: [{ id: ID, nom: TXT, type: UN_DE('reps', 'duree', 'distance', 'charge'), notes: TXT, sport: TXT }],
   seances: [{ id: ID, nom: TXT, sport: TXT, exos: [{ exo: ID, series: ENTRE(1, 50), cible: NUM_OU_VIDE }] }],
@@ -621,11 +621,12 @@ export const cochable = (t, auj) => !repDe(t).length || !t.echeance || t.echeanc
 export function cocher(t, auj) {
   if (!cochable(t, auj)) return { ...t };
   const faits = [...(t.faits || []), isoJour(auj)], rep = repDe(t);
-  if (!rep.length) return { ...t, fait: true, faitLe: isoJour(auj), faits };
+  const rapides = (t.rapides || 0) + (tropTot(t, auj.getTime()) ? 1 : 0);
+  if (!rep.length) return { ...t, fait: true, faitLe: isoJour(auj), faits, rapides };
   const cur = [t.echeance || isoJour(auj), t.echeance ? t.heure ?? -1 : -1], now = [isoJour(auj), auj.getHours() + auj.getMinutes() / 60];
   const [iso, h] = cur[0] > now[0] || (cur[0] === now[0] && cur[1] >= now[1]) ? cur : now;
   const n = prochaineOccurrence(rep, iso, h);
-  return { ...t, fait: false, faits, echeance: n.iso, heure: n.h, sous: (t.sous || []).map(s => ({ ...s, fait: false })) };
+  return { ...t, fait: false, faits, rapides, echeance: n.iso, heure: n.h, sous: (t.sous || []).map(s => ({ ...s, fait: false })) };
 }
 
 // À faire bientôt : en retard, aujourd'hui, ou dans les 7 jours ; puis par date et priorité.
@@ -713,6 +714,10 @@ export function niveau(xp) {
 
 export const XP = { creneau: 5, tache: 20, tacheImportante: 30, seance: 30, habitude: 5, objectif: { semaine: 25, mois: 60, annee: 150 }, projet: 100, jour: 15, bilan: 50 };
 const completions = t => t.faits?.length || (t.fait ? 1 : 0);
+// V1.10.23 : contre le spam, une tâche ou un objectif coché moins de 5 minutes après sa création ne rapporte pas d'XP.
+export const ANTI_SPAM = 5 * 60 * 1000;
+export const tropTot = (x, maintenant = Date.now()) => typeof x.cree === 'number' && maintenant - x.cree < ANTI_SPAM;
+const completionsXp = t => Math.max(0, completions(t) - (t.rapides || 0));
 const important = t => t.priorite === 1 || t.fac;
 
 export function stats(data, auj) {
@@ -724,10 +729,10 @@ export function stats(data, auj) {
   const projets = data.projets.filter(p => p.statut === 'termine').length;
   const sources = {
     creneaux: slots.filter(x => x.fait).length * XP.creneau,
-    taches: data.taches.reduce((k, t) => k + completions(t) * (important(t) ? XP.tacheImportante : XP.tache), 0),
+    taches: data.taches.reduce((k, t) => k + completionsXp(t) * (important(t) ? XP.tacheImportante : XP.tache), 0),
     sport: (Object.values(data.journal.reduce((n, e) => ({ ...n, [e.date]: (n[e.date] || 0) + 1 }), {})).reduce((k, n) => k + Math.min(n, 2), 0) + club) * XP.seance,
     habitudes: data.habitudes.reduce((k, h) => k + h.faits.length, 0) * XP.habitude,
-    objectifs: data.objectifs.filter(o => o.fait).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
+    objectifs: data.objectifs.filter(o => o.fait && !o.rapide).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
     bonus: valides.size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,
   };
   // V1.10.19 : un niveau gagné reste. Quand décocher ferait passer sous le plus haut niveau atteint (niveauVu), une réserve
@@ -740,7 +745,7 @@ export function stats(data, auj) {
     xpGarde,
     sources, total, niveau: niveau(total), ...se, valides, joursValides: valides.size,
     semainesCompletes: cles.filter(c => joursValidesSemaine(valides, c) === 7).length,
-    seances: data.journal.length + club, taches: data.taches.reduce((k, t) => k + completions(t), 0), projets,
+    seances: data.journal.length + club, taches: data.taches.reduce((k, t) => k + completionsXp(t), 0), projets,
     objSemaine: data.objectifs.filter(o => o.fait && o.horizon === 'semaine').length,
     habitudeMax: Math.max(0, ...data.habitudes.map(h => h.faits.length)), bilans: Object.keys(data.bilans).length,
     entrainements: club, competitions: (data.competitions || []).filter(c => c.resultat).length, records: recordsBattus(data),

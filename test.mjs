@@ -613,4 +613,18 @@ assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune'
   assert.equal(o.notifs.actif, false);   // jamais l'abonnement d'un autre téléphone
 }
 
+// Contre le spam : créer puis cocher tout de suite ne rapporte rien ; après 5 minutes, si.
+{
+  const d = L.vide(), maintenant = new Date();
+  const vite = L.cocher({ id: 'a', titre: 'Spam', cree: maintenant.getTime() - 10_000, faits: [], priorite: 2, sous: [] }, maintenant);
+  const vrai = L.cocher({ id: 'b', titre: 'Vraie', cree: maintenant.getTime() - 6 * 60_000, faits: [], priorite: 2, sous: [] }, maintenant);
+  const ancienne = L.cocher({ id: 'c', titre: 'Sans date de création', faits: [], priorite: 2, sous: [] }, maintenant);
+  d.taches.push(vite, vrai, ancienne);
+  d.objectifs.push({ id: 'o1', txt: 'Spam', horizon: 'semaine', fait: true, rapide: true }, { id: 'o2', txt: 'Vrai', horizon: 'semaine', fait: true });
+  const st = L.stats(d, maintenant);
+  assert.equal(st.sources.taches, 2 * L.XP.tache);
+  assert.equal(st.sources.objectifs, L.XP.objectif.semaine);
+  assert.equal(st.taches, 2);   // le succès « 10 tâches faites » ne compte pas le spam non plus
+}
+
 console.log('ok');
