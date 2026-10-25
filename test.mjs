@@ -85,8 +85,8 @@ assert.equal(st.sources.taches, 2 * 20 + 30);
 assert.equal(st.sources.bonus, 15);               // le lundi 19 est validé, pas le mardi
 assert.equal(st.joursValides, 1);
 // Un tirage de bienvenue tant que la collection est vide, un par succès (V1.10.3), un par tâche de fac faite.
-assert.deepEqual(L.droitsTirage(mo, st), ['bienvenue', 'succes:Première journée validée', 'tache:f']);
-mo.tirages.push('bienvenue', 'succes:Première journée validée', 'tache:f');
+assert.deepEqual(L.droitsTirage(mo, st), ['bienvenue']);   // V1.10.21 : seulement tous les 5 niveaux, plus la bienvenue
+mo.tirages.push('bienvenue');
 mo.collection.push({ id: 'ronfleur' });
 assert.deepEqual(L.droitsTirage(mo, st), []);
 assert.equal(L.cocher({ id: 'x' }, new Date(2026, 9, 21)).faits.length, 1);
@@ -182,7 +182,7 @@ assert.equal(dep.seances[0].nom, 'Renfo sabre laser');
 assert.ok(dep.seances.some(s => s.nom === 'Récupération'));
 assert.equal(new Set(dep.exercices.map(e => e.nom)).size, dep.exercices.length);
 for (let i = 0; i < 3; i++) sp.journal.push({ date: '2026-10-2' + i, series: [] });
-assert.ok(L.droitsTirage(sp, L.stats(sp, new Date(2026, 9, 23))).includes('seances:5'));
+assert.ok(!L.droitsTirage(sp, L.stats(sp, new Date(2026, 9, 23))).some(k => k.startsWith('seances:')));
 assert.deepEqual(L.migrer({ ...L.vide(), club: 'Basket', profil: {} }).profil.sports, ['Basket']);
 // Heures sur une période : jour par jour, jamais au-delà d'aujourd'hui.
 const hp = L.vide();
@@ -552,6 +552,14 @@ assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune'
   d.bonusXp = 20; st = L.stats(d, new Date()); assert.equal(st.total, 620); d.xpGarde = st.xpGarde;
   d.bonusXp = 0; st = L.stats(d, new Date()); assert.equal(st.total, 600); d.xpGarde = st.xpGarde;
   d.bonusXp = 20; assert.equal(L.stats(d, new Date()).total, 620);
+}
+
+// Un tirage tous les 5 niveaux ; la collection rangée des communes aux légendaires.
+{
+  const d = L.vide(); d.collection = [{ id: 'ronfleur' }]; d.bonusXp = L.seuil(11);
+  assert.deepEqual(L.droitsTirage(d, L.stats(d, new Date())), ['niveau:5', 'niveau:10']);
+  const r = L.creaturesRangees().map(c => L.RANG_RARETE[c.rarete]);
+  assert.deepEqual(r, [...r].sort((a, b) => a - b));
 }
 
 console.log('ok');

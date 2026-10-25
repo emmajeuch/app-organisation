@@ -65,7 +65,7 @@ function maj() {
   // Un succès débloqué ou un tirage gagné : on le dit, on le fête (V1.10.3).
   if (dernier && actif('motivation')) {
     const nouveaux = L.succesObtenus(st).filter(n => !L.succesObtenus(dernier).includes(n));
-    if (nouveaux.length) { feter(); const vu = feteCompagnon('Succès !', nouveaux[0]); setTimeout(() => dire(vu ? 'Un tirage t’attend dans Profil' : `Succès : ${nouveaux[0]} ! Un tirage t’attend dans Profil`), vu ? 3000 : 900); }
+    if (nouveaux.length) { feter(); if (!feteCompagnon('Succès !', nouveaux[0])) setTimeout(() => dire(`Succès : ${nouveaux[0]} !`), 900); }
     else if (L.droitsTirage(data, st).length > L.droitsTirage(data, dernier).length) setTimeout(() => dire('Un tirage t’attend dans Profil'), 900);
   }
   verifierNiveau(st);
@@ -212,8 +212,8 @@ function feterNiveau(n) {
   // V1.10.20 : la fenêtre d'avant (badge, compagnon, texte, bouton du tirage), mais elle se ferme toute seule au bout de
   // 6 secondes, ou d'un tap n'importe où ; « Ouvrir mon tirage » reste là pour qui veut.
   ouvrirDlg(`<form class="niveau-fete">${c ? `<div class="niveau-compagnon">${compagnonFig(c, data.compagnon.stade || 0)}</div>` : ''}<div class="badge-niveau"><small>Niveau</small><b>${n}</b></div>
-    <h2>Niveau ${n} !</h2><p>Bravo, tu montes d’un niveau. Un tirage t’attend : une nouvelle créature pour ta collection.</p>
-    <button type="button" class="btn plein" data-choix="tirage">Ouvrir mon tirage</button><p class="aide">Touche n’importe où pour fermer.</p></form>`, choix => {
+    <h2>Niveau ${n} !</h2><p>${n % 5 ? `Bravo, tu montes d’un niveau. Prochain tirage au niveau ${Math.ceil(n / 5) * 5}.` : 'Bravo ! Tous les 5 niveaux, un tirage : une nouvelle créature pour ta collection.'}</p>
+    ${n % 5 ? '' : '<button type="button" class="btn plein" data-choix="tirage">Ouvrir mon tirage</button>'}<p class="aide">Touche n’importe où pour fermer.</p></form>`, choix => {
     if (choix === 'tirage') { setTimeout(ouvrirTirage); }
   });
   const form = dlg.querySelector('form.niveau-fete');
@@ -221,7 +221,7 @@ function feterNiveau(n) {
   setTimeout(() => { if (dlg.open && dlg.contains(form)) dlg.close(); }, 6000);
   feter(); setTimeout(feter, 700);
   // Une vraie notification aussi, si les notifications sont autorisées (elle reste dans le centre de notifications).
-  try { if (Notification.permission === 'granted') navigator.serviceWorker.ready.then(r => r.showNotification(`Niveau ${n} !`, { body: 'Un tirage t’attend dans Profil.', icon: 'icone-180.png', tag: 'niveau-' + n })); } catch {}
+  try { if (Notification.permission === 'granted') navigator.serviceWorker.ready.then(r => r.showNotification(`Niveau ${n} !`, { body: n % 5 ? 'Bravo, tu montes d’un niveau.' : 'Un tirage t’attend dans Profil.', icon: 'icone-180.png', tag: 'niveau-' + n })); } catch {}
 }
 function feter() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -1293,8 +1293,8 @@ function vueProfil() {
     ${compagnonHtml(st)}
     ${droits.length ? `<button class="btn plein" data-act="tirage" data-module="motivation">Ouvrir ${droits.length > 1 ? `tes ${droits.length} tirages` : 'ton tirage'}</button>` : ''}
     <details class="liste groupe" data-id="collection" data-module="motivation" ${ui.ouvertes.has('collection') ? 'open' : ''}><summary><span class="txt"><b>Collection</b><small>${possedes.size} sur ${L.CREATURES.length} créatures</small></span></summary><div class="groupe-corps">
-      <div class="collec">${L.CREATURES.map(c => possedes.has(c.id) ? `<button class="fig" data-act="creature" data-id="${c.id}">${creaHtml(c, data.collection.find(x => x.id === c.id).sport)}<span>${esc(c.nom)}</span></button>` : '<div class="fig"><div class="crea lock">?</div><span>À gagner</span></div>').join('')}</div>
-      <p class="aide">Un tirage à chaque niveau, à chaque tâche importante ou de fac faite, et pour chaque semaine avec au moins 5 journées validées.</p></div></details>
+      <div class="collec">${L.creaturesRangees().map(c => possedes.has(c.id) ? `<button class="fig" data-act="creature" data-id="${c.id}">${creaHtml(c, data.collection.find(x => x.id === c.id).sport)}<span>${esc(c.nom)}</span></button>` : '<div class="fig"><div class="crea lock">?</div><span>À gagner</span></div>').join('')}</div>
+      <p class="aide">Un tirage tous les 5 niveaux (niveau 5, 10, 15…).</p></div></details>
     <details class="liste" data-id="succes" data-module="motivation" ${ui.ouvertes.has('succes') ? 'open' : ''}><summary>Succès<span class="pill">${obtenus} sur ${L.SUCCES.length}</span></summary><ul class="list">${L.SUCCES.map(([nom, k, cible]) => {
       const ok = st[k] >= cible;
       return `<li><span class="medal${ok ? '' : ' en-cours'}">${ok ? I.check : `${st[k]}/${cible}`}</span><div class="txt"><b>${nom}</b>${ok ? '<small>Obtenu</small>' : ''}</div></li>`;
@@ -1361,7 +1361,7 @@ const compagnonFig = (c, stade) => `<div class="compagnon stade-${stade}" style=
 function compagnonHtml(st) {
   if (!actif('compagnon')) return '';
   if (!data.compagnon?.id) {
-    const gagnees = L.CREATURES.filter(c => data.collection.some(x => x.id === c.id));
+    const gagnees = L.creaturesRangees().filter(c => data.collection.some(x => x.id === c.id));
     return `<div class="sec"><h2>Compagnon</h2><div class="card bientot"><p>Ton compagnon se gagne dans la collection : choisis une de tes créatures. Elle grandit à chaque journée validée (1, 5, 10 et 20) et ne rapetisse jamais, même si ta série casse.</p>
     ${gagnees.length ? `<div class="collec">${gagnees.map(c => `<button class="fig" data-act="choisir-compagnon" data-id="${c.id}">${creaHtml(c, data.collection.find(x => x.id === c.id).sport)}<span>${esc(c.nom)}</span></button>`).join('')}</div>`
       : '<p class="muted">Tu n’as pas encore de créature : ton premier tirage arrive au niveau 2, ou avec une tâche importante faite.</p>'}</div></div>`;
@@ -1850,7 +1850,7 @@ const TUTO = [
   ['Ta semaine type', 'Semaine › Modifier : ce qui revient chaque semaine, jour par jour (le lundi type, le mardi type…). Coche les jours d’un créneau type ; « Régler par catégories » remplit le sommeil, les repas, les cours et le sport en quelques questions.'],
   ['Ajouter', 'Le bouton + d’Aujourd’hui et de Semaine ajoute un créneau ou une tâche. Dans Notes, chaque rubrique a son propre +. Une liste se partage avec son bouton Partager.'],
   ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée et allume ta flamme. Sommeil, cours et repas se valident tout seuls. Avant le dîner, une notification fait le bilan.'],
-  ['Ta progression', 'Chaque chose faite rapporte de l’XP. Un niveau gagné, un succès ou une semaine réussie donne un tirage : une créature pour ta collection. Choisis-en une comme compagnon : il se promène en bas de l’écran, grandit avec tes journées validées, et réagit quand tu le touches.'],
+  ['Ta progression', 'Chaque chose faite rapporte de l’XP. Tous les 5 niveaux, un tirage : une créature pour ta collection. Choisis-en une comme compagnon : il se promène en bas de l’écran, grandit avec tes journées validées, et réagit quand tu le touches.'],
   ['Ta sauvegarde', 'Avec un compte, une copie chiffrée de tes données part toute seule : sur un nouveau téléphone, tu te connectes et tout revient. Sans compte, elles ne sont que sur ce téléphone : crée-le dans Profil › ⚙ › Compte et sauvegarde. Et ne supprime pas l’icône : ça peut effacer tes données.'],
   ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes et de tes tâches, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
 ];

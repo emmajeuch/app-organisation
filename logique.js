@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.20';
+export const VERSION = '1.10.21';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -754,20 +754,17 @@ export const SUCCES = [
   ['10 entraînements du club', 'entrainements', 10], ['Première compétition', 'competitions', 1], ['Un record battu', 'records', 1],
 ];
 export const succesObtenus = st => SUCCES.filter(([, k, c]) => st[k] >= c).map(([nom]) => nom);
+// V1.10.21 : un tirage tous les 5 niveaux (5, 10, 15…), plus le tirage de bienvenue tant que la collection est vide.
+// Les tirages déjà ouverts pour d'autres raisons (tâches, semaines, succès, séances) restent dans la collection.
 export function droitsTirage(data, st) {
   const d = [];
-  // V1.10.3 : une première créature tout de suite, pour avoir un compagnon dès le début ; puis un tirage par succès.
   if (!data.collection.length) d.push('bienvenue');
-  succesObtenus(st).forEach(nom => d.push(`succes:${nom}`));
-  for (let n = 2; n <= st.niveau.n; n++) d.push(`niveau:${n}`);
-  data.taches.forEach(t => { if (important(t) && completions(t)) d.push(`tache:${t.id}`); });
-  data.projets.forEach(p => { if (p.statut === 'termine') d.push(`projet:${p.id}`); });
-  Object.keys(data.semaines).forEach(c => { if (joursValidesSemaine(st.valides, c) >= 5) d.push(`semaine:${c}`); });
-  // V1.5 : un tirage aux couleurs du sport toutes les 5 séances ou entraînements, et par compétition notée.
-  for (let n = 5; n <= st.seances; n += 5) d.push(`seances:${n}`);
-  (data.competitions || []).forEach(c => { if (c.resultat) d.push(`competition:${c.id}`); });
+  for (let n = 5; n <= st.niveau.n; n += 5) d.push(`niveau:${n}`);
   return d.filter(k => !data.tirages.includes(k));
 }
+// Les créatures dans l'ordre de la collection : communes, puis rares, épiques et légendaires.
+export const RANG_RARETE = { commune: 0, rare: 1, epique: 2, legendaire: 3 };
+export const creaturesRangees = () => [...CREATURES].sort((a, b) => RANG_RARETE[a.rarete] - RANG_RARETE[b.rarete]);
 
 // Créatures originales de la collection : [id, nom, couleur, forme 0 à 3, rareté].
 export const CREATURES = [
