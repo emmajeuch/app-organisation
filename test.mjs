@@ -613,18 +613,22 @@ assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune'
   assert.equal(o.notifs.actif, false);   // jamais l'abonnement d'un autre téléphone
 }
 
-// Contre le spam : créer puis cocher tout de suite ne rapporte rien ; après 5 minutes, si.
+// Une tâche simple, un objectif, un créneau : l'XP une seule fois. Cocher, décocher, recocher en boucle ne change plus rien.
 {
-  const d = L.vide(), maintenant = new Date();
-  const vite = L.cocher({ id: 'a', titre: 'Spam', cree: maintenant.getTime() - 10_000, faits: [], priorite: 2, sous: [] }, maintenant);
-  const vrai = L.cocher({ id: 'b', titre: 'Vraie', cree: maintenant.getTime() - 6 * 60_000, faits: [], priorite: 2, sous: [] }, maintenant);
-  const ancienne = L.cocher({ id: 'c', titre: 'Sans date de création', faits: [], priorite: 2, sous: [] }, maintenant);
-  d.taches.push(vite, vrai, ancienne);
-  d.objectifs.push({ id: 'o1', txt: 'Spam', horizon: 'semaine', fait: true, rapide: true }, { id: 'o2', txt: 'Vrai', horizon: 'semaine', fait: true });
-  const st = L.stats(d, maintenant);
-  assert.equal(st.sources.taches, 2 * L.XP.tache);
-  assert.equal(st.sources.objectifs, L.XP.objectif.semaine);
-  assert.equal(st.taches, 2);   // le succès « 10 tâches faites » ne compte pas le spam non plus
+  const d = L.vide(), auj = new Date();
+  const t = { id: 't', titre: 'T', faits: [], priorite: 2, sous: [] };
+  d.taches.push(t);
+  d.objectifs.push({ id: 'o', txt: 'O', horizon: 'semaine', fait: false });
+  d.semaines['2026-10-19'] = { slots: [{ id: 's', j: 0, s: 9, e: 10, cat: 'loisirs', titre: 'S' }] };
+  const o = d.objectifs[0], s = d.semaines['2026-10-19'].slots[0];
+  const total = () => { L.retenirXp(d); return L.stats(d, auj).total; };
+  const base = total(), vus = [];
+  for (let k = 0; k < 5; k++) {
+    Object.assign(t, L.cocher(t, auj)); o.fait = true; s.fait = true; vus.push(total());
+    t.fait = false; t.faits = t.faits.slice(0, -1); o.fait = false; s.fait = null; vus.push(total());
+  }
+  const gain = L.XP.tache + L.XP.objectif.semaine + L.XP.creneau + L.XP.jour;   // et le bonus de la journée validée
+  assert.ok(vus.every(v => v === base + gain), 'toujours le même total : ' + vus);
 }
 
 console.log('ok');

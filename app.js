@@ -48,6 +48,7 @@ function sauver() {
 // Après chaque changement : on enregistre, on redessine, et on annonce l'XP gagnée (avec un petit son).
 let dernier = null;
 function maj() {
+  L.retenirXp(data);
   const st = L.stats(data, new Date());
   if (st.xpGarde !== (data.xpGarde || 0)) data.xpGarde = st.xpGarde;   // la réserve qui garde les niveaux gagnés
   const avant = data.compagnon?.stade;
@@ -151,9 +152,7 @@ const pl = (n, un, plusieurs) => `${n} ${n > 1 ? plusieurs : un}`;
 const radios = (nom, valeurs, sel) => `<div class="cats">${Object.entries(valeurs).map(([v, n]) => `<label><input type="radio" name="${nom}" value="${v}" ${String(sel) === v ? 'checked' : ''}><span class="sans">${esc(n)}</span></label>`).join('')}</div>`;
 
 function cocherTache(t) {
-  const avant = t.rapides || 0;
   Object.assign(t, L.cocher(t, new Date()));
-  if ((t.rapides || 0) > avant) return dire('Tâche faite. Pas d’XP : elle vient d’être créée.');
   dire(t.fait ? 'Tâche faite' : `Prochaine fois : ${L.deIso(t.echeance).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}`);
 }
 function pillEcheance(t) {
@@ -898,7 +897,7 @@ function editerTache(t, defaut = {}) {
       Object.assign(champs, { echeance: n.iso, heure: n.h });
     }
     let tache = t;
-    if (neuf) { tache = { id: L.uid(), fait: false, cree: Date.now(), ...champs }; data.taches.push(tache); } else { Object.assign(t, champs); delete t.recurrence; }
+    if (neuf) { tache = { id: L.uid(), fait: false, ...champs }; data.taches.push(tache); } else { Object.assign(t, champs); delete t.recurrence; }
     noterUsage('taches');
     maj();
     if (choix === 'planifier') { planifier(tache); return false; }
@@ -1958,7 +1957,7 @@ function editerObjectif(o) {
     // Un objectif ne sert qu'à un objectif plus long que lui.
     const ordre = { semaine: 0, mois: 1, annee: 2 }, par = data.objectifs.find(x => x.id === f.get('parent'));
     const parent = par && ordre[par.horizon] > ordre[horizon] ? par.id : null;
-    if (neuf) data.objectifs.push({ id: L.uid(), txt, horizon, periode: L.periode(horizon, now), fait: false, parent, cree: Date.now() });
+    if (neuf) data.objectifs.push({ id: L.uid(), txt, horizon, periode: L.periode(horizon, now), fait: false, parent });
     else Object.assign(o, { txt, horizon, parent, periode: o.horizon === horizon ? o.periode : L.periode(horizon, now) });
     noterUsage('objectifs');
     maj();
@@ -2263,17 +2262,11 @@ document.addEventListener('change', e => {
   const t = e.target, { act, id } = t.dataset;
   if (!act) return;
   if (['objectif', 'item', 'tache'].includes(act)) noterUsage({ objectif: 'objectifs', item: 'listes', tache: 'taches' }[act]);
-  if (act === 'objectif') {
-    const o = data.objectifs.find(x => x.id === id);
-    if (!o) return rendre();
-    o.fait = t.checked;
-    if (t.checked && L.tropTot(o)) { o.rapide = true; dire('Objectif atteint. Pas d’XP : il vient d’être créé.'); }
-    else { delete o.rapide; if (t.checked) dire('Objectif atteint'); }
-  }
+  if (act === 'objectif') { const o = data.objectifs.find(x => x.id === id); if (!o) return rendre(); o.fait = t.checked; if (t.checked) dire('Objectif atteint'); }
   if (act === 'item') data.listes.find(l => l.id === t.dataset.liste).items.find(i => i.id === id).fait = t.checked;
   if (act === 'tache') {
     const x = data.taches.find(y => y.id === id);
-    if (t.checked) { if (!L.cochable(x, new Date())) return rendre(); cocherTache(x); } else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); if (x.rapides) x.rapides--; }
+    if (t.checked) { if (!L.cochable(x, new Date())) return rendre(); cocherTache(x); } else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); }
   }
   if (act === 'son') data.son = t.checked;
   if (act === 'rappel') data.notifs[id] = t.type === 'checkbox' ? t.checked : +t.value;
@@ -2300,10 +2293,10 @@ document.addEventListener('submit', e => {
   if (!txt) return;
   const mod = { objectif: 'objectifs', item: 'listes', tache: 'taches', habitude: 'habitudes', exo: 'sport' }[k];
   if (mod) noterUsage(mod);
-  if (k === 'objectif') data.objectifs.push({ id: L.uid(), cree: Date.now(), txt, horizon: f.dataset.horizon, periode: f.dataset.periode, fait: false, parent: f.elements.parent?.value || null });
+  if (k === 'objectif') data.objectifs.push({ id: L.uid(), txt, horizon: f.dataset.horizon, periode: f.dataset.periode, fait: false, parent: f.elements.parent?.value || null });
   if (k === 'item') data.listes.find(l => l.id === f.dataset.id).items.push({ id: L.uid(), txt, fait: false });
   if (k === 'cat') data.cats.push({ id: L.uid(), nom: txt, couleur: '#8a8f9c' });
-  if (k === 'tache') data.taches.push({ id: L.uid(), cree: Date.now(), titre: txt, echeance: f.elements.date.value || null, priorite: 2, fac: false, recurrence: null, projet: null, sous: [], fait: false });
+  if (k === 'tache') data.taches.push({ id: L.uid(), titre: txt, echeance: f.elements.date.value || null, priorite: 2, fac: false, recurrence: null, projet: null, sous: [], fait: false });
   if (k === 'habitude') return editerHabitude({ id: L.uid(), nom: txt, freq: f.elements.freq.value === 'jour' ? 'jour' : +f.elements.freq.value, faits: [] }, true);
   if (k === 'exo') data.exos.push({ id: L.uid(), nom: txt, type: f.elements.type.value, notes: '' });
   maj();

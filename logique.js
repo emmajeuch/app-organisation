@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.23';
+export const VERSION = '1.10.24';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -328,19 +328,19 @@ const UN_DE = (...ok) => v => ok.includes(v) ? v : undefined;
 const NUM_OU_VIDE = v => v === '' ? '' : NUM(v);
 const HEURE_OU_RIEN = v => v === null ? null : ENTRE(0, 26)(v);
 const SLOT = { id: ID, groupe: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID, titre: TXT, salle: TXT, affaires: TXT, notes: TXT,
-  fait: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT };
+  fait: BOOL, xpDonne: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT };
 const SCHEMA = {
   version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID,
   recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
-  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, niveauVu: ENTRE(1, 1000), xpGarde: ENTRE(0, 1e7), couleurs: { fond: TXT, accent: TXT }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
+  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, niveauVu: ENTRE(1, 1000), xpGarde: ENTRE(0, 1e7), joursBonus: [DATE], couleurs: { fond: TXT, accent: TXT }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
   cats: [{ id: ID, nom: TXT, couleur: TXT }],
   types: [{ id: ID, nom: TXT, exemple: BOOL, slots: [SLOT] }],
   semaines: { '*': { type: ID, slots: [SLOT] } },
   notes: [{ id: ID, titre: TXT, texte: TXT, couleur: TXT, epingle: BOOL, tags: [TXT], lien: TXT, maj: NUM }],
   listes: [{ id: ID, nom: TXT, tags: [TXT], items: [{ id: ID, txt: TXT, fait: BOOL }] }],
-  objectifs: [{ id: ID, txt: TXT, horizon: UN_DE('semaine', 'mois', 'annee'), periode: DATE, fait: BOOL, parent: ID, cree: NUM, rapide: BOOL }],
+  objectifs: [{ id: ID, txt: TXT, horizon: UN_DE('semaine', 'mois', 'annee'), periode: DATE, fait: BOOL, parent: ID, xpDonne: BOOL }],
   taches: [{ id: ID, titre: TXT, echeance: DATE, heure: ENTRE(0, 26), priorite: UN_DE(1, 2, 3), fac: BOOL, travail: BOOL, recurrence: ENTRE(0, 6), rep: [{ j: ENTRE(0, 6), h: HEURE_OU_RIEN }], projet: ID,
-    sous: [{ txt: TXT, fait: BOOL }], fait: BOOL, faitLe: DATE, faits: [DATE], cree: NUM, rapides: ENTRE(0, 10000) }],
+    sous: [{ txt: TXT, fait: BOOL }], fait: BOOL, faitLe: DATE, faits: [DATE], xpDonne: BOOL }],
   projets: [{ id: ID, nom: TXT, type: UN_DE('projet', 'divertissement'), statut: UN_DE('idee', 'en-cours', 'pause', 'termine'), etape: TXT, notes: TXT }],
   exos: [{ id: ID, nom: TXT, type: UN_DE('reps', 'duree', 'distance', 'charge'), notes: TXT, sport: TXT }],
   seances: [{ id: ID, nom: TXT, sport: TXT, exos: [{ exo: ID, series: ENTRE(1, 50), cible: NUM_OU_VIDE }] }],
@@ -621,12 +621,11 @@ export const cochable = (t, auj) => !repDe(t).length || !t.echeance || t.echeanc
 export function cocher(t, auj) {
   if (!cochable(t, auj)) return { ...t };
   const faits = [...(t.faits || []), isoJour(auj)], rep = repDe(t);
-  const rapides = (t.rapides || 0) + (tropTot(t, auj.getTime()) ? 1 : 0);
-  if (!rep.length) return { ...t, fait: true, faitLe: isoJour(auj), faits, rapides };
+  if (!rep.length) return { ...t, fait: true, faitLe: isoJour(auj), faits };
   const cur = [t.echeance || isoJour(auj), t.echeance ? t.heure ?? -1 : -1], now = [isoJour(auj), auj.getHours() + auj.getMinutes() / 60];
   const [iso, h] = cur[0] > now[0] || (cur[0] === now[0] && cur[1] >= now[1]) ? cur : now;
   const n = prochaineOccurrence(rep, iso, h);
-  return { ...t, fait: false, faits, rapides, echeance: n.iso, heure: n.h, sous: (t.sous || []).map(s => ({ ...s, fait: false })) };
+  return { ...t, fait: false, faits, echeance: n.iso, heure: n.h, sous: (t.sous || []).map(s => ({ ...s, fait: false })) };
 }
 
 // À faire bientôt : en retard, aujourd'hui, ou dans les 7 jours ; puis par date et priorité.
@@ -714,10 +713,18 @@ export function niveau(xp) {
 
 export const XP = { creneau: 5, tache: 20, tacheImportante: 30, seance: 30, habitude: 5, objectif: { semaine: 25, mois: 60, annee: 150 }, projet: 100, jour: 15, bilan: 50 };
 const completions = t => t.faits?.length || (t.fait ? 1 : 0);
-// V1.10.23 : contre le spam, une tâche ou un objectif coché moins de 5 minutes après sa création ne rapporte pas d'XP.
-export const ANTI_SPAM = 5 * 60 * 1000;
-export const tropTot = (x, maintenant = Date.now()) => typeof x.cree === 'number' && maintenant - x.cree < ANTI_SPAM;
-const completionsXp = t => Math.max(0, completions(t) - (t.rapides || 0));
+// V1.10.24 : une tâche simple, un objectif ou un créneau rapporte son XP une seule fois, la première fois qu'il est fait
+// (xpDonne). Décocher ne retire rien, recocher ne rajoute rien : plus d'XP en boucle. Une tâche qui revient rapporte à chaque fois.
+const completionsXp = t => repDe(t).length ? completions(t) : (t.xpDonne || completions(t) > 0 ? 1 : 0);
+// Marque ce qui a déjà rapporté son XP (appelé à chaque mise à jour de l'app).
+export function retenirXp(data) {
+  for (const s of Object.values(data.semaines)) for (const x of s.slots) if (x.fait) x.xpDonne = true;
+  for (const o of data.objectifs) if (o.fait) o.xpDonne = true;
+  for (const t of data.taches) if (!repDe(t).length && completions(t) > 0) t.xpDonne = true;
+  // Le bonus d'une journée validée, lui aussi une seule fois par jour.
+  const vus = new Set([...(data.joursBonus || []), ...joursValides(data)]);
+  data.joursBonus = [...vus].sort();
+}
 const important = t => t.priorite === 1 || t.fac;
 
 export function stats(data, auj) {
@@ -728,12 +735,12 @@ export function stats(data, auj) {
   const club = slots.filter(x => x.club && x.fait).length;
   const projets = data.projets.filter(p => p.statut === 'termine').length;
   const sources = {
-    creneaux: slots.filter(x => x.fait).length * XP.creneau,
+    creneaux: slots.filter(x => x.fait || x.xpDonne).length * XP.creneau,
     taches: data.taches.reduce((k, t) => k + completionsXp(t) * (important(t) ? XP.tacheImportante : XP.tache), 0),
     sport: (Object.values(data.journal.reduce((n, e) => ({ ...n, [e.date]: (n[e.date] || 0) + 1 }), {})).reduce((k, n) => k + Math.min(n, 2), 0) + club) * XP.seance,
     habitudes: data.habitudes.reduce((k, h) => k + h.faits.length, 0) * XP.habitude,
-    objectifs: data.objectifs.filter(o => o.fait && !o.rapide).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
-    bonus: valides.size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,
+    objectifs: data.objectifs.filter(o => o.fait || o.xpDonne).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
+    bonus: new Set([...valides, ...(data.joursBonus || [])]).size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,
   };
   // V1.10.19 : un niveau gagné reste. Quand décocher ferait passer sous le plus haut niveau atteint (niveauVu), une réserve
   // d'XP (xpGarde, gardée dans les données) comble l'écart ; elle ne baisse jamais. Chaque chose refaite rapporte donc à nouveau,
