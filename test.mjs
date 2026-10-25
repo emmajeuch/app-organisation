@@ -641,4 +641,31 @@ assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune'
   assert.ok(vus.every(v => v === L.XP.habitude), 'habitude : ' + vus);
 }
 
+// Revue du 25/10 : une tâche qui revient ne se recoche pas le même jour en changeant ou en vidant l'échéance ;
+// un créneau coupé en morceaux ne rapporte qu'une fois ; les entraînements du club entrent dans le plafond des séances.
+{
+  const auj = new Date(), iso = L.isoJour(auj), j = L.jourSemaine(auj);
+  let t = L.cocher({ id: 't', titre: 'T', rep: [{ j, h: null }], echeance: iso, faits: [], priorite: 2, sous: [] }, auj);
+  t = { ...t, echeance: iso };                       // l'échéance ramenée à aujourd'hui
+  assert.ok(!L.cochable(t, auj));
+  t = { ...t, echeance: null };                      // ou vidée
+  assert.ok(!L.cochable(t, auj));
+  assert.equal(L.cocher(t, auj).faits.length, 1);
+  const d = L.vide();
+  d.semaines['2026-10-19'] = { slots: [{ id: 'a', groupe: 'a', j: 0, s: 9, e: 12, cat: 'cours', fait: true }, { id: 'b', groupe: 'a', j: 0, s: 13, e: 17, cat: 'cours', fait: true }, { id: 'c', j: 1, s: 9, e: 10, cat: 'loisirs', fait: true }] };
+  assert.equal(L.stats(d, new Date(2026, 9, 25)).sources.creneaux, 2 * L.XP.creneau);
+  d.semaines['2026-10-19'].slots.push({ id: 'k1', j: 2, s: 18, e: 20, cat: 'sport', club: true, fait: true });
+  for (let k = 0; k < 3; k++) d.journal.push({ id: 'j' + k, date: '2026-10-21', series: [] });
+  assert.equal(L.stats(d, new Date(2026, 9, 25)).seances, 2);   // 3 séances + 1 entraînement le même jour : 2 comptent
+}
+
+// Une couleur qui n'est pas un code #rrggbb ne passe pas l'import (rien ne s'injecte dans le style).
+{
+  const d = L.vide();
+  d.couleurs = { fond: '#112233', accent: 'red;background:url(x)' };
+  const o = L.validerImport(JSON.parse(JSON.stringify(d)));
+  assert.equal(o.couleurs.fond, '#112233');
+  assert.equal(o.couleurs.accent, undefined);
+}
+
 console.log('ok');

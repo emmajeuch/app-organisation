@@ -596,7 +596,7 @@ function actionsSemaine(jt = ui.jourType ?? L.jourSemaine(new Date())) {
     if (choix === 'precedente') {
       const prec = data.semaines[L.isoJour(L.ajouterJours(ui.lundi, -7))];
       if (!prec || !prec.slots.length) { dire('La semaine précédente est vide.'); return false; }
-      sem.slots = prec.slots.map(x => ({ ...x, id: L.uid(), fait: null }));
+      sem.slots = prec.slots.map(x => { const y = { ...x, id: L.uid(), fait: null }; delete y.xpDonne; if (y.groupe) y.groupe = 'c' + y.groupe; return y; });
       maj(); dire('Semaine précédente copiée'); return;
     }
   });
@@ -1236,7 +1236,7 @@ function choisirCouleur(id) {
 }
 const choixCouleur = (id, val) => {
   const [h, s, v] = versHsv(L.couleurSure(val));
-  return `<div class="choix-couleur" data-couleur="${id}" data-h="${h}" data-s="${s}" data-v="${v}" style="--h:${h};--sx:${s * 100}%;--vy:${(1 - v) * 100}%;--hx:${h / 3.6}%;--c:${val}">
+  return `<div class="choix-couleur" data-couleur="${id}" data-h="${h}" data-s="${s}" data-v="${v}" style="--h:${h};--sx:${s * 100}%;--vy:${(1 - v) * 100}%;--hx:${h / 3.6}%;--c:${L.couleurSure(val)}">
     <div class="nuances" data-zone="sv"><i></i></div><div class="teintes" data-zone="h"><i></i></div></div>`;
 };
 document.addEventListener('pointerdown', e => {
@@ -1373,7 +1373,7 @@ function compagnonHtml(st) {
     const gagnees = L.creaturesRangees().filter(c => data.collection.some(x => x.id === c.id));
     return `<div class="sec"><h2>Compagnon</h2><div class="card bientot"><p>Ton compagnon se gagne dans la collection : choisis une de tes créatures. Elle grandit à chaque journée validée (1, 5, 10 et 20) et ne rapetisse jamais, même si ta série casse.</p>
     ${gagnees.length ? `<div class="collec">${gagnees.map(c => `<button class="fig" data-act="choisir-compagnon" data-id="${c.id}">${creaHtml(c, data.collection.find(x => x.id === c.id).sport)}<span>${esc(c.nom)}</span></button>`).join('')}</div>`
-      : '<p class="muted">Tu n’as pas encore de créature : ton premier tirage arrive au niveau 2, ou avec une tâche importante faite.</p>'}</div></div>`;
+      : '<p class="muted">Tu n’as pas encore de créature : ouvre ton tirage de bienvenue juste au-dessus, puis un tirage tous les 5 niveaux.</p>'}</div></div>`;
   }
   const c = L.CREATURES.find(x => x.id === data.compagnon.id), stade = data.compagnon.stade || 0, suivant = L.prochainSeuil(st.joursValides);
   return `<div class="sec"><h2>Compagnon <span>stade ${stade} sur 4</span></h2><div class="card compagnon-carte">

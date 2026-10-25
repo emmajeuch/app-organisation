@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.25';
+export const VERSION = '1.10.26';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -296,11 +296,6 @@ export function semaine(data, cle) {
   }
   return data.semaines[cle];
 }
-export function appliquerType(data, cle, typeId) {
-  const t = data.types.find(t => t.id === typeId);
-  data.semaines[cle] = { type: typeId, slots: copieDe(t.slots) };
-}
-
 export function heuresParCat(slots) {
   const t = {};
   for (const s of slots) t[s.cat] = (t[s.cat] || 0) + s.e - s.s;
@@ -321,6 +316,7 @@ export const TAILLE_MAX = 5e6;
 const ID = v => typeof v === 'string' && /^[\w-]{1,40}$/.test(v) ? v : undefined;
 const DATE = v => typeof v === 'string' && /^\d{4}(-\d{2}){0,2}(-\d{4})?$/.test(v) ? v : undefined;
 const TXT = v => typeof v === 'string' ? v.slice(0, 5000) : undefined;
+const HEX = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : undefined;
 const NUM = v => typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 const BOOL = v => typeof v === 'boolean' ? v : undefined;
 const ENTRE = (a, b) => v => NUM(v) !== undefined && v >= a && v <= b ? v : undefined;
@@ -332,7 +328,7 @@ const SLOT = { id: ID, groupe: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 
 const SCHEMA = {
   version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID,
   recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
-  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, niveauVu: ENTRE(1, 1000), xpGarde: ENTRE(0, 1e7), joursBonus: [DATE], couleurs: { fond: TXT, accent: TXT }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
+  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, niveauVu: ENTRE(1, 1000), xpGarde: ENTRE(0, 1e7), joursBonus: [DATE], couleurs: { fond: HEX, accent: HEX }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
   cats: [{ id: ID, nom: TXT, couleur: TXT }],
   types: [{ id: ID, nom: TXT, exemple: BOOL, slots: [SLOT] }],
   semaines: { '*': { type: ID, slots: [SLOT] } },
@@ -579,8 +575,6 @@ export const joursQuiComptent = (data, cle, valides) =>
 
 export const joursAvant = (iso, auj) => Math.round((deIso(iso) - new Date(auj.getFullYear(), auj.getMonth(), auj.getDate())) / 864e5);
 
-// Cocher une tâche récurrente la repousse à sa prochaine date au lieu de la terminer.
-// Chaque fois qu'elle est faite, la date s'ajoute à t.faits : c'est ce qui compte pour l'XP.
 // Les jours (et heures) où une tâche revient ; les tâches d'avant la 1.10 n'avaient qu'un jour, sans heure.
 export const repDe = t => Array.isArray(t.rep) ? t.rep : Number.isInteger(t.recurrence) ? [{ j: t.recurrence, h: null }] : [];
 // Les jours et heures d'une habitude ; celles d'avant la 1.10 avaient une seule heure et des jours (aucun = tous).
@@ -617,7 +611,15 @@ export function prochaineOccurrence(rep, apresIso, apresH, inclus = false) {
 }
 // Cocher une tâche : finie, ou, si elle se répète, reportée à sa prochaine fois après celle-ci et après maintenant.
 // V1.10.22 : une tâche qui revient ne se coche que si son échéance est aujourd'hui ou passée.
-export const cochable = (t, auj) => !repDe(t).length || !t.echeance || t.echeance <= isoJour(momentLogique(auj).date);
+export const cochable = (t, auj) => {
+  const rep = repDe(t);
+  if (!rep.length) return true;
+  const iso = isoJour(auj), jour = jourSemaine(auj);
+  if ((t.faits || []).filter(d => d === iso).length >= Math.max(1, rep.filter(r => r.j === jour).length)) return false;   // V1.10.26
+  return !t.echeance || t.echeance <= iso;
+};
+// Cocher une tâche récurrente la repousse à sa prochaine date au lieu de la terminer.
+// Chaque fois qu'elle est faite, la date s'ajoute à t.faits : c'est ce qui compte pour l'XP.
 export function cocher(t, auj) {
   if (!cochable(t, auj)) return { ...t };
   const faits = [...(t.faits || []), isoJour(auj)], rep = repDe(t);
@@ -733,12 +735,17 @@ export function stats(data, auj) {
   const valides = joursValides(data, auj);
   const cles = Object.keys(data.semaines).sort();
   const se = cles.length ? serie(valides, auj, deIso(cles[0])) : { serie: 0, jokers: 0, record: 0 };
+  // V1.10.26 : au plus deux séances par jour comptent, entraînements du club compris (XP et succès « séances »).
+  const parJour = {};
+  for (const e of data.journal) parJour[e.date] = (parJour[e.date] || 0) + 1;
+  for (const [cle, s] of Object.entries(data.semaines)) for (const x of s.slots) if (x.club && x.fait) { const d = isoJour(ajouterJours(deIso(cle), x.j)); parJour[d] = (parJour[d] || 0) + 1; }
+  const seancesComptees = Object.values(parJour).reduce((k, n) => k + Math.min(n, 2), 0);
   const club = slots.filter(x => x.club && x.fait).length;
   const projets = data.projets.filter(p => p.statut === 'termine').length;
   const sources = {
-    creneaux: slots.filter(x => x.fait || x.xpDonne).length * XP.creneau,
+    creneaux: new Set(slots.filter(x => x.fait || x.xpDonne).map(x => x.groupe || x.id)).size * XP.creneau,
     taches: data.taches.reduce((k, t) => k + completionsXp(t) * (important(t) ? XP.tacheImportante : XP.tache), 0),
-    sport: (Object.values(data.journal.reduce((n, e) => ({ ...n, [e.date]: (n[e.date] || 0) + 1 }), {})).reduce((k, n) => k + Math.min(n, 2), 0) + club) * XP.seance,
+    sport: seancesComptees * XP.seance,
     habitudes: data.habitudes.reduce((k, h) => k + new Set([...h.faits, ...(h.xpJours || [])]).size, 0) * XP.habitude,
     objectifs: data.objectifs.filter(o => o.fait || o.xpDonne).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
     bonus: new Set([...valides, ...(data.joursBonus || [])]).size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,
@@ -753,15 +760,14 @@ export function stats(data, auj) {
     xpGarde,
     sources, total, niveau: niveau(total), ...se, valides, joursValides: valides.size,
     semainesCompletes: cles.filter(c => joursValidesSemaine(valides, c) === 7).length,
-    seances: data.journal.length + club, taches: data.taches.reduce((k, t) => k + completionsXp(t), 0), projets,
+    seances: seancesComptees, taches: data.taches.reduce((k, t) => k + completionsXp(t), 0), projets,
     objSemaine: data.objectifs.filter(o => o.fait && o.horizon === 'semaine').length,
     habitudeMax: Math.max(0, ...data.habitudes.map(h => h.faits.length)), bilans: Object.keys(data.bilans).length,
     entrainements: club, competitions: (data.competitions || []).filter(c => c.resultat).length, records: recordsBattus(data),
   };
 }
 
-// Tirages gagnés et pas encore ouverts : un par niveau, par grosse tâche, par projet terminé,
-// et par semaine réussie (au moins 5 journées validées).
+// Tirages gagnés et pas encore ouverts : celui de bienvenue, puis un tous les 5 niveaux.
 export const SUCCES = [
   ['Première journée validée', 'joursValides', 1], ['7 jours d’affilée', 'record', 7], ['30 jours d’affilée', 'record', 30],
   ['Première semaine complète', 'semainesCompletes', 1], ['10 séances de sport', 'seances', 10], ['50 séances de sport', 'seances', 50],
@@ -800,7 +806,7 @@ export const CREATURES = [
   ['phenix', 'Phénix', '#FF6A3D', 7, 'legendaire'], ['comete', 'Comète', '#FFD166', 9, 'legendaire'],
 ].map(([id, nom, couleur, forme, rarete]) => ({ id, nom, couleur, forme, rarete }));
 
-// Légendaire 5 %, rare 25 %, commune 70 % ; une créature pas encore possédée si possible.
+// Légendaire 4 %, épique 10 %, rare 25 %, commune 61 % ; une créature pas encore possédée si possible.
 export function tirer(possedes, rand = Math.random) {
   const r = rand();
   const rarete = r < .04 ? 'legendaire' : r < .14 ? 'epique' : r < .39 ? 'rare' : 'commune';
@@ -966,7 +972,7 @@ export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
       ajout(a(x.s) - r.delai * 60, `Dans ${r.delai} min : ${x.titre}`, [hhmm(x.s), x.salle, x.affaires].filter(Boolean).join(' · '));
     }
     // Les habitudes à heure, à leur heure exacte, sauf si elles sont déjà cochées ce jour-là ; réglage absent = activé.
-    if (r.habitudes !== false && data.modules?.habitudes !== false) for (const hb of habitudesAHeure(data.habitudes, jourSemaine(d))) {
+    if (r.habitudes !== false) for (const hb of habitudesAHeure(data.habitudes, jourSemaine(d))) {
       if (!hb.faits.includes(isoJour(d))) ajout(a(hb.heure), hb.nom, 'C’est l’heure de ton habitude.');
     }
     // Le bilan avant le dîner : pour aujourd'hui, ce qui est déjà validé et ce qui reste (écrit sur le téléphone, jamais envoyé).
@@ -979,7 +985,7 @@ export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
     if (r.bilan && jourSemaine(d) === 6) ajout(a(17), 'C’est l’heure du bilan', 'Objectifs, tâches à reporter, heures de la semaine.');
   }
   // Les tâches à heure : la prochaine fois, et pour une tâche qui se répète, les suivantes de la semaine.
-  if (r.taches !== false && data.modules?.taches !== false) {
+  if (r.taches !== false) {
     const fin = isoJour(ajouterJours(auj, 6)), aIso = (iso, h) => { const d = deIso(iso); return Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, Math.round(h * 60)).getTime() / 1000); };
     for (const t of data.taches) if (!t.fait && t.echeance && typeof t.heure === 'number') {
       let o = { iso: t.echeance, h: t.heure };
