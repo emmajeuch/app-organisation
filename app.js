@@ -59,7 +59,6 @@ function maj() {
     reagirBalade(st.niveau.n > dernier.niveau.n ? 'fete' : 'content');
     dire(toast.hidden ? gain : `${toast.textContent} · ${gain}`);
     son();
-    if (st.niveau.n > dernier.niveau.n) { feter(); setTimeout(() => dire(`Niveau ${st.niveau.n} ! Un tirage t’attend dans Profil`), 2300); }
   }
   if (dernier && !dernier.valides.has(aujIso()) && st.valides.has(aujIso())) { document.querySelectorAll('.flamme').forEach(f => f.classList.add('allume')); if (actif('motivation')) setTimeout(() => dire('Journée validée : ta flamme est allumée'), 600); }
   // Un succès débloqué ou un tirage gagné : on le dit, on le fête (V1.10.3).
@@ -68,6 +67,7 @@ function maj() {
     if (nouveaux.length) { feter(); setTimeout(() => dire(`Succès : ${nouveaux[0]} ! Un tirage t’attend dans Profil`), 900); }
     else if (L.droitsTirage(data, st).length > L.droitsTirage(data, dernier).length) setTimeout(() => dire('Un tirage t’attend dans Profil'), 900);
   }
+  verifierNiveau(st);
   majPastille(st);
   if (tape) { document.querySelectorAll(`[data-act="${tape[0]}"][data-id="${CSS.escape(tape[1])}"]`).forEach(x => x.classList.add('tape')); tape = null; }
   dernier = st;
@@ -179,13 +179,41 @@ function clubFaits() {
     .map(x => ({ date: L.isoJour(L.ajouterJours(L.deIso(cle), x.j)), nom: x.titre, duree: x.e - x.s })));
 }
 // Petite fête quand on termine quelque chose.
+// Une liste à envoyer : son nom, puis une ligne par élément (✓ pour ce qui est déjà fait).
+async function partagerListe(l) {
+  if (!l) return;
+  const texte = [l.nom, ...[...l.items].sort((a, b) => a.fait - b.fait).map(i => `${i.fait ? '✓' : '•'} ${i.txt}`)].join('\n');
+  try { if (navigator.share) { await navigator.share({ title: l.nom, text: texte }); return; } } catch (e) { if (e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(texte); dire('Liste copiée : colle-la dans un message'); } catch { dire('Partage impossible sur ce téléphone.'); }
+}
+// V1.10.11 : le dernier niveau fêté est gardé ; tout niveau gagné depuis (même au lancement) a sa fête.
+function verifierNiveau(st = L.stats(data, new Date())) {
+  if (!actif('motivation')) return;
+  const n = st.niveau.n;
+  if (data.niveauVu == null) { data.niveauVu = n; sauver(); return; }
+  if (n <= data.niveauVu) return;
+  data.niveauVu = n; sauver();
+  setTimeout(() => feterNiveau(n), 700);
+}
+function feterNiveau(n) {
+  navigator.vibrate?.([30, 60, 30, 60, 80]);
+  reagirBalade('fete');
+  ouvrirDlg(`<form class="niveau-fete"><div class="badge-niveau"><small>Niveau</small><b>${n}</b></div>
+    <h2>Niveau ${n} !</h2><p>Bravo, tu montes d’un niveau. Un tirage t’attend : une nouvelle créature pour ta collection.</p>
+    <button type="button" class="btn plein" data-choix="tirage">Ouvrir mon tirage</button><button type="button" class="btn gris" data-fermer>Plus tard</button></form>`, choix => {
+    if (choix === 'tirage') { setTimeout(ouvrirTirage); }
+  });
+  feter(); setTimeout(feter, 700);
+  // Une vraie notification aussi, si les notifications sont autorisées (elle reste dans le centre de notifications).
+  try { if (Notification.permission === 'granted') navigator.serviceWorker.ready.then(r => r.showNotification(`Niveau ${n} !`, { body: 'Un tirage t’attend dans Profil.', icon: 'icone-180.png', tag: 'niveau-' + n })); } catch {}
+}
 function feter() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const box = Object.assign(document.createElement('div'), { className: 'confettis' });
   box.setAttribute('aria-hidden', 'true');
   const couleurs = data.cats.map(c => L.couleurSure(c.couleur));
   box.innerHTML = Array.from({ length: 60 }, (_, i) => `<i style="left:${Math.random() * 100}%;background:${couleurs[i % couleurs.length]};--d:${(.9 + Math.random() * .8).toFixed(2)}s;--r:${Math.round(Math.random() * 720 - 360)}deg;animation-delay:${(Math.random() * .25).toFixed(2)}s"></i>`).join('');
-  document.body.append(box);
+  (dlg.open ? dlg : document.body).append(box);   // au-dessus d'une fenêtre ouverte
   setTimeout(() => box.remove(), 2200);
 }
 
@@ -705,7 +733,7 @@ const listeHtml = l => {
   return `<details class="liste" data-id="${l.id}" ${ui.ouvertes.has(l.id) ? 'open' : ''}><summary>${esc(l.nom)}<span class="pill">${l.items.filter(i => !i.fait).length}</span></summary>
     <ul class="list">${items.map(i => `<li><input type="checkbox" class="chk" data-act="item" data-liste="${l.id}" data-id="${i.id}" ${i.fait ? 'checked' : ''} aria-label="Fait"><div class="txt"><b>${esc(i.txt)}</b></div><button class="x" data-act="suppr-item" data-liste="${l.id}" data-id="${i.id}" aria-label="Supprimer">${I.x}</button></li>`).join('')}</ul>
     <div class="pied"><form class="ajout" data-form="item" data-id="${l.id}"><input name="txt" placeholder="Ajouter à la liste" aria-label="Ajouter à ${esc(l.nom)}" autocomplete="off"><button aria-label="Ajouter">${I.plus}</button></form>
-    <div class="rangee">${l.items.some(i => i.fait) ? `<button class="btn gris petit" data-act="vider-liste" data-id="${l.id}">Retirer les cochés</button>` : ''}<button class="btn gris petit" data-act="liste" data-id="${l.id}">Renommer, étiquettes</button></div></div></details>`;
+    <div class="rangee">${l.items.some(i => i.fait) ? `<button class="btn gris petit" data-act="vider-liste" data-id="${l.id}">Retirer les cochés</button>` : ''}<button class="btn gris petit" data-act="partager-liste" data-id="${l.id}">Partager</button><button class="btn gris petit" data-act="liste" data-id="${l.id}">Renommer, étiquettes</button></div></div></details>`;
 };
 
 const noteHtml = n => `<article class="note" role="button" tabindex="0" data-act="note" data-id="${n.id}" style="${n.couleur ? `--c:${L.couleurSure(n.couleur)}` : ''}">
@@ -1781,9 +1809,12 @@ function appliquerConstruction(r) {
 
 const TUTO = [
   ['Bienvenue', 'Ton emploi du temps à la minute près, tes tâches, tes notes et ton sport, au même endroit. Tout reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire.'],
-  ['Les onglets', 'Aujourd’hui : le créneau en cours et ta journée. Semaine : la grille, à remplir au doigt (appui long puis glisser). Notes, Sport et Profil pour le reste.'],
-  ['Le bouton +', 'Il ajoute ce qui va avec l’écran : créneaux et tâches dans Aujourd’hui et Semaine ; tâches, habitudes, objectifs, listes et notes dans Notes ; exercices et compétitions dans Sport.'],
-  ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Sommeil, cours et repas se valident tout seuls. Avant le dîner, une notification fait le bilan : tu relis la journée et tu coches ce que tu as fait.'],
+  ['Les onglets', 'Aujourd’hui : le créneau en cours et ta journée. Semaine : la grille ; glisse vers la gauche ou la droite pour changer de semaine. Notes : tâches, habitudes, objectifs, listes et notes. Sport, puis Profil pour ta progression et les Réglages (la roue).'],
+  ['La grille', 'Touche une case vide pour ajouter un créneau. Appui long puis glisse : sur du vide pour en remplir plusieurs, au milieu d’un créneau pour le déplacer, sur son haut ou son bas pour changer l’heure. Deux créneaux ne se chevauchent pas ; le sommeil et les repas passent en premier et coupent le reste.'],
+  ['Ta semaine type', 'Semaine › Modifier : ce qui revient chaque semaine, jour par jour (le lundi type, le mardi type…). Coche les jours d’un créneau type ; « Régler par catégories » remplit le sommeil, les repas, les cours et le sport en quelques questions.'],
+  ['Ajouter', 'Le bouton + d’Aujourd’hui et de Semaine ajoute un créneau ou une tâche. Dans Notes, chaque rubrique a son propre +. Une liste se partage avec son bouton Partager.'],
+  ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée et allume ta flamme. Sommeil, cours et repas se valident tout seuls. Avant le dîner, une notification fait le bilan.'],
+  ['Ta progression', 'Chaque chose faite rapporte de l’XP. Un niveau gagné, un succès ou une semaine réussie donne un tirage : une créature pour ta collection. Choisis-en une comme compagnon : il se promène en bas de l’écran, grandit avec tes journées validées, et réagit quand tu le touches.'],
   ['Ta sauvegarde', 'Avec un compte, une copie chiffrée de tes données part toute seule : sur un nouveau téléphone, tu te connectes et tout revient. Sans compte, elles ne sont que sur ce téléphone : crée-le dans Profil › ⚙ › Compte et sauvegarde. Et ne supprime pas l’icône : ça peut effacer tes données.'],
   ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes et de tes tâches, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
 ];
@@ -2027,6 +2058,7 @@ document.addEventListener('click', e => {
   const liste = () => data.listes.find(l => l.id === (el.dataset.liste || id));
   switch (act) {
     case 'plus': return plus();
+    case 'partager-liste': return partagerListe(data.listes.find(l => l.id === id));
     case 'ajouter': return ({ tache: () => editerTache(), habitude: () => editerHabitude({ id: L.uid(), nom: '', freq: 'jour', faits: [], horaires: [] }, true),
       objectif: () => editerObjectif(), liste: () => editerListe(), note: () => editerNote() })[id]?.();
     case 'depart-exemple': case 'depart-vide': {
@@ -2200,6 +2232,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) naviga
 
 rendre();
 dernier = L.stats(data, new Date());
+verifierNiveau(dernier);
 ouvrir(ui.onglet);
 if (data.cgu !== CGU) conditions(); else if (!data.tutoVu && data.types.length) tutoriel();
 if (data.notifs?.actif) synchroRappels(false);

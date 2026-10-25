@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.10';
+export const VERSION = '1.10.11';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -281,7 +281,7 @@ const SLOT = { id: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID
 const SCHEMA = {
   version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID,
   recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
-  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, couleurs: { fond: TXT, accent: TXT }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
+  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, niveauVu: ENTRE(1, 1000), couleurs: { fond: TXT, accent: TXT }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
   cats: [{ id: ID, nom: TXT, couleur: TXT }],
   types: [{ id: ID, nom: TXT, exemple: BOOL, slots: [SLOT] }],
   semaines: { '*': { type: ID, slots: [SLOT] } },
