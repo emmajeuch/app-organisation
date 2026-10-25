@@ -545,4 +545,13 @@ assert.equal(L.CREATURES.length, 32);
 assert.equal(L.tirer([], () => .1).rarete, 'epique');
 assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune', 'epique', 'legendaire', 'rare']);
 
+// Sous un niveau gagné, refaire une tâche rapporte à nouveau ; décocher puis recocher ne rapporte rien de plus.
+{
+  const d = L.vide(); d.niveauVu = 4;                         // 600 XP pour le niveau 4
+  let st = L.stats(d, new Date()); assert.equal(st.total, 600); d.xpGarde = st.xpGarde;
+  d.bonusXp = 20; st = L.stats(d, new Date()); assert.equal(st.total, 620); d.xpGarde = st.xpGarde;
+  d.bonusXp = 0; st = L.stats(d, new Date()); assert.equal(st.total, 600); d.xpGarde = st.xpGarde;
+  d.bonusXp = 20; assert.equal(L.stats(d, new Date()).total, 620);
+}
+
 console.log('ok');

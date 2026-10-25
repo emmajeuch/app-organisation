@@ -49,6 +49,7 @@ function sauver() {
 let dernier = null;
 function maj() {
   const st = L.stats(data, new Date());
+  if (st.xpGarde !== (data.xpGarde || 0)) data.xpGarde = st.xpGarde;   // la réserve qui garde les niveaux gagnés
   const avant = data.compagnon?.stade;
   if (data.compagnon?.id) data.compagnon = L.grandir(data.compagnon, st.joursValides);
   sauver();

@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.18';
+export const VERSION = '1.10.19';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -332,7 +332,7 @@ const SLOT = { id: ID, groupe: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 
 const SCHEMA = {
   version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID,
   recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
-  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, niveauVu: ENTRE(1, 1000), couleurs: { fond: TXT, accent: TXT }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
+  bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, niveauVu: ENTRE(1, 1000), xpGarde: ENTRE(0, 1e7), couleurs: { fond: TXT, accent: TXT }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
   cats: [{ id: ID, nom: TXT, couleur: TXT }],
   types: [{ id: ID, nom: TXT, exemple: BOOL, slots: [SLOT] }],
   semaines: { '*': { type: ID, slots: [SLOT] } },
@@ -727,9 +727,14 @@ export function stats(data, auj) {
     objectifs: data.objectifs.filter(o => o.fait).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
     bonus: valides.size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,
   };
-  // V1.10.18 : décocher retire l'XP gagnée, mais jamais sous le plus haut niveau atteint (niveauVu) : un niveau gagné reste.
-  const total = Math.max(Object.values(sources).reduce((a, b) => a + b, 0), data.niveauVu ? seuil(data.niveauVu) : 0);
+  // V1.10.19 : un niveau gagné reste. Quand décocher ferait passer sous le plus haut niveau atteint (niveauVu), une réserve
+  // d'XP (xpGarde, gardée dans les données) comble l'écart ; elle ne baisse jamais. Chaque chose refaite rapporte donc à nouveau,
+  // et décocher puis recocher ne rapporte rien de plus.
+  const brut = Object.values(sources).reduce((a, b) => a + b, 0);
+  const xpGarde = Math.max(data.xpGarde || 0, (data.niveauVu ? seuil(data.niveauVu) : 0) - brut);
+  const total = brut + xpGarde;
   return {
+    xpGarde,
     sources, total, niveau: niveau(total), ...se, valides, joursValides: valides.size,
     semainesCompletes: cles.filter(c => joursValidesSemaine(valides, c) === 7).length,
     seances: data.journal.length + club, taches: data.taches.reduce((k, t) => k + completions(t), 0), projets,
