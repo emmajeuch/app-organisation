@@ -404,9 +404,10 @@ function vueAujourdhui() {
   // Seulement les tâches du jour, et celles en retard (retour des testeurs, 24/10) : la suite est dans Notes.
   const af = L.aFaire(data.taches, date, 0);
   if (actif('taches')) html += `<div class="sec"><h2>À faire aujourd’hui</h2>${af.length ? `<ul class="list">${af.map(tacheHtml).join('')}</ul>` : '<p class="vide">Rien pour aujourd’hui. Les tâches des jours suivants sont dans Notes.</p>'}</div>`;
-  if (data.habitudes.length && actif('habitudes')) {
+  const habsJour = data.habitudes.filter(hb => L.habitudeDuJour(hb, L.jourSemaine(date)));
+  if (habsJour.length && actif('habitudes')) {
     const iso = L.isoJour(date);
-    if (actif('habitudes')) html += `<div class="sec"><h2>Habitudes</h2><div class="habits">${data.habitudes.map(hb => `<button class="habit" data-act="habitude" data-id="${hb.id}" data-jour="${iso}" aria-pressed="${hb.faits.includes(iso)}">${I.check}${esc(hb.nom)}${hb.freq === 'jour' ? '' : ` <small>${L.faitsSemaine(hb, L.lundiDe(date))}/${hb.freq}</small>`}</button>`).join('')}</div></div>`;
+    html += `<div class="sec"><h2>Habitudes</h2><div class="habits">${habsJour.map(hb => `<button class="habit" data-act="habitude" data-id="${hb.id}" data-jour="${iso}" aria-pressed="${hb.faits.includes(iso)}">${I.check}${esc(hb.nom)}${hb.freq === 'jour' ? '' : ` <small>${L.faitsSemaine(hb, L.lundiDe(date))}/${hb.freq}</small>`}</button>`).join('')}</div></div>`;
   }
 
   const os = objectifs('semaine', L.periode('semaine', date));

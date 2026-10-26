@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.30';
+export const VERSION = '1.10.31';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -650,6 +650,8 @@ export function progression(journal, exo, type) {
 export const dernieresSeries = (journal, exo) => [...journal].sort((a, b) => b.date.localeCompare(a.date)).find(e => e.series?.some(x => x.exo === exo))?.series.find(x => x.exo === exo).sets;
 
 // Les habitudes posées sur le jour j (0 = lundi), une fois par heure prévue ce jour-là.
+// V1.10.31 : une habitude se montre les jours cochés ; sans jour choisi, tous les jours.
+export const habitudeDuJour = (hb, j) => { const hs = horairesDe(hb); return !hs.length || hs.some(x => x.j === j); };
 export const habitudesAHeure = (habitudes, j) => habitudes.flatMap(hb => horairesDe(hb).filter(x => x.j === j && typeof x.h === 'number').map(x => ({ ...hb, heure: x.h })));
 export const faitsSemaine = (h, lundi) => {
   const de = isoJour(lundi), a = isoJour(ajouterJours(lundi, 6));

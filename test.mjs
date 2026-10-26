@@ -691,4 +691,9 @@ assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune'
   assert.deepEqual(rs.map(x => x.titre), ['Dans 15 min : Piscine', 'Dans 15 min : Ménage']);
 }
 
+// V1.10.31 : une habitude ne se montre que les jours cochés (sans jour choisi : tous les jours).
+assert.ok(L.habitudeDuJour({ horaires: [{ j: 0, h: 18 }, { j: 2, h: null }] }, 2));
+assert.ok(!L.habitudeDuJour({ horaires: [{ j: 0, h: 18 }, { j: 2, h: null }] }, 1));
+assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
+
 console.log('ok');
