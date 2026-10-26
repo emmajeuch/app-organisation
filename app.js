@@ -169,7 +169,7 @@ const tacheHtml = t => {
     ${t.echeance && !t.fait ? pillEcheance(t) : ''}</li>`;
 };
 // Des jours, chacun avec son heure (facultative) : pour les tâches qui reviennent et les habitudes.
-const horaireLigne = (x = { j: L.jourSemaine(new Date()), h: null }) => `<div class="horaire" data-ligne><select name="hj" aria-label="Jour">${JOURS.map((n, j) => `<option value="${j}" ${j === x.j ? 'selected' : ''}>${n}</option>`).join('')}</select><input type="time" name="hh" step="300" value="${x.h != null ? L.hhmm(x.h) : ''}" aria-label="Heure (facultatif)"><button type="button" class="x" data-retirer aria-label="Retirer ce jour">${I.x}</button></div>`;
+const horaireLigne = (x = { j: L.jourSemaine(new Date()), h: null }) => `<div class="horaire" data-ligne><select name="hj" aria-label="Jour">${JOURS.map((n, j) => `<option value="${j}" ${j === x.j ? 'selected' : ''}>${n}</option>`).join('')}</select><input type="time" name="hh" value="${x.h != null ? L.hhmm(x.h) : ''}" aria-label="Heure (facultatif)"><button type="button" class="x" data-retirer aria-label="Retirer ce jour">${I.x}</button></div>`;
 const horairesChamp = (titre, liste, aide) => `<div class="champ">${titre}<div class="horaires" data-horaires>${L.trierHoraires(liste).map(horaireLigne).join('')}</div>
   <div class="rangee"><button type="button" class="btn gris petit" data-ajout-horaire>Ajouter un jour</button><button type="button" class="btn gris petit" data-tous-jours>Tous les jours</button></div>
   <p class="aide">${aide}</p></div>`;
@@ -298,7 +298,20 @@ dlg.addEventListener('click', e => {
   }
 });
 // Une heure choisie sur une ligne vaut aussi pour les lignes encore sans heure (V1.10.27).
-dlg.addEventListener('input', e => { if (e.target.name === 'chaque') dlg.querySelector('[data-par-jour]').hidden = !!e.target.value; });
+dlg.addEventListener('input', e => {
+  // « Chaque jour » coche tous les jours ; « 3 fois par semaine » les décoche s'ils l'étaient tous, pour choisir les siens.
+  if (e.target.name !== 'freq') return;
+  const cases = [...dlg.querySelectorAll('[name="jr"]')];
+  if (e.target.value === 'jour') cases.forEach(c => c.checked = true);
+  else if (cases.every(c => c.checked)) cases.forEach(c => c.checked = false);
+});
+dlg.addEventListener('click', e => {
+  if (!e.target.closest('[data-par-jour-ouvrir]')) return;
+  const f = e.target.closest('form'), h = L.versHeure(f.elements.heure.value, 1);
+  f.querySelector('[data-par-jour] [data-horaires]').innerHTML = [...f.querySelectorAll('[name="jr"]:checked')].map(c => horaireLigne({ j: +c.value, h: Number.isNaN(h) ? null : h })).join('');
+  f.querySelector('[data-simple]').hidden = true;
+  f.querySelector('[data-par-jour]').hidden = false;
+});
 dlg.addEventListener('change', e => {
   if (e.target.name !== 'hh' || !e.target.value) return;
   for (const i of e.target.closest('[data-horaires]')?.querySelectorAll('input[name="hh"]') || []) if (!i.value) i.value = e.target.value;
@@ -475,7 +488,7 @@ function editerSlot(slot, cle) {
   if (morceaux.length > 1) slot = { ...slot, j: morceaux[0].j, s: morceaux[0].s, e: morceaux.at(-1).e };
   const sansMorceaux = sem.slots.filter(x => !(slot.groupe && x.groupe === slot.groupe && x.id !== slot.id));
   const [p0, p1] = data.plage;
-  const heure = (nom, h) => `<input type="time" name="${nom}" value="${L.hhmm(h)}" step="300" required>`;
+  const heure = (nom, h) => `<input type="time" name="${nom}" value="${L.hhmm(h)}" required>`;
   const liees = slot.titre ? notesLiees(slot.titre) : [];
   ouvrirDlg(`<form><h2>${neuf ? 'Nouveau créneau' : 'Créneau'}</h2>
     <label class="champ">Titre<input name="titre" value="${esc(slot.titre)}" placeholder="${esc(cat(slot.cat).nom)}" autocomplete="off"></label>
@@ -619,7 +632,7 @@ function editerRecurrent(r, jt = null) {
     <label class="champ">Titre<input name="titre" value="${esc(v.titre)}" placeholder="${esc(cat(v.cat).nom)}" autocomplete="off"></label>
     <div class="cats" role="radiogroup" aria-label="Catégorie">${data.cats.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${c.id === v.cat ? 'checked' : ''}><span style="${teinte(c.id)}">${esc(c.nom)}</span></label>`).join('')}</div>
     <div class="champ">Jours${joursChoix('jours', v.jours)}${neuf ? '' : '<p class="aide">Un jour décoché garde son réglage d’avant.</p>'}</div>
-    <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Début<input type="time" name="s" value="${L.hhmm(v.s)}" step="300" required></label><label class="champ">Fin<input type="time" name="e" value="${L.hhmm(v.e)}" step="300" required></label></div>
+    <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Début<input type="time" name="s" value="${L.hhmm(v.s)}" required></label><label class="champ">Fin<input type="time" name="e" value="${L.hhmm(v.e)}" required></label></div>
     <div class="zone-lieu" ${SANS_LIEU.includes(v.cat) ? 'hidden' : ''}><label class="champ">Lieu<input name="salle" value="${esc(v.salle)}" autocomplete="off"></label>
     <label class="champ">Affaires à prendre<input name="affaires" value="${esc(v.affaires)}" autocomplete="off"></label></div>
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
@@ -880,7 +893,7 @@ function editerTache(t, defaut = {}) {
     <label class="champ">Titre<input name="titre" value="${esc(v.titre)}" autocomplete="off"></label>
     <div class="champs" style="grid-template-columns: 1fr 1fr">
       <label class="champ">${L.repDe(v).length ? 'Prochaine fois' : 'Échéance'}<input type="date" name="echeance" value="${v.echeance || ''}"></label>
-      <label class="champ">Heure (facultatif)<input type="time" name="heure" step="300" value="${typeof v.heure === 'number' ? L.hhmm(v.heure) : ''}"></label>
+      <label class="champ">Heure (facultatif)<input type="time" name="heure" value="${typeof v.heure === 'number' ? L.hhmm(v.heure) : ''}"></label>
     </div>
     <div class="rangee"><button type="button" class="btn gris petit" data-vider="echeance">Retirer l’échéance</button><button type="button" class="btn gris petit" data-vider="heure">Retirer l’heure</button></div>
     ${horairesChamp('Revient chaque semaine', L.repDe(v), 'Plusieurs jours possibles, chacun avec son heure. Cochée, la tâche passe toute seule à la fois suivante.')}
@@ -1186,16 +1199,23 @@ function editerSeanceType(s) {
 }
 
 function editerHabitude(hb, neuf = false) {
-  const hs = L.horairesDe(hb);
-  const chaque = hs.length === 7 && new Set(hs.map(x => x.j)).size === 7 && hs.every(x => typeof x.h === 'number' && x.h === hs[0].h) ? L.hhmm(hs[0].h) : '';
+  // V1.10.30 : des jours cochés à la même heure (ou sans heure) se règlent simplement ; sinon, jour par jour.
+  const hs = L.horairesDe(hb), heures = [...new Set(hs.map(x => x.h))], jours = [...new Set(hs.map(x => x.j))];
+  const simple = heures.length <= 1 && jours.length === hs.length;
+  const sel = simple && hs.length ? jours : simple && hb.freq === 'jour' ? [0, 1, 2, 3, 4, 5, 6] : [];
+  const heure = simple && typeof heures[0] === 'number' ? L.hhmm(heures[0]) : '';
   ouvrirDlg(`<form><h2>${neuf ? 'Nouvelle habitude' : esc(hb.nom)}</h2>
     <label class="champ">Nom<input name="nom" value="${esc(hb.nom)}" autocomplete="off" required></label>
     <div class="champs" style="grid-template-columns: 1fr 1fr">
       <label class="champ">À tenir<select name="freq">${FREQS.map(([v, n]) => `<option value="${v}" ${String(hb.freq) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <label class="champ">Durée<select name="duree">${[15, 30, 45, 60, 90, 120].map(m => `<option value="${m}" ${m === Math.round((hb.duree || .5) * 60) ? 'selected' : ''}>${m < 60 ? m + ' min' : L.heures(m / 60)}</option>`).join('')}</select></label>
     </div>
-    <label class="champ">Chaque jour à<input type="time" name="chaque" step="300" value="${chaque}"><span class="aide">Facultatif : l’habitude apparaît chaque jour à cette heure dans Semaine et Aujourd’hui, avec un rappel. Laisse vide pour choisir jour par jour.</span></label>
-    <div data-par-jour ${chaque ? 'hidden' : ''}>${horairesChamp('Ou jour par jour', chaque ? [] : hs, 'Chaque jour avec une heure apparaît dans Semaine et Aujourd’hui, avec un rappel. Plusieurs fois le même jour : ajoute ce jour deux fois.')}</div>
+    <div data-simple ${simple ? '' : 'hidden'}>
+      <div class="champ">Les jours${joursChoix('jr', sel)}</div>
+      <label class="champ">À (facultatif)<input type="time" name="heure" value="${heure}"><span class="aide">Avec une heure, l’habitude apparaît ces jours-là dans Semaine et Aujourd’hui, avec un rappel.</span></label>
+      <button type="button" class="btn gris petit" data-par-jour-ouvrir>Une heure différente selon le jour</button>
+    </div>
+    <div data-par-jour ${simple ? 'hidden' : ''}>${horairesChamp('Jour par jour', simple ? [] : hs, 'Chaque jour avec une heure apparaît dans Semaine et Aujourd’hui, avec un rappel. Plusieurs fois le même jour : ajoute ce jour deux fois.')}</div>
     ${neuf ? '' : `<p class="muted">${hb.faits.length} jour${hb.faits.length > 1 ? 's' : ''} tenu${hb.faits.length > 1 ? 's' : ''} en tout.</p>`}
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
     if (choix === 'suppr') { data.habitudes = data.habitudes.filter(x => x !== hb); maj(); return; }
@@ -1203,8 +1223,8 @@ function editerHabitude(hb, neuf = false) {
     hb.nom = f.get('nom').trim();
     hb.freq = f.get('freq') === 'jour' ? 'jour' : +f.get('freq');
     hb.duree = +f.get('duree') / 60;
-    const h = f.get('chaque') ? L.versHeure(f.get('chaque'), 1) : NaN;
-    hb.horaires = Number.isNaN(h) ? lireHoraires(f) : [0, 1, 2, 3, 4, 5, 6].map(j => ({ j, h }));
+    const h = f.get('heure') ? L.versHeure(f.get('heure'), 1) : NaN;
+    hb.horaires = dlg.querySelector('[data-simple]').hidden ? lireHoraires(f) : f.getAll('jr').map(j => ({ j: +j, h: Number.isNaN(h) ? null : h }));
     delete hb.heure; delete hb.jours;
     if (neuf) data.habitudes.push(hb);
     noterUsage('habitudes');
@@ -1755,7 +1775,7 @@ function revenirAvant() {
 // Construire son app catégorie par catégorie (remplace le questionnaire, retour des testeurs du 24/10) :
 // chaque étape explique une catégorie et règle ses créneaux types de base. « Passer » laisse la catégorie telle quelle.
 function construire(etape = 0, r = {}) {
-  const hm = (nom, h) => `<input type="time" name="${nom}" value="${L.hhmm(h)}" step="300">`;
+  const hm = (nom, h) => `<input type="time" name="${nom}" value="${L.hhmm(h)}">`;
   const titre = (id, nom) => `<span class="dot" style="${teinte(id)}"></span> ${nom}`;
   const ouiNon = (nom, oui, question) => `<div class="champ">${question}${radios(nom, { oui: 'Oui', non: 'Non' }, oui ? 'oui' : 'non')}</div>`;
   const deux = (a, b) => `<div class="champs" style="grid-template-columns: 1fr 1fr">${a}${b}</div>`;
