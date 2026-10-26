@@ -136,9 +136,13 @@ export async function traiter(req, env, maintenant = Date.now()) {
 // Au plus ENVOIS_MAX messages par passage : l'offre gratuite donne 10 ms de calcul, et un envoi en coûte un peu
 // plus d'une (chiffrement et signature). Les suivants partent au passage d'après, 2 minutes plus tard.
 export const ENVOIS_MAX = 5;
+const PAS = 120;                  // un passage toutes les 2 minutes (crons de wrangler.toml)
+const REPORT = 'index:report';    // les envois en trop d'un passage, pour le suivant
 
-// Toutes les 2 minutes : envoie les rappels arrivés à échéance, puis les retire.
-// Le rappel est retiré AVANT l'envoi : si le passage s'arrête en route, il ne repart pas une deuxième fois.
+// Toutes les 2 minutes : envoie les rappels tombés depuis le passage précédent, sans rien réécrire (une écriture
+// par rappel coûtait la moitié du quota gratuit). Un rappel ne tombe que dans un seul passage, il ne part donc
+// qu'une fois. ponytail: si Cloudflare saute un passage, les rappels de ces 2 minutes ne partent pas ; garder
+// l'heure du dernier passage coûterait 720 écritures par jour.
 export async function tourner(env, maintenant = Date.now(), faireFetch = fetch) {
   const s = Math.floor(maintenant / 1000), cles = { publique: env.VAPID_PUBLIQUE.trim(), privee: env.VAPID_PRIVEE.trim(), sujet: 'https://emmajeuch.github.io/app-organisation/' };
   // Une fois par jour (le passage de 3 h 00 UTC), l'index est complété par une liste du stockage : il rattrape deux
@@ -153,28 +157,35 @@ export async function tourner(env, maintenant = Date.now(), faireFetch = fetch) 
     if (!avant || !memes(index, avant)) await env.RAPPELS.put(INDEX, JSON.stringify(index));
   }
   let envoyes = 0;
-  const perdus = [];
+  const perdus = [], enTrop = [];
+  const envoyerA = async (name, abonnement, t) => {
+    if (envoyes >= ENVOIS_MAX) { enTrop.push([name, t]); return; }
+    const statut = await envoyer(abonnement, JSON.stringify({ t }), cles, faireFetch);
+    envoyes++;
+    console.log('envoi', statut); // seul le code de réponse du service, pour savoir si Apple accepte
+    if (statut === 404 || statut === 410) { await env.RAPPELS.delete(name); perdus.push(name); }
+  };
+  // D'abord ce qui n'a pas pu partir au passage précédent ; abandonné après 15 minutes de retard.
+  const report = await env.RAPPELS.get(REPORT, 'json') || [];
+  for (const [name, t] of report) {
+    if (s - t > 900) continue;
+    try { const entree = await env.RAPPELS.get(name, 'json'); if (entree) await envoyerA(name, entree.abonnement, t); }
+    catch (e) { console.log('échec', e?.name); }
+  }
   for (const name of index) {
-    if (envoyes >= ENVOIS_MAX) break;
     try {
       const entree = await env.RAPPELS.get(name, 'json');
       if (!entree) { if (liste && !liste.includes(name)) perdus.push(name); continue; }
-      const dus = entree.rappels.filter(t => t <= s);
-      if (!dus.length) continue;
-      const restants = entree.rappels.filter(t => t > s);
-      // Un seul message par passage : le plus récent ; un rappel de plus de 15 minutes de retard est abandonné.
-      const t = dus.at(-1);
-      let retire = true;
-      try { await env.RAPPELS.put(name, JSON.stringify({ abonnement: entree.abonnement, rappels: restants }), { expirationTtl: GARDE }); }
-      catch { retire = false; console.log('écriture refusée'); } // quota du jour atteint, par exemple
-      // Si le rappel n'a pas pu être retiré, il ne part qu'au premier passage après son heure, pour ne pas le répéter.
-      if (s - t > 900 || (!retire && s - t >= 120)) continue;
-      const statut = await envoyer(entree.abonnement, JSON.stringify({ t }), cles, faireFetch);
-      envoyes++;
-      console.log('envoi', statut); // seul le code de réponse du service, pour savoir si Apple accepte
-      if (statut === 404 || statut === 410) { await env.RAPPELS.delete(name); perdus.push(name); }
+      // Un seul message par passage : le plus récent des rappels tombés depuis le passage précédent.
+      const dus = entree.rappels.filter(t => t > s - PAS && t <= s);
+      if (dus.length) await envoyerA(name, entree.abonnement, dus.at(-1));
     } catch (e) { console.log('échec', e?.name); } // un abonnement en panne n'arrête pas les autres
   }
+  // Une écriture seulement s'il y a eu trop d'envois, ou pour vider la liste du passage précédent.
+  try {
+    if (enTrop.length) await env.RAPPELS.put(REPORT, JSON.stringify(enTrop));
+    else if (report.length) await env.RAPPELS.delete(REPORT);
+  } catch { console.log('écriture refusée'); }
   // Les abonnements morts sortent de l'index en une seule écriture.
   if (perdus.length) { try { await changerIndex(env, l => l.filter(k => !perdus.includes(k))); } catch { console.log('écriture refusée'); } }
   return envoyes;

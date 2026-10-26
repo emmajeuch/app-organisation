@@ -37,13 +37,16 @@ assert.ok(cle.startsWith('a:') && !cle.includes(id));
 assert.ok(!stock.get(cle).includes('stats'));
 assert.deepEqual(JSON.parse(stock.get(cle)).rappels, [s0 + 600, s0 + 3600]);
 
-// Passage du minuteur 10 minutes plus tard : un message chiffré part vers Apple, le rappel est retiré.
+// Passage du minuteur 10 minutes plus tard : un message chiffré part vers Apple, sans aucune écriture.
 const envois = [];
 const faux = async (url, init) => { envois.push({ url, init }); return { status: 201 }; };
+const ecrituresAvant = ops.put + ops.delete;
 assert.equal(await tourner(env, T0 + 600_000, faux), 1);
+assert.equal(ops.put + ops.delete, ecrituresAvant);
+assert.equal(await tourner(env, T0 + 720_000, faux), 0);           // le passage suivant ne le renvoie pas
 assert.equal(envois[0].url, abonnement.endpoint);
 assert.match(envois[0].init.headers.Authorization, /^vapid t=.+, k=/);
-assert.deepEqual(JSON.parse(stock.get(cle)).rappels, [s0 + 3600]);
+assert.deepEqual(JSON.parse(stock.get(cle)).rappels, [s0 + 600, s0 + 3600]);
 // Le téléphone déchiffre et ne lit que l'heure du rappel.
 const corps = envois[0].init.body, sel = corps.slice(0, 16), asPublic = corps.slice(21, 86);
 const ecdh = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: await crypto.subtle.importKey('raw', asPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []) }, tel.privateKey, 256));
@@ -69,7 +72,9 @@ assert.equal(abonnes().length, 0); assert.deepEqual(index(), []);
   const vus = [];
   const compte = async (url, init) => { vus.push(init.body); return { status: 201 }; };
   assert.equal(await tourner(env, T0 + 600_000, compte), ENVOIS_MAX);
+  assert.equal(JSON.parse(stock.get('index:report')).length, 3);    // les 3 en trop, gardés pour le passage suivant
   assert.equal(await tourner(env, T0 + 720_000, compte), 3);
+  assert.ok(!stock.has('index:report'));
   assert.equal(await tourner(env, T0 + 840_000, compte), 0);
   // Une écriture refusée (quota) : le rappel part une seule fois, au premier passage, puis plus jamais.
   const kvPlein = { ...KV, put: async () => { throw new Error('quota'); } };
