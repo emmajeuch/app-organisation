@@ -297,6 +297,11 @@ dlg.addEventListener('click', e => {
     zone.innerHTML = [0, 1, 2, 3, 4, 5, 6].map(j => horaireLigne({ j, h: Number.isNaN(h) ? null : h })).join('');
   }
 });
+// Une heure choisie sur une ligne vaut aussi pour les lignes encore sans heure (V1.10.27).
+dlg.addEventListener('change', e => {
+  if (e.target.name !== 'hh' || !e.target.value) return;
+  for (const i of e.target.closest('[data-horaires]')?.querySelectorAll('input[name="hh"]') || []) if (!i.value) i.value = e.target.value;
+});
 dlg.addEventListener('cancel', e => { if (dlg.dataset.collant) e.preventDefault(); });
 
 const bienvenue = () => `<div class="card bientot"><b>Bienvenue</b>
@@ -318,7 +323,7 @@ function vueAujourdhui() {
     else if (L.sauvegardePossible()) html += `<div class="card type alerte-export"><div class="txt"><b>Tes données ne sont pas sauvegardées</b><small>Elles ne sont que sur ce téléphone : crée ton compte pour les garder.</small></div><button class="btn plein petit" data-act="compte">Créer</button></div>`;
   }
   if (peutActiverRappels() && !data.notifs.plusTard) {
-    html += `<div class="card type"><div class="txt"><b>Activer les rappels ?</b><small>Avant tes cours et tes séances, et avant le dîner pour le bilan de ta journée</small></div><div class="rangee" style="flex:0 0 auto"><button class="btn gris petit" data-act="rappels-plus-tard">Plus tard</button><button class="btn plein petit" data-act="rappels-activer">Activer</button></div></div>`;
+    html += `<div class="card type"><div class="txt"><b>Activer les rappels ?</b><small>Avant tes cours, séances, repas, trajets et le coucher, à l’heure de tes habitudes, et le bilan avant le dîner</small></div><div class="rangee" style="flex:0 0 auto"><button class="btn gris petit" data-act="rappels-plus-tard">Plus tard</button><button class="btn plein petit" data-act="rappels-activer">Activer</button></div></div>`;
   }
   if (!data.types.length) { $('#aujourdhui').innerHTML = html + bienvenue(); return; }
 
@@ -1186,7 +1191,7 @@ function editerHabitude(hb, neuf = false) {
       <label class="champ">À tenir<select name="freq">${FREQS.map(([v, n]) => `<option value="${v}" ${String(hb.freq) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <label class="champ">Durée<select name="duree">${[15, 30, 45, 60, 90, 120].map(m => `<option value="${m}" ${m === Math.round((hb.duree || .5) * 60) ? 'selected' : ''}>${m < 60 ? m + ' min' : L.heures(m / 60)}</option>`).join('')}</select></label>
     </div>
-    ${horairesChamp('Dans l’emploi du temps', L.horairesDe(hb), 'Chaque jour coché avec une heure apparaît dans Semaine et Aujourd’hui, avec un rappel. Plusieurs fois le même jour : ajoute ce jour deux fois.')}
+    ${horairesChamp('Jours et heure du rappel', L.horairesDe(hb), 'Avec une heure, l’habitude apparaît dans Semaine et Aujourd’hui ce jour-là, et un rappel arrive à cette heure. Plusieurs fois le même jour : ajoute ce jour deux fois.')}
     ${neuf ? '' : `<p class="muted">${hb.faits.length} jour${hb.faits.length > 1 ? 's' : ''} tenu${hb.faits.length > 1 ? 's' : ''} en tout.</p>`}
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
     if (choix === 'suppr') { data.habitudes = data.habitudes.filter(x => x !== hb); maj(); return; }
@@ -1667,10 +1672,10 @@ function rappelsHtml(dansReglages) {
   let corps;
   if (!L.SERVEUR_RAPPELS) corps = '<p>Bientôt : le serveur des rappels n’est pas encore en ligne.</p>';
   else if (!pushPossible() || !enApp()) corps = '<p>Pour recevoir des rappels, ouvre l’app depuis son icône sur l’écran d’accueil (iPhone : iOS 16.4 ou plus).</p>';
-  else if (!n.actif) corps = `<p>Un rappel avant tes cours et tes séances, à l’heure de tes habitudes, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan.</p>
+  else if (!n.actif) corps = `<p>Un rappel avant tes cours, séances, repas, trajets et le coucher, à l’heure de tes habitudes, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan.</p>
     <button class="btn plein" data-act="rappels-activer">Activer les rappels</button>`;
-  else corps = `<label class="champ">Avant un cours, une séance ou un service<select data-act="rappel" data-id="delai">${[5, 10, 15, 20, 30, 45, 60].map(m => `<option value="${m}" ${m === n.delai ? 'selected' : ''}>${m} min avant</option>`).join('')}</select></label>
-    <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="creneaux" ${n.creneaux ? 'checked' : ''}>Avant les cours, séances et services</label>
+  else corps = `<label class="champ">Combien de temps avant<select data-act="rappel" data-id="delai">${[5, 10, 15, 20, 30, 45, 60].map(m => `<option value="${m}" ${m === n.delai ? 'selected' : ''}>${m} min avant</option>`).join('')}</select></label>
+    <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="creneaux" ${n.creneaux ? 'checked' : ''}>Avant les cours, séances, services, repas, trajets et le coucher</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="habitudes" ${n.habitudes !== false ? 'checked' : ''}>À l’heure de mes habitudes</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="taches" ${n.taches !== false ? 'checked' : ''}>À l’heure de mes tâches</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="soir" ${n.soir ? 'checked' : ''}>Avant le dîner, le bilan de ma journée</label>

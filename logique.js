@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.26';
+export const VERSION = '1.10.27';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -948,7 +948,7 @@ export function empreinte(texte) {
   return (h >>> 0).toString(16);
 }
 export const REGLAGES_RAPPELS = { actif: false, delai: 15, creneaux: true, habitudes: true, taches: true, soir: true, bilan: true };
-const CATS_RAPPEL = ['cours', 'sport', 'job'];
+const CATS_RAPPEL = ['cours', 'sport', 'job', 'repas', 'sommeil'];
 
 // Les rappels des 7 prochains jours, avec leur texte. Seules les heures (t, en secondes) partent vers
 // le serveur ; les textes restent sur le téléphone, qui les affiche quand la notification arrive.
@@ -965,22 +965,25 @@ export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
     const d = ajouterJours(new Date(auj.getFullYear(), auj.getMonth(), auj.getDate()), i);
     const cle = isoJour(lundiDe(d));
     const t = data.types.find(x => x.id === data.typeDefaut) || data.types[0];
-    const slots = (data.semaines[cle]?.slots || t?.slots || []).filter(x => x.j === jourSemaine(d));
+    const duJour = j => { const k = ajouterJours(d, j - i), sem = data.semaines[isoJour(lundiDe(k))]; return (sem?.slots || t?.slots || []).filter(x => x.j === jourSemaine(k)); };
+    const slots = duJour(i), veille = duJour(i - 1);
     // Heure locale du jour d, juste même les jours de changement d’heure (minuit + 17 h ne fait pas 17 h le 25/10).
     const a = h => Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, Math.round(h * 60)).getTime() / 1000);
-    if (r.creneaux) for (const x of slots) if (CATS_RAPPEL.includes(x.cat) && x.titre !== 'Trajet') {
-      ajout(a(x.s) - r.delai * 60, `Dans ${r.delai} min : ${x.titre}`, [hhmm(x.s), x.salle, x.affaires].filter(Boolean).join(' · '));
-    }
-    // Les habitudes à heure, à leur heure exacte, sauf si elles sont déjà cochées ce jour-là ; réglage absent = activé.
-    if (r.habitudes !== false) for (const hb of habitudesAHeure(data.habitudes, jourSemaine(d))) {
-      if (!hb.faits.includes(isoJour(d))) ajout(a(hb.heure), hb.nom, 'C’est l’heure de ton habitude.');
-    }
-    // Le bilan avant le dîner : pour aujourd'hui, ce qui est déjà validé et ce qui reste (écrit sur le téléphone, jamais envoyé).
+    // Le bilan d'abord : avant le dîner, il tombe à la même minute que le rappel du repas et les deux font une seule notification.
     if (r.soir && slots.length) {
       const hb = heureBilan(slots), v = slots.filter(x => !auto(x) && x.e <= hb + .25);
       const ok = v.filter(x => x.fait).map(x => x.titre), reste = v.filter(x => !x.fait).map(x => x.titre);
       const resume = [ok.length && `Validé : ${ok.join(', ')}`, reste.length && `À valider : ${reste.join(', ')}`].filter(Boolean).join(' · ');
       ajout(a(hb), 'Bilan de ta journée', i === 0 && resume ? resume.slice(0, 180) : 'Avant de manger, valide ce que tu as fait aujourd’hui.');
+    }
+    // La suite d'un créneau commencé la veille (le sommeil après minuit) n'a pas de rappel.
+    const suite = x => x.s === 0 && veille.some(y => y.e === 24 && y.cat === x.cat && y.titre === x.titre);
+    if (r.creneaux) for (const x of slots) if (CATS_RAPPEL.includes(x.cat) && !suite(x)) {
+      ajout(a(x.s) - r.delai * 60, `Dans ${r.delai} min : ${x.titre}`, [hhmm(x.s), x.salle, x.affaires].filter(Boolean).join(' · '));
+    }
+    // Les habitudes à heure, à leur heure exacte, sauf si elles sont déjà cochées ce jour-là ; réglage absent = activé.
+    if (r.habitudes !== false) for (const hb of habitudesAHeure(data.habitudes, jourSemaine(d))) {
+      if (!hb.faits.includes(isoJour(d))) ajout(a(hb.heure), hb.nom, 'C’est l’heure de ton habitude.');
     }
     if (r.bilan && jourSemaine(d) === 6) ajout(a(17), 'C’est l’heure du bilan', 'Objectifs, tâches à reporter, heures de la semaine.');
   }

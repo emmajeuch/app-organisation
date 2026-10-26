@@ -220,13 +220,14 @@ const rp = L.vide();
 rp.semaines['2026-10-26'] = { slots: [{ j: 0, s: 8, e: 8.5, cat: 'cours', titre: 'Trajet' }, { j: 0, s: 8.5, e: 10.5, cat: 'cours', titre: 'TD', salle: 'B' }, { j: 0, s: 12, e: 13, cat: 'repas', titre: 'Déjeuner' }] };
 const lundi7h = new Date(2026, 9, 26, 7, 0).getTime();
 const rs = L.calculerRappels(rp, lundi7h, { ...L.REGLAGES_RAPPELS });
-assert.equal(rs[0].t, new Date(2026, 9, 26, 8, 15).getTime() / 1000);
-assert.equal(rs[0].titre, 'Dans 15 min : TD');
-assert.equal(rs[0].corps, '08:30 · B');
+assert.equal(rs[0].t, new Date(2026, 9, 26, 7, 45).getTime() / 1000);
+assert.equal(rs[0].titre, 'Dans 15 min : Trajet');
+assert.equal(rs[1].titre, 'Dans 15 min : TD');
+assert.equal(rs[1].corps, '08:30 · B');
 assert.ok(rs.some(x => x.titre === 'Bilan de ta journée' && x.t === new Date(2026, 9, 26, 20, 0).getTime() / 1000));   // pas de dîner prévu : 20 h
-assert.ok(!rs.some(x => /Trajet|Déjeuner/.test(x.titre)));
+assert.ok(rs.some(x => x.titre === 'Dans 15 min : Déjeuner' && x.t === new Date(2026, 9, 26, 11, 45).getTime() / 1000));
 assert.ok(rs.every(x => x.t > lundi7h / 1000));
-assert.equal(L.calculerRappels(rp, new Date(2026, 9, 26, 9, 0).getTime(), { ...L.REGLAGES_RAPPELS, soir: false, bilan: false }).length, 0);
+assert.equal(L.calculerRappels(rp, new Date(2026, 9, 26, 12, 0).getTime(), { ...L.REGLAGES_RAPPELS, soir: false, bilan: false }).length, 0);
 // Une sauvegarde importée ne garde pas l'abonnement d'un autre téléphone.
 assert.equal(L.validerImport({ ...JSON.parse(JSON.stringify(L.vide())), notifs: { actif: true, id: 'x' } }).notifs.actif, false);
 
@@ -264,7 +265,7 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   const a = (j, h, m = 0) => new Date(2026, 9, j, h, m).getTime() / 1000;
   assert.ok(rs.some(x => x.t === a(26, 22) && x.titre === 'Lire'));
   assert.ok(!rs.some(x => x.t === a(27, 22)));                       // déjà cochée le 27
-  assert.equal(rs.find(x => x.t === a(26, 20)).titre, 'Étirements · Bilan de ta journée');
+  assert.equal(rs.find(x => x.t === a(26, 20)).titre, 'Bilan de ta journée · Étirements');
   assert.ok(!L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS, habitudes: false }).some(x => x.titre.includes('Lire')));
 }
 
@@ -285,7 +286,7 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   assert.equal(L.journeeValidee(jour), false);
   assert.equal(L.journeeValidee(jour.map(x => L.auto(x) ? x : { ...x, fait: true })), true);
   const d = L.vide(); d.semaines['2026-10-26'] = { slots: jour };
-  const b = L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS }).find(x => x.titre === 'Bilan de ta journée');
+  const b = L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS }).find(x => x.titre.startsWith('Bilan de ta journée'));
   assert.equal(b.t, new Date(2026, 9, 26, 18, 45).getTime() / 1000);
   assert.equal(b.corps, 'Validé : Révisions · À valider : Renfo');
 }
@@ -666,6 +667,20 @@ assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune'
   const o = L.validerImport(JSON.parse(JSON.stringify(d)));
   assert.equal(o.couleurs.fond, '#112233');
   assert.equal(o.couleurs.accent, undefined);
+}
+
+// V1.10.27 : un rappel avant le sommeil (pas après minuit pour la suite de la nuit) et avant le dîner,
+// fondu avec le bilan en une seule notification.
+{
+  const d = L.vide();
+  d.semaines['2026-10-26'] = { slots: [{ j: 0, s: 19, e: 20, cat: 'repas', titre: 'Dîner' }, { j: 0, s: 23, e: 24, cat: 'sommeil', titre: 'Sommeil' }, { j: 1, s: 0, e: 7, cat: 'sommeil', titre: 'Sommeil' }] };
+  const rs = L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS });
+  const a = (j, h, m) => new Date(2026, 9, 26 + j, h, m).getTime() / 1000;
+  assert.ok(rs.some(x => x.t === a(0, 22, 45) && x.titre === 'Dans 15 min : Sommeil'));
+  assert.ok(!rs.some(x => x.t === a(0, 23, 45)));                     // la suite de la nuit, à minuit : pas de rappel
+  const diner = rs.filter(x => x.t === a(0, 18, 45));
+  assert.equal(diner.length, 1);
+  assert.equal(diner[0].titre, 'Bilan de ta journée · Dans 15 min : Dîner');
 }
 
 console.log('ok');
