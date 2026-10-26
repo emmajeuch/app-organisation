@@ -324,7 +324,7 @@ function vueAujourdhui() {
     else if (L.sauvegardePossible()) html += `<div class="card type alerte-export"><div class="txt"><b>Tes données ne sont pas sauvegardées</b><small>Elles ne sont que sur ce téléphone : crée ton compte pour les garder.</small></div><button class="btn plein petit" data-act="compte">Créer</button></div>`;
   }
   if (peutActiverRappels() && !data.notifs.plusTard) {
-    html += `<div class="card type"><div class="txt"><b>Activer les rappels ?</b><small>Avant tes cours, séances, repas, trajets et le coucher, à l’heure de tes habitudes, et le bilan avant le dîner</small></div><div class="rangee" style="flex:0 0 auto"><button class="btn gris petit" data-act="rappels-plus-tard">Plus tard</button><button class="btn plein petit" data-act="rappels-activer">Activer</button></div></div>`;
+    html += `<div class="card type"><div class="txt"><b>Activer les rappels ?</b><small>Avant chaque créneau de ta journée, à l’heure de tes habitudes, et le bilan avant le dîner</small></div><div class="rangee" style="flex:0 0 auto"><button class="btn gris petit" data-act="rappels-plus-tard">Plus tard</button><button class="btn plein petit" data-act="rappels-activer">Activer</button></div></div>`;
   }
   if (!data.types.length) { $('#aujourdhui').innerHTML = html + bienvenue(); return; }
 
@@ -1677,10 +1677,10 @@ function rappelsHtml(dansReglages) {
   let corps;
   if (!L.SERVEUR_RAPPELS) corps = '<p>Bientôt : le serveur des rappels n’est pas encore en ligne.</p>';
   else if (!pushPossible() || !enApp()) corps = '<p>Pour recevoir des rappels, ouvre l’app depuis son icône sur l’écran d’accueil (iPhone : iOS 16.4 ou plus).</p>';
-  else if (!n.actif) corps = `<p>Un rappel avant tes cours, séances, repas, trajets et le coucher, à l’heure de tes habitudes, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan.</p>
+  else if (!n.actif) corps = `<p>Un rappel avant chaque créneau de ta journée, à l’heure de tes habitudes, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan.</p>
     <button class="btn plein" data-act="rappels-activer">Activer les rappels</button>`;
   else corps = `<label class="champ">Combien de temps avant<select data-act="rappel" data-id="delai">${[5, 10, 15, 20, 30, 45, 60].map(m => `<option value="${m}" ${m === n.delai ? 'selected' : ''}>${m} min avant</option>`).join('')}</select></label>
-    <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="creneaux" ${n.creneaux ? 'checked' : ''}>Avant les cours, séances, services, repas, trajets et le coucher</label>
+    <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="creneaux" ${n.creneaux ? 'checked' : ''}>Avant chaque créneau de ma journée</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="habitudes" ${n.habitudes !== false ? 'checked' : ''}>À l’heure de mes habitudes</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="taches" ${n.taches !== false ? 'checked' : ''}>À l’heure de mes tâches</label>
     <label class="coche"><input type="checkbox" class="chk" data-act="rappel" data-id="soir" ${n.soir ? 'checked' : ''}>Avant le dîner, le bilan de ma journée</label>

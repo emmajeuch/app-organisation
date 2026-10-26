@@ -683,4 +683,12 @@ assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune'
   assert.equal(diner[0].titre, 'Bilan de ta journée · Dans 15 min : Dîner');
 }
 
+// V1.10.29 : un rappel avant chaque créneau, quelle que soit sa catégorie.
+{
+  const d = L.vide();
+  d.semaines['2026-10-26'] = { slots: [{ j: 0, s: 14, e: 16, cat: 'loisirs', titre: 'Piscine' }, { j: 0, s: 16, e: 17, cat: 'menage', titre: 'Ménage' }] };
+  const rs = L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS, soir: false, bilan: false });
+  assert.deepEqual(rs.map(x => x.titre), ['Dans 15 min : Piscine', 'Dans 15 min : Ménage']);
+}
+
 console.log('ok');

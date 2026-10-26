@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.28';
+export const VERSION = '1.10.29';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -948,7 +948,6 @@ export function empreinte(texte) {
   return (h >>> 0).toString(16);
 }
 export const REGLAGES_RAPPELS = { actif: false, delai: 15, creneaux: true, habitudes: true, taches: true, soir: true, bilan: true };
-const CATS_RAPPEL = ['cours', 'sport', 'job', 'repas', 'sommeil'];
 
 // Les rappels des 7 prochains jours, avec leur texte. Seules les heures (t, en secondes) partent vers
 // le serveur ; les textes restent sur le téléphone, qui les affiche quand la notification arrive.
@@ -978,7 +977,7 @@ export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
     }
     // La suite d'un créneau commencé la veille (le sommeil après minuit) n'a pas de rappel.
     const suite = x => x.s === 0 && veille.some(y => y.e === 24 && y.cat === x.cat && y.titre === x.titre);
-    if (r.creneaux) for (const x of slots) if (CATS_RAPPEL.includes(x.cat) && !suite(x)) {
+    if (r.creneaux) for (const x of slots) if (!suite(x)) {   // V1.10.29 : chaque créneau de la journée
       ajout(a(x.s) - r.delai * 60, `Dans ${r.delai} min : ${x.titre}`, [hhmm(x.s), x.salle, x.affaires].filter(Boolean).join(' · '));
     }
     // Les habitudes à heure, à leur heure exacte, sauf si elles sont déjà cochées ce jour-là ; réglage absent = activé.
