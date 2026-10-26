@@ -48,6 +48,7 @@ function sauver() {
 // Après chaque changement : on enregistre, on redessine, et on annonce l'XP gagnée (avec un petit son).
 let dernier = null;
 function maj() {
+  for (const s of Object.values(data.semaines)) s.slots = L.trajets(s.slots);   // V1.10.32
   L.retenirXp(data);
   const st = L.stats(data, new Date());
   if (st.xpGarde !== (data.xpGarde || 0)) data.xpGarde = st.xpGarde;   // la réserve qui garde les niveaux gagnés
@@ -464,7 +465,12 @@ const nouveauSlot = (j, s, e) => ({ id: L.uid(), j, s, e, cat: ui.derniereCat ||
 
 const occupe = x => `Ce moment est déjà pris : ${x.titre} (${L.hhmm(x.s)} – ${L.hhmm(x.e)}). Déplace-le ou raccourcis-le d’abord.`;
 // Ni lieu ni affaires à prendre pour dormir, manger ou faire le ménage (V1.10.10).
-const SANS_LIEU = ['sommeil', 'repas', 'menage'];
+const SANS_LIEU = ['sommeil', 'repas', 'menage', 'trajet'];
+// Trajet avant et après un créneau (V1.10.32), en minutes ; 0 = aucun.
+const DUREES_TRAJET = [0, 5, 10, 15, 20, 30, 45, 60, 90];
+const champsTrajet = v => `<div class="champs" style="grid-template-columns: 1fr 1fr">${[['avant', 'Trajet avant'], ['apres', 'Trajet après']].map(([k, n]) =>
+  `<label class="champ">${n}<select name="${k}">${[...new Set([...DUREES_TRAJET, v[k] || 0])].sort((a, b) => a - b).map(m => `<option value="${m}" ${m === (v[k] || 0) ? 'selected' : ''}>${m ? m + ' min' : 'Aucun'}</option>`).join('')}</select></label>`).join('')}</div>`;
+const lireTrajets = (f, c) => { for (const k of ['avant', 'apres']) c[k] = SANS_LIEU.includes(c.cat) ? 0 : +f.get(k) || 0; };
 const suivreLieu = () => dlg.querySelectorAll('input[name="cat"]').forEach(r => r.addEventListener('change', () => { const z = dlg.querySelector('.zone-lieu'); if (z) z.hidden = SANS_LIEU.includes(r.value); }));
 // Le moment est déjà pris (V1.10.12) : raccourcir, décaler ou remplacer ce qui est là, ou annuler.
 function conflit(slots, c, gene, suite) {
@@ -487,7 +493,8 @@ function editerSlot(slot, cle) {
   const morceaux = slot.groupe ? sem.slots.filter(x => x.groupe === slot.groupe).sort((a, b) => a.j - b.j || a.s - b.s) : [];
   const jfInit = morceaux.length > 1 && morceaux.at(-1).j !== morceaux[0].j ? morceaux.at(-1).j : null;
   if (morceaux.length > 1) slot = { ...slot, j: morceaux[0].j, s: morceaux[0].s, e: morceaux.at(-1).e };
-  const sansMorceaux = sem.slots.filter(x => !(slot.groupe && x.groupe === slot.groupe && x.id !== slot.id));
+  // Les trajets ajoutés par les créneaux ne gênent rien : ils sont refaits après.
+  const sansMorceaux = L.sansTrajets(sem.slots).filter(x => !(slot.groupe && x.groupe === slot.groupe && x.id !== slot.id));
   const [p0, p1] = data.plage;
   const heure = (nom, h) => `<input type="time" name="${nom}" value="${L.hhmm(h)}" required>`;
   const liees = slot.titre ? notesLiees(slot.titre) : [];
@@ -502,7 +509,9 @@ function editerSlot(slot, cle) {
     <label class="champ">Finit le<select name="jf"><option value="">même jour</option>${JOURS.map((n, j) => `<option value="${j}" ${j === jfInit ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
     ${morceaux.length > 1 ? `<p class="aide">Ce créneau est en ${morceaux.length} morceaux autour des repas et du sommeil : tout se modifie ensemble.</p>` : ''}
     <div class="zone-lieu" ${SANS_LIEU.includes(slot.cat) ? 'hidden' : ''}><label class="champ">Lieu<input name="salle" value="${esc(slot.salle)}" autocomplete="off"></label>
-    <label class="champ">Affaires à prendre<input name="affaires" value="${esc(slot.affaires)}" autocomplete="off"></label></div>
+    <label class="champ">Affaires à prendre<input name="affaires" value="${esc(slot.affaires)}" autocomplete="off"></label>
+    ${champsTrajet(slot)}</div>
+    ${slot.lien ? '<p class="aide">Trajet ajouté par son créneau. Le changer ici le détache : il reste tel quel.</p>' : ''}
     <label class="champ">Notes<textarea name="notes">${esc(slot.notes)}</textarea></label>
     ${liees.length ? `<div class="champ">Notes liées<div class="liens">${liees.map(n => `<button type="button" data-act="note" data-id="${n.id}">${esc(n.titre || 'Sans titre')}</button>`).join('')}</div></div>` : ''}
     <div class="champ" id="zone-sport" ${slot.cat === 'sport' ? '' : 'hidden'}>
@@ -515,6 +524,7 @@ function editerSlot(slot, cle) {
     ${rec ? `<label class="coche"><input type="checkbox" class="chk" name="type">Modifier aussi le créneau type (${esc(L.joursTexte(rec.jours))})</label>` : ''}
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div>
   </form>`, (choix, f) => {
+    if (slot.lien) L.detacherTrajet(sansMorceaux, slot);   // touché à la main, il n'est plus refait par son créneau
     const versType = !!f.get('type');
     if (choix === 'suppr') {
       sem.slots = sansMorceaux.filter(x => x.id !== slot.id);
@@ -529,6 +539,7 @@ function editerSlot(slot, cle) {
     const c = { id: slot.id, j: +f.get('j'), s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), cat: f.get('cat') || slot.cat,
       salle: f.get('salle').trim(), affaires: f.get('affaires').trim(), notes: f.get('notes').trim(), fait: f.get('fait') ? true : null };
     c.titre = f.get('titre').trim() || cat(c.cat).nom;
+    lireTrajets(f, c);
     // Sur plusieurs jours (V1.10.4) : coupé jour par jour autour des repas et du sommeil, jamais répété.
     const jf = f.get('jf') === '' ? c.j : +f.get('jf');
     if (jf < c.j) { dire('Le jour de fin doit être après le jour de début (même semaine).'); return false; }
@@ -561,7 +572,7 @@ function editerSlot(slot, cle) {
     // Le créneau type suit (heures, titre, catégorie, salle ; un jour déplacé remplace l'ancien), ou il est créé.
     let recId = null;
     if (versType && rec) {
-      Object.assign(rec, { titre: c.titre, cat: c.cat, s: c.s, e: c.e, salle: c.salle, affaires: c.affaires });
+      Object.assign(rec, { titre: c.titre, cat: c.cat, s: c.s, e: c.e, salle: c.salle, affaires: c.affaires, avant: c.avant, apres: c.apres });
       if (c.j !== slot.j) rec.jours = [...new Set([...rec.jours.filter(j => j !== slot.j), c.j])];
       delete rec.exemple;
       recId = rec.id;
@@ -635,7 +646,8 @@ function editerRecurrent(r, jt = null) {
     <div class="champ">Jours${joursChoix('jours', v.jours)}${neuf ? '' : '<p class="aide">Un jour décoché garde son réglage d’avant.</p>'}</div>
     <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Début<input type="time" name="s" value="${L.hhmm(v.s)}" required></label><label class="champ">Fin<input type="time" name="e" value="${L.hhmm(v.e)}" required></label></div>
     <div class="zone-lieu" ${SANS_LIEU.includes(v.cat) ? 'hidden' : ''}><label class="champ">Lieu<input name="salle" value="${esc(v.salle)}" autocomplete="off"></label>
-    <label class="champ">Affaires à prendre<input name="affaires" value="${esc(v.affaires)}" autocomplete="off"></label></div>
+    <label class="champ">Affaires à prendre<input name="affaires" value="${esc(v.affaires)}" autocomplete="off"></label>
+    ${champsTrajet(v)}</div>
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
     if (choix === 'suppr') {
       data.recurrents = data.recurrents.filter(x => x !== r);
@@ -645,6 +657,7 @@ function editerRecurrent(r, jt = null) {
     const p0 = data.plage[0];
     const c = { cat: f.get('cat') || v.cat, s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), jours: f.getAll('jours').map(Number), salle: f.get('salle').trim(), affaires: f.get('affaires').trim() };
     c.titre = f.get('titre').trim() || cat(c.cat).nom;
+    lireTrajets(f, c);
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
     if (!c.jours.length) { dire('Coche au moins un jour.'); return false; }
     // Un cours peut passer sur le déjeuner (il se coupera autour) ; deux créneaux types ordinaires, ou deux repas, non.
@@ -685,7 +698,7 @@ function cible(g) {
 function apercu() {
   const c = cible(geste), f = geste.fantome;
   f.style.cssText = `${teinte(geste.slot ? geste.slot.cat : ui.derniereCat || data.cats[0]?.id)};--s:${c.s - data.plage[0]};--d:${c.e - c.s}`;
-  const pris = geste.mode === 'deplacer' && L.poser(data.semaines[L.isoJour(ui.lundi)].slots, { ...geste.slot, j: c.j, s: c.s, e: c.e }).gene;
+  const pris = geste.mode === 'deplacer' && L.poser(L.sansTrajets(data.semaines[L.isoJour(ui.lundi)].slots), { ...geste.slot, j: c.j, s: c.s, e: c.e }).gene;
   f.classList.toggle('refus', !!pris);
   f.textContent = pris ? `Sur : ${pris.titre}` : `${L.hhmm(c.s)}–${L.hhmm(c.e)}`;
   if (f.parentNode !== c.col) c.col.append(f);
@@ -732,8 +745,12 @@ vueSem.addEventListener('pointerup', () => {
   const sem = data.semaines[cle];
   // Un morceau glissé seul se détache de son créneau.
   const deplace = { ...g.slot, j: c.j, s: c.s, e: c.e }; delete deplace.groupe;
-  const pose = L.poser(sem.slots, deplace);
-  if (pose.gene) { rendre(); return conflit(sem.slots, deplace, pose.gene, s => { sem.slots = s; noterUsage('creneau-deplace'); maj(); }); }
+  const base = L.sansTrajets(sem.slots);
+  const detacher = () => { if (g.slot.lien) L.detacherTrajet(base, g.slot); };
+  delete deplace.lien; delete deplace.cote;
+  const pose = L.poser(base, deplace);
+  if (pose.gene) { rendre(); return conflit(base, deplace, pose.gene, s => { detacher(); sem.slots = s; noterUsage('creneau-deplace'); maj(); }); }
+  detacher();
   sem.slots = pose.slots;
   noterUsage('creneau-deplace');
   maj();

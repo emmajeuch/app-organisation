@@ -396,7 +396,7 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   // refaire une catégorie remplace seulement ses créneaux types
   L.appliquerBase(n, L.creneauxDeBase({ sommeil: { coucher: 22, lever: 6.5 } }), ['sommeil'], mer);
   assert.deepEqual(n.recurrents.filter(r => r.origine === 'sommeil').map(r => [r.s, r.e]), [[6, 6.5], [22, 25]]);
-  assert.equal(n.recurrents.filter(r => r.origine === 'cours').length, 3);
+  assert.equal(n.recurrents.filter(r => r.origine === 'cours').length, 1);   // le cours porte ses trajets (V1.10.32)
   // les créneaux types survivent à une sauvegarde
   assert.deepEqual(L.validerImport(JSON.parse(JSON.stringify(n))).recurrents, n.recurrents);
 }
@@ -490,7 +490,7 @@ for (const fond of ['#F4F5F8', '#F3EAD9', '#FFE3EE', '#E9E3FF', '#DDF5E8', '#DDE
 {
   const o = L.migrer({ cats: [{ id: 'detente', nom: 'Détente' }, { id: 'loisirs', nom: 'Loisirs' }, { id: 'travail', nom: 'Travail perso' }],
     semaines: { '2026-10-26': { slots: [{ id: 'a', j: 0, s: 20, e: 22, cat: 'detente' }] } }, recurrents: [{ id: 'r', cat: 'detente', s: 22, e: 23, jours: [0] }] });
-  assert.deepEqual(o.cats.map(c => c.nom), ['Loisirs', 'Révisions']);
+  assert.deepEqual(o.cats.map(c => c.nom), ['Loisirs', 'Révisions', 'Trajet']);
   assert.equal(o.semaines['2026-10-26'].slots[0].cat, 'loisirs');
   assert.equal(o.recurrents[0].cat, 'loisirs');
   assert.ok(!L.CATS_DEPART.some(c => c.id === 'detente'));
@@ -695,5 +695,34 @@ assert.deepEqual([...new Set(L.CREATURES.map(c => c.rarete))].sort(), ['commune'
 assert.ok(L.habitudeDuJour({ horaires: [{ j: 0, h: 18 }, { j: 2, h: null }] }, 2));
 assert.ok(!L.habitudeDuJour({ horaires: [{ j: 0, h: 18 }, { j: 2, h: null }] }, 1));
 assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
+
+// V1.10.32 : trajets avant et après un créneau, dans leur catégorie ; ils suivent le créneau et se raccourcissent sans rien pousser.
+{
+  const cours = { id: 'c', j: 0, s: 9, e: 12, cat: 'cours', titre: 'TD', avant: 30, apres: 20 };
+  let sl = L.trajets([cours, { id: 'p', j: 0, s: 7, e: 8.75, cat: 'repas', titre: 'Petit-déjeuner' }]);
+  const tr = sl.filter(x => x.cat === 'trajet');
+  assert.deepEqual(tr.map(x => [x.cote, x.s, x.e]), [['avant', 8.75, 9], ['apres', 12, 12 + 1 / 3]]);   // raccourci par le petit-déjeuner
+  // le créneau bouge : ses trajets suivent, sans doublon
+  sl = L.trajets(sl.map(x => x.id === 'c' ? { ...x, s: 14, e: 16 } : x));
+  assert.deepEqual(sl.filter(x => x.cat === 'trajet').map(x => [x.s, x.e]), [[13.5, 14], [16, 16 + 1 / 3]]);
+  // supprimé : ses trajets aussi
+  assert.ok(!L.trajets(sl.filter(x => x.id !== 'c')).some(x => x.cat === 'trajet'));
+  // un trajet modifié à la main se détache : il n'est plus refait de ce côté
+  const t = sl.find(x => x.cote === 'avant');
+  L.detacherTrajet(sl, t);
+  assert.deepEqual(L.trajets(sl).filter(x => x.lien).map(x => x.cote), ['apres']);
+  // un créneau coupé par le déjeuner : trajet avant le premier morceau, après le dernier
+  const ms = [{ id: 'm1', groupe: 'm1', j: 1, s: 8.5, e: 12, cat: 'cours', titre: 'Cours', avant: 30, apres: 30 }, { id: 'm2', groupe: 'm1', j: 1, s: 13, e: 17, cat: 'cours', titre: 'Cours', avant: 30, apres: 30 }];
+  assert.deepEqual(L.trajets(ms).filter(x => x.lien).map(x => [x.s, x.e]), [[8, 8.5], [17, 17.5]]);
+  // les trajets ne se cochent pas et ne rapportent pas d'XP
+  assert.ok(L.auto({ cat: 'trajet' }));
+  // migration : une catégorie Trajet, les anciens trajets des cours y passent
+  const vieux = L.vide();
+  vieux.cats = vieux.cats.filter(c => c.id !== 'trajet').map(c => c.id === 'cours' ? { ...c, nom: 'Transport et cours' } : c);
+  vieux.semaines['2026-10-26'] = { slots: [{ id: 'v', j: 0, s: 8, e: 8.5, cat: 'cours', titre: 'Trajet' }] };
+  const m = L.validerImport(JSON.parse(JSON.stringify(vieux)));
+  assert.ok(m.cats.some(c => c.id === 'trajet') && m.cats.find(c => c.id === 'cours').nom === 'Cours');
+  assert.equal(m.semaines['2026-10-26'].slots[0].cat, 'trajet');
+}
 
 console.log('ok');

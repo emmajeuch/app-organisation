@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.31';
+export const VERSION = '1.10.32';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -174,16 +174,42 @@ export function poser(slots, c) {
   return { slots: res.sort((a, b) => a.j - b.j || a.s - b.s) };
 }
 
+// ---------- Trajets (V1.10.32) ----------
+// Un créneau peut avoir un trajet avant et un trajet après (en minutes : avant, apres). Les trajets sont des créneaux
+// « Trajet » à part, refaits à chaque changement : collés au début du premier morceau et à la fin du dernier, liés au
+// créneau par « lien ». S'il n'y a pas la place, le trajet se raccourcit ; il ne déplace jamais rien.
+export const sansTrajets = slots => slots.filter(x => !x.lien);
+export function trajets(slots) {
+  const out = sansTrajets(slots), parCle = new Map();
+  for (const x of out) if (x.avant || x.apres) { const k = x.groupe || x.id; if (!parCle.has(k)) parCle.set(k, []); parCle.get(k).push(x); }
+  for (const [k, ms] of parCle) {
+    ms.sort((a, b) => a.j - b.j || a.s - b.s);
+    const p = ms[0], d = ms.at(-1);
+    const coller = (cote, j, s, e) => {
+      const autour = out.filter(x => x.j === j && x.s < e && x.e > s);
+      if (cote === 'avant') s = Math.max(s, 0, ...autour.map(x => x.e)); else e = Math.min(e, 26, ...autour.map(x => x.s));
+      if (e - s >= 5 / 60) out.push({ id: `t-${k}-${cote}`.slice(0, 40), j, s, e, cat: 'trajet', titre: 'Trajet', salle: '', affaires: '', notes: '', lien: k, cote });
+    };
+    if (p.avant) coller('avant', p.j, p.s - p.avant / 60, p.s);
+    if (d.apres) coller('apres', d.j, d.e, d.e + d.apres / 60);
+  }
+  return out.sort((a, b) => a.j - b.j || a.s - b.s);
+}
+// Un trajet modifié ou supprimé à la main n'est plus celui du créneau : le créneau n'en refait plus de ce côté.
+export function detacherTrajet(slots, t) {
+  for (const x of slots) if ((x.groupe || x.id) === t.lien) x[t.cote] = 0;
+}
+
 // ---------- Créneaux types (V1.10) ----------
 // Ce qui revient chaque semaine (sommeil de 23 h à 7 h, repas, cours…) : data.recurrents, une ligne par créneau type
 // et ses jours. Ils forment le modèle (le seul « type », id « base ») qui remplit chaque nouvelle semaine.
 // Un créneau de semaine venu d'un créneau type garde son origine dans src : « <id du créneau type>-<jour> ».
 export const ID_BASE = 'base';
-const slotDe = (r, j) => ({ j, s: r.s, e: r.e, cat: r.cat, titre: r.titre, salle: r.salle || '', affaires: r.affaires || '', notes: '', ...(r.club ? { club: true } : {}) });
+const slotDe = (r, j) => ({ j, s: r.s, e: r.e, cat: r.cat, titre: r.titre, salle: r.salle || '', affaires: r.affaires || '', notes: '', ...(r.club ? { club: true } : {}), ...(r.avant ? { avant: r.avant } : {}), ...(r.apres ? { apres: r.apres } : {}) });
 export function modele(recurrents) {
   let slots = [];
   for (const r of recurrents) for (const j of [...new Set(r.jours)].sort()) { const p = poser(slots, { id: `${r.id}-${j}`, ...slotDe(r, j) }); if (p.slots) slots = p.slots; }
-  return slots;
+  return trajets(slots);
 }
 export function regenerer(data) {
   data.types = [{ id: ID_BASE, nom: 'Créneaux types', slots: modele(data.recurrents || []) }];
@@ -201,7 +227,7 @@ export function propager(data, ids, maintenant = new Date()) {
   for (const [cle, sem] of Object.entries(data.semaines)) {
     if (cle < lundiAuj) continue;
     const ouvert = j => cle > lundiAuj || j >= jAuj;
-    let slots = sem.slots.filter(x => !(ouvert(x.j) && !x.fait && ids.some(id => de(x, id))));
+    let slots = sansTrajets(sem.slots).filter(x => !(ouvert(x.j) && !x.fait && ids.some(id => de(x, id))));
     for (const r of data.recurrents.filter(r => ids.includes(r.id))) for (const j of [...new Set(r.jours)].sort()) {
       if (!ouvert(j) || slots.some(x => x.j === j && x.fait && de(x, r.id))) continue;
       const c = { id: uid(), src: `${r.id}-${j}`, ...slotDe(r, j), fait: null };
@@ -213,7 +239,7 @@ export function propager(data, ids, maintenant = new Date()) {
       if (p.gene) continue;
       slots = p.slots;
     }
-    sem.slots = rearranger(slots, data.plage || [6, 25]);
+    sem.slots = trajets(rearranger(slots, data.plage || [6, 25]));
   }
 }
 // Un créneau en morceaux (un événement du samedi au dimanche, des cours coupés par le déjeuner) se refait d'un seul tenant
@@ -235,8 +261,8 @@ export function rearranger(slots, plage) {
 export function recurrentsDepuis(slots, exemple = false) {
   const groupes = new Map(), correspondance = {};
   for (const x of slots) {
-    const k = [x.titre, x.cat, x.s, x.e, x.salle || '', x.affaires || '', !!x.club].join('|');
-    if (!groupes.has(k)) groupes.set(k, { id: uid(), titre: x.titre, cat: x.cat, s: x.s, e: x.e, jours: [], salle: x.salle || '', affaires: x.affaires || '', ...(x.club ? { club: true } : {}), ...(exemple ? { exemple: true } : {}) });
+    const k = [x.titre, x.cat, x.s, x.e, x.salle || '', x.affaires || '', !!x.club, x.avant || 0, x.apres || 0].join('|');
+    if (!groupes.has(k)) groupes.set(k, { id: uid(), titre: x.titre, cat: x.cat, s: x.s, e: x.e, jours: [], salle: x.salle || '', affaires: x.affaires || '', ...(x.club ? { club: true } : {}), ...(x.avant ? { avant: x.avant } : {}), ...(x.apres ? { apres: x.apres } : {}), ...(exemple ? { exemple: true } : {}) });
     const r = groupes.get(k);
     if (!r.jours.includes(x.j)) r.jours.push(x.j);
     correspondance[x.id] = `${r.id}-${x.j}`;
@@ -264,10 +290,9 @@ export function creneauxDeBase(r, catJob = 'job') {
     for (const { v, jours } of grouper(pj, v => v.coucher < 25 ? v.coucher : null)) aj('sommeil', 'sommeil', 'Sommeil', v.coucher, 25, jours);
   }
   if (r.cours) {
-    const t = (r.cours.trajet || 0) / 60;
+    const t = r.cours.trajet || 0;
     for (const { v, jours } of grouper(r.cours.parJour || parJourDe(r.cours.jours, r.cours), v => `${v.debut}-${v.fin}`)) {
-      if (t) { aj('cours', 'cours', 'Trajet', v.debut - t, v.debut, jours); aj('cours', 'cours', 'Trajet', v.fin, v.fin + t, jours); }
-      aj('cours', 'cours', 'Cours', v.debut, v.fin, jours);
+      aj('cours', 'cours', 'Cours', v.debut, v.fin, jours, t ? { avant: t, apres: t } : {});
     }
   }
   if (r.job) for (const { v, jours } of grouper(r.job.parJour || parJourDe(r.job.jours, r.job), v => `${v.debut}-${v.fin}`)) aj('job', catJob, 'Travail', v.debut, v.fin, jours);
@@ -324,10 +349,11 @@ const UN_DE = (...ok) => v => ok.includes(v) ? v : undefined;
 const NUM_OU_VIDE = v => v === '' ? '' : NUM(v);
 const HEURE_OU_RIEN = v => v === null ? null : ENTRE(0, 26)(v);
 const SLOT = { id: ID, groupe: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID, titre: TXT, salle: TXT, affaires: TXT, notes: TXT,
-  fait: BOOL, xpDonne: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT };
+  fait: BOOL, xpDonne: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT,
+  avant: ENTRE(0, 180), apres: ENTRE(0, 180), lien: ID, cote: UN_DE('avant', 'apres') };
 const SCHEMA = {
   version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID,
-  recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
+  recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL, avant: ENTRE(0, 180), apres: ENTRE(0, 180) }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
   bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, niveauVu: ENTRE(1, 1000), xpGarde: ENTRE(0, 1e7), joursBonus: [DATE], couleurs: { fond: HEX, accent: HEX }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
   cats: [{ id: ID, nom: TXT, couleur: TXT }],
   types: [{ id: ID, nom: TXT, exemple: BOOL, slots: [SLOT] }],
@@ -375,7 +401,7 @@ export function validerImport(o) {
 //   "prenom": "Léa", "etudes": true, "travail": false, "sports": ["Basket"], "taux": 11.88,
 //   "categories": [{ "nom": "Travail", "couleur": "#8C6A4F" }],
 //   "semaineType": { "nom": "Semaine de cours", "creneaux": [
-//     { "jour": 0, "debut": 8.5, "fin": 10.5, "categorie": "Transport et cours", "titre": "Cours", "salle": "" } ] },
+//     { "jour": 0, "debut": 8.5, "fin": 10.5, "categorie": "Cours", "titre": "Cours", "salle": "" } ] },
 //   "taches": [{ "titre": "Ménage", "jour": 3 }],
 //   "listes": ["Courses", "À lire"],
 //   "habitudes": [{ "nom": "Lire", "frequence": "jour" }],
@@ -433,7 +459,7 @@ export function appliquerProfil(data, p, auj = new Date()) {
     while (data.types.some(t => meme(t.nom, nom))) nom = `${p.semaineType.nom || 'Ma semaine'} (${n++})`;
     let slots = [];
     for (const c of creneaux) {
-      const k = catPour(c.categorie || 'Transport et cours') || data.cats[0];
+      const k = catPour(c.categorie === 'Transport et cours' ? 'Cours' : c.categorie || 'Cours') || data.cats[0];
       slots = placer(slots, { id: uid(), j: c.jour, s: c.debut, e: c.fin, cat: k.id, titre: c.titre || k.nom, salle: c.salle || '', affaires: '', notes: '' });
     }
     const t = { id: uid(), nom, slots };
@@ -486,7 +512,7 @@ export function construireProfil(r) {
   const jours = [0, 1, 2, 3, 4, 5, 6];
   for (const j of jours) {
     if (r.lever > 6) ajout(j, 6, r.lever, 'Sommeil', 'Sommeil');
-    if (r.etudes && r.coursJours?.includes(j)) ajout(j, r.coursDebut, r.coursFin, 'Transport et cours', 'Cours');
+    if (r.etudes && r.coursJours?.includes(j)) ajout(j, r.coursDebut, r.coursFin, 'Cours', 'Cours');
     if (r.travail && r.travailJours?.includes(j)) ajout(j, r.travailDebut, r.travailFin, 'Travail', 'Travail');
     if (r.sport && r.clubJours?.includes(j)) ajout(j, r.clubDebut, r.clubDebut + r.clubDuree, 'Sport', `Entraînement · ${r.sport}`);
     if (r.repas) { ajout(j, r.lever, r.lever + .5, 'Repas', 'Petit-déjeuner'); ajout(j, 12, 13, 'Repas', 'Déjeuner'); ajout(j, 19.5, 20.5, 'Repas', 'Dîner'); }
@@ -548,6 +574,15 @@ export function migrer(o) {
   }
   const revisions = (o.cats || []).find(c => c.id === 'travail' && c.nom === 'Travail perso');
   if (revisions) revisions.nom = 'Révisions';
+  // V1.10.32 : les trajets ont leur catégorie ; ceux rangés dans les cours y passent, et « Transport et cours » devient « Cours ».
+  if (Array.isArray(o.cats) && !o.cats.some(c => c.id === 'trajet')) {
+    const i = o.cats.findIndex(c => c.id === 'cours');
+    o.cats.splice(i < 0 ? o.cats.length : i + 1, 0, { id: 'trajet', nom: 'Trajet', couleur: '#8E9AAF' });
+    const cours = o.cats.find(c => c.id === 'cours');
+    if (cours?.nom === 'Transport et cours') cours.nom = 'Cours';
+    const tous = [...Object.values(o.semaines || {}).flatMap(x => x.slots || []), ...(o.recurrents || []), ...(o.types || []).flatMap(t => t.slots || [])];
+    for (const s of tous) if (s.cat === 'cours' && s.titre === 'Trajet') s.cat = 'trajet';
+  }
   return o;
 }
 
@@ -662,8 +697,8 @@ export const faitsSemaine = (h, lundi) => {
 // Tout se recalcule à partir de ce qui a été fait : ouvrir l'app sans rien faire ne rapporte rien,
 // et décocher retire ce que cocher avait donné.
 
-// Sommeil, cours (trajets compris) et repas se valident tout seuls (Emma, 24/10) : seuls les autres créneaux se cochent.
-export const AUTO = ['sommeil', 'cours', 'repas'];
+// Sommeil, cours, trajets et repas se valident tout seuls (Emma, 24/10) : seuls les autres créneaux se cochent.
+export const AUTO = ['sommeil', 'cours', 'trajet', 'repas'];
 export const auto = x => AUTO.includes(x.cat);
 export const journeeValidee = slots => { const v = slots.filter(x => !auto(x)); return v.length > 0 && v.every(x => x.fait); };
 // Une journée faite seulement de sommeil, cours et repas n'a rien à cocher : elle se valide toute seule une fois passée (Emma, 24/10).
@@ -839,7 +874,7 @@ export const CONSEILS = {
 export const SPORTS = [...new Set(['Sabre laser', ...Object.keys(CONSEILS)])];
 
 export const CATS_DEPART = [
-  ['cours', 'Transport et cours', '#EC4A46'], ['sommeil', 'Sommeil', '#FF9B3D'],
+  ['cours', 'Cours', '#EC4A46'], ['trajet', 'Trajet', '#8E9AAF'], ['sommeil', 'Sommeil', '#FF9B3D'],
   ['repas', 'Repas', '#34BD67'], ['travail', 'Révisions', '#35C6DF'], ['loisirs', 'Loisirs', '#6261EE'],
   ['menage', 'Ménage', '#FF8AC1'], ['sport', 'Sport', '#B5DF2B'],
 ].map(([id, nom, couleur]) => ({ id, nom, couleur }));
@@ -859,11 +894,11 @@ export const vide = () => migrer({
 const matin = [[6, 7.5, 'sommeil', 'Sommeil'], [7.5, 8, 'repas', 'Petit-déjeuner']];
 const soir = [[19, 20, 'repas', 'Dîner'], [20, 22, 'loisirs', 'Loisirs'], [22, 23, 'loisirs', 'Série'], [23, 25, 'sommeil', 'Sommeil']];
 const EXEMPLE = [
-  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'Cours magistral', 'Amphi'], [10.5, 12.5, 'cours', 'TD', 'Salle A'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'TP', 'Salle info'], [15.5, 16, 'cours', 'Trajet'], [16, 18, 'travail', 'Révisions'], [18, 19, 'sport', 'Course à pied'], ...soir],
-  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'Cours magistral', 'Amphi'], [10.5, 12.5, 'cours', 'Langue vivante', 'Salle B'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'TD', 'Salle A'], [15.5, 16, 'cours', 'Trajet'], [16, 17.5, 'travail', 'TD'], [17.5, 19, 'loisirs', 'Lecture'], ...soir],
-  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'TP', 'Salle info'], [10.5, 12.5, 'travail', 'Révisions'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Cours magistral', 'Amphi'], [15.5, 16, 'cours', 'Trajet'], [16, 17, 'loisirs', 'Pause'], [17, 18.5, 'sport', 'Renfo'], [18.5, 19, 'menage', 'Rangement'], ...soir],
-  [...matin, [8, 8.5, 'cours', 'Trajet'], [8.5, 10.5, 'cours', 'TD', 'Salle A'], [10.5, 12.5, 'cours', 'Projet de groupe', 'Salle C'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Cours magistral', 'Amphi'], [15.5, 16, 'cours', 'Trajet'], [16, 18, 'travail', 'Révisions'], [18, 19, 'menage', 'Ménage'], ...soir],
-  [...matin, [8, 9.5, 'loisirs', 'Matinée calme'], [9.5, 10, 'cours', 'Trajet'], [10, 12, 'cours', 'Cours magistral', 'Amphi'], [12, 13, 'repas', 'Déjeuner'], [13, 14, 'cours', 'TD', 'Salle B'], [14, 14.5, 'cours', 'Trajet'], [14.5, 16, 'travail', 'Projet de groupe'], [16, 17, 'sport', 'Course à pied'], [17, 19, 'loisirs', 'Loisirs'], ...soir],
+  [...matin, [8, 8.5, 'trajet', 'Trajet'], [8.5, 10.5, 'cours', 'Cours magistral', 'Amphi'], [10.5, 12.5, 'cours', 'TD', 'Salle A'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'TP', 'Salle info'], [15.5, 16, 'trajet', 'Trajet'], [16, 18, 'travail', 'Révisions'], [18, 19, 'sport', 'Course à pied'], ...soir],
+  [...matin, [8, 8.5, 'trajet', 'Trajet'], [8.5, 10.5, 'cours', 'Cours magistral', 'Amphi'], [10.5, 12.5, 'cours', 'Langue vivante', 'Salle B'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'TD', 'Salle A'], [15.5, 16, 'trajet', 'Trajet'], [16, 17.5, 'travail', 'TD'], [17.5, 19, 'loisirs', 'Lecture'], ...soir],
+  [...matin, [8, 8.5, 'trajet', 'Trajet'], [8.5, 10.5, 'cours', 'TP', 'Salle info'], [10.5, 12.5, 'travail', 'Révisions'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Cours magistral', 'Amphi'], [15.5, 16, 'trajet', 'Trajet'], [16, 17, 'loisirs', 'Pause'], [17, 18.5, 'sport', 'Renfo'], [18.5, 19, 'menage', 'Rangement'], ...soir],
+  [...matin, [8, 8.5, 'trajet', 'Trajet'], [8.5, 10.5, 'cours', 'TD', 'Salle A'], [10.5, 12.5, 'cours', 'Projet de groupe', 'Salle C'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 15.5, 'cours', 'Cours magistral', 'Amphi'], [15.5, 16, 'trajet', 'Trajet'], [16, 18, 'travail', 'Révisions'], [18, 19, 'menage', 'Ménage'], ...soir],
+  [...matin, [8, 9.5, 'loisirs', 'Matinée calme'], [9.5, 10, 'trajet', 'Trajet'], [10, 12, 'cours', 'Cours magistral', 'Amphi'], [12, 13, 'repas', 'Déjeuner'], [13, 14, 'cours', 'TD', 'Salle B'], [14, 14.5, 'trajet', 'Trajet'], [14.5, 16, 'travail', 'Projet de groupe'], [16, 17, 'sport', 'Course à pied'], [17, 19, 'loisirs', 'Loisirs'], ...soir],
   [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'menage', 'Courses et lessive'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 17, 'loisirs', 'Loisirs'], [17, 18, 'sport', 'Renfo'], [18, 19, 'loisirs', 'Pause'], ...soir],
   [[6, 10, 'sommeil', 'Sommeil'], [10, 11, 'repas', 'Brunch'], [11, 12.5, 'loisirs', 'Balade'], [12.5, 13.5, 'repas', 'Déjeuner'], [13.5, 16, 'travail', 'Révisions'], [16, 16.5, 'travail', 'Bilan de la semaine'], [16.5, 19, 'loisirs', 'Loisirs'], ...soir],
 ];
