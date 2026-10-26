@@ -298,6 +298,7 @@ dlg.addEventListener('click', e => {
   }
 });
 // Une heure choisie sur une ligne vaut aussi pour les lignes encore sans heure (V1.10.27).
+dlg.addEventListener('input', e => { if (e.target.name === 'chaque') dlg.querySelector('[data-par-jour]').hidden = !!e.target.value; });
 dlg.addEventListener('change', e => {
   if (e.target.name !== 'hh' || !e.target.value) return;
   for (const i of e.target.closest('[data-horaires]')?.querySelectorAll('input[name="hh"]') || []) if (!i.value) i.value = e.target.value;
@@ -1185,13 +1186,16 @@ function editerSeanceType(s) {
 }
 
 function editerHabitude(hb, neuf = false) {
+  const hs = L.horairesDe(hb);
+  const chaque = hs.length === 7 && new Set(hs.map(x => x.j)).size === 7 && hs.every(x => typeof x.h === 'number' && x.h === hs[0].h) ? L.hhmm(hs[0].h) : '';
   ouvrirDlg(`<form><h2>${neuf ? 'Nouvelle habitude' : esc(hb.nom)}</h2>
     <label class="champ">Nom<input name="nom" value="${esc(hb.nom)}" autocomplete="off" required></label>
     <div class="champs" style="grid-template-columns: 1fr 1fr">
       <label class="champ">À tenir<select name="freq">${FREQS.map(([v, n]) => `<option value="${v}" ${String(hb.freq) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
       <label class="champ">Durée<select name="duree">${[15, 30, 45, 60, 90, 120].map(m => `<option value="${m}" ${m === Math.round((hb.duree || .5) * 60) ? 'selected' : ''}>${m < 60 ? m + ' min' : L.heures(m / 60)}</option>`).join('')}</select></label>
     </div>
-    ${horairesChamp('Jours et heure du rappel', L.horairesDe(hb), 'Avec une heure, l’habitude apparaît dans Semaine et Aujourd’hui ce jour-là, et un rappel arrive à cette heure. Plusieurs fois le même jour : ajoute ce jour deux fois.')}
+    <label class="champ">Chaque jour à<input type="time" name="chaque" step="300" value="${chaque}"><span class="aide">Facultatif : l’habitude apparaît chaque jour à cette heure dans Semaine et Aujourd’hui, avec un rappel. Laisse vide pour choisir jour par jour.</span></label>
+    <div data-par-jour ${chaque ? 'hidden' : ''}>${horairesChamp('Ou jour par jour', chaque ? [] : hs, 'Chaque jour avec une heure apparaît dans Semaine et Aujourd’hui, avec un rappel. Plusieurs fois le même jour : ajoute ce jour deux fois.')}</div>
     ${neuf ? '' : `<p class="muted">${hb.faits.length} jour${hb.faits.length > 1 ? 's' : ''} tenu${hb.faits.length > 1 ? 's' : ''} en tout.</p>`}
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
     if (choix === 'suppr') { data.habitudes = data.habitudes.filter(x => x !== hb); maj(); return; }
@@ -1199,7 +1203,8 @@ function editerHabitude(hb, neuf = false) {
     hb.nom = f.get('nom').trim();
     hb.freq = f.get('freq') === 'jour' ? 'jour' : +f.get('freq');
     hb.duree = +f.get('duree') / 60;
-    hb.horaires = lireHoraires(f);
+    const h = f.get('chaque') ? L.versHeure(f.get('chaque'), 1) : NaN;
+    hb.horaires = Number.isNaN(h) ? lireHoraires(f) : [0, 1, 2, 3, 4, 5, 6].map(j => ({ j, h }));
     delete hb.heure; delete hb.jours;
     if (neuf) data.habitudes.push(hb);
     noterUsage('habitudes');
