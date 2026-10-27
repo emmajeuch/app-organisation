@@ -725,4 +725,23 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
   assert.equal(m.semaines['2026-10-26'].slots[0].cat, 'trajet');
 }
 
+// V1.10.33 : les trajets posés à la main et collés à un créneau sont les siens ; entre deux créneaux, celui d'avant le garde.
+{
+  const s = [{ id: 'pdj', j: 0, s: 7.5, e: 8, cat: 'repas' }, { id: 'ta', j: 0, s: 8, e: 8.5, cat: 'trajet' }, { id: 'c1', j: 0, s: 8.5, e: 12, cat: 'cours' },
+    { id: 'tm', j: 0, s: 12, e: 12.25, cat: 'trajet' }, { id: 'c2', j: 0, s: 12.25, e: 14, cat: 'travail' }, { id: 'tl', j: 1, s: 14, e: 15, cat: 'trajet' }];
+  const a = L.trajetsColles(s, s[2]);
+  assert.equal(a.avant.id, 'ta');                       // après le petit-déjeuner : c'est le trajet du cours
+  assert.equal(a.apres.id, 'tm');
+  assert.equal(L.trajetsColles(s, s[4]).avant, undefined);   // déjà le trajet « après » du cours
+  assert.equal(L.trajetsColles(s, s[4]).apres, undefined);   // un autre jour
+  assert.equal(L.minutes(a.avant), 30);
+  assert.deepEqual(L.trajetsColles(s, s[0]), {});      // pas de trajet pour un repas
+  // créneaux types : les mêmes jours
+  const memes = (x, y) => x.jours.join() === y.jours.join();
+  const rs = [{ id: 't', cat: 'trajet', s: 8, e: 8.5, jours: [0, 1] }, { id: 'c', cat: 'cours', s: 8.5, e: 12, jours: [0, 1] }, { id: 't2', cat: 'trajet', s: 12, e: 12.5, jours: [0] }];
+  const b = L.trajetsColles(rs, rs[1], rs[1], memes);
+  assert.equal(b.avant.id, 't');
+  assert.equal(b.apres, undefined);
+}
+
 console.log('ok');

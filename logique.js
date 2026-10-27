@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.32';
+export const VERSION = '1.10.33';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -195,6 +195,21 @@ export function trajets(slots) {
   }
   return out.sort((a, b) => a.j - b.j || a.s - b.s);
 }
+// V1.10.33 : un trajet posé à la main et collé à un créneau (le même jour, juste avant son début ou juste après sa fin)
+// est le sien : il le suit quand on le déplace. Collé entre deux créneaux, il est le trajet « après » du premier.
+// Pas de trajet pour dormir, manger ou faire le ménage. memeJour dit si deux éléments tombent le même jour
+// (le même j pour les créneaux, les mêmes jours pour les créneaux types).
+export const SANS_TRAJET = ['sommeil', 'repas', 'menage', 'trajet'];
+const egalH = (a, b) => Math.abs(a - b) < 1e-6;
+export function trajetsColles(tous, p, d = p, memeJour = (x, y) => x.j === y.j) {
+  if (SANS_TRAJET.includes(p.cat)) return {};
+  const libres = tous.filter(x => x.cat === 'trajet' && !x.lien && x.id !== p.id);
+  const avant = libres.find(x => memeJour(x, p) && egalH(x.e, p.s)
+    && !tous.some(y => y.id !== x.id && y.id !== p.id && !SANS_TRAJET.includes(y.cat) && memeJour(y, x) && egalH(y.e, x.s)));
+  const apres = libres.find(x => memeJour(x, d) && egalH(x.s, d.e));
+  return { avant, apres };
+}
+export const minutes = x => x ? Math.round((x.e - x.s) * 60) : 0;
 // Un trajet modifié ou supprimé à la main n'est plus celui du créneau : le créneau n'en refait plus de ce côté.
 export function detacherTrajet(slots, t) {
   for (const x of slots) if ((x.groupe || x.id) === t.lien) x[t.cote] = 0;

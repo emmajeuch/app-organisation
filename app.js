@@ -486,6 +486,10 @@ function conflit(slots, c, gene, suite) {
     suite(r.slots);
   });
 }
+// Pour les créneaux types : un créneau type « Trajet » qui revient au moins tous les jours de l'autre ; deux autres qui ont un jour en commun.
+const jourCommun = (a, b) => a.cat === 'trajet' ? b.jours.every(j => a.jours.includes(j)) : a.jours.some(j => b.jours.includes(j));
+// Un créneau type « Trajet » repris par un autre lui laisse ses jours ; il disparaît s'il n'en a plus.
+const reprendre = (absorbes, jours) => { for (const y of absorbes) y.jours = y.jours.filter(j => !jours.includes(j)); data.recurrents = data.recurrents.filter(y => !absorbes.includes(y) || y.jours.length); };
 function editerSlot(slot, cle) {
   const neuf = !!slot.neuf;
   const sem = semaineDe(cle), rec = !neuf && L.recurrentDe(data, slot.src);
@@ -494,7 +498,9 @@ function editerSlot(slot, cle) {
   const jfInit = morceaux.length > 1 && morceaux.at(-1).j !== morceaux[0].j ? morceaux.at(-1).j : null;
   if (morceaux.length > 1) slot = { ...slot, j: morceaux[0].j, s: morceaux[0].s, e: morceaux.at(-1).e };
   // Les trajets ajoutés par les créneaux ne gênent rien : ils sont refaits après.
-  const sansMorceaux = L.sansTrajets(sem.slots).filter(x => !(slot.groupe && x.groupe === slot.groupe && x.id !== slot.id));
+  let sansMorceaux = L.sansTrajets(sem.slots).filter(x => !(slot.groupe && x.groupe === slot.groupe && x.id !== slot.id));
+  const colles = slot.lien || neuf ? {} : L.trajetsColles(sansMorceaux, morceaux[0] || slot, morceaux.at(-1) || slot);
+  const vTrajet = { avant: slot.avant || L.minutes(colles.avant), apres: slot.apres || L.minutes(colles.apres) };
   const [p0, p1] = data.plage;
   const heure = (nom, h) => `<input type="time" name="${nom}" value="${L.hhmm(h)}" required>`;
   const liees = slot.titre ? notesLiees(slot.titre) : [];
@@ -510,7 +516,7 @@ function editerSlot(slot, cle) {
     ${morceaux.length > 1 ? `<p class="aide">Ce créneau est en ${morceaux.length} morceaux autour des repas et du sommeil : tout se modifie ensemble.</p>` : ''}
     <div class="zone-lieu" ${SANS_LIEU.includes(slot.cat) ? 'hidden' : ''}><label class="champ">Lieu<input name="salle" value="${esc(slot.salle)}" autocomplete="off"></label>
     <label class="champ">Affaires à prendre<input name="affaires" value="${esc(slot.affaires)}" autocomplete="off"></label>
-    ${champsTrajet(slot)}</div>
+    ${champsTrajet(vTrajet)}</div>
     ${slot.lien ? '<p class="aide">Trajet ajouté par son créneau. Le changer ici le détache : il reste tel quel.</p>' : ''}
     <label class="champ">Notes<textarea name="notes">${esc(slot.notes)}</textarea></label>
     ${liees.length ? `<div class="champ">Notes liées<div class="liens">${liees.map(n => `<button type="button" data-act="note" data-id="${n.id}">${esc(n.titre || 'Sans titre')}</button>`).join('')}</div></div>` : ''}
@@ -527,7 +533,7 @@ function editerSlot(slot, cle) {
     if (slot.lien) L.detacherTrajet(sansMorceaux, slot);   // touché à la main, il n'est plus refait par son créneau
     const versType = !!f.get('type');
     if (choix === 'suppr') {
-      sem.slots = sansMorceaux.filter(x => x.id !== slot.id);
+      sem.slots = sansMorceaux.filter(x => x.id !== slot.id && x !== colles.avant && x !== colles.apres);
       // Supprimé aussi du créneau type : ce jour-là ne revient plus (et le créneau type disparaît s'il n'a plus de jour).
       if (versType && rec) {
         rec.jours = rec.jours.filter(j => j !== slot.j);
@@ -540,6 +546,7 @@ function editerSlot(slot, cle) {
       salle: f.get('salle').trim(), affaires: f.get('affaires').trim(), notes: f.get('notes').trim(), fait: f.get('fait') ? true : null };
     c.titre = f.get('titre').trim() || cat(c.cat).nom;
     lireTrajets(f, c);
+    if (!SANS_LIEU.includes(c.cat)) sansMorceaux = sansMorceaux.filter(x => x !== colles.avant && x !== colles.apres);
     // Sur plusieurs jours (V1.10.4) : coupé jour par jour autour des repas et du sommeil, jamais répété.
     const jf = f.get('jf') === '' ? c.j : +f.get('jf');
     if (jf < c.j) { dire('Le jour de fin doit être après le jour de début (même semaine).'); return false; }
@@ -570,7 +577,12 @@ function editerSlot(slot, cle) {
     function finir() {
     if (c.fait && c.tache) { const t = data.taches.find(x => x.id === c.tache); if (t && !t.fait) cocherTache(t); }
     // Le créneau type suit (heures, titre, catégorie, salle ; un jour déplacé remplace l'ancien), ou il est créé.
-    let recId = null;
+    let recId = null, absorbes = [];
+    if (versType && rec && !SANS_LIEU.includes(c.cat)) {
+      const cr = L.trajetsColles(data.recurrents, rec, rec, jourCommun);
+      absorbes = [cr.avant, cr.apres].filter(Boolean);
+      reprendre(absorbes, rec.jours);
+    }
     if (versType && rec) {
       Object.assign(rec, { titre: c.titre, cat: c.cat, s: c.s, e: c.e, salle: c.salle, affaires: c.affaires, avant: c.avant, apres: c.apres });
       if (c.j !== slot.j) rec.jours = [...new Set([...rec.jours.filter(j => j !== slot.j), c.j])];
@@ -585,7 +597,7 @@ function editerSlot(slot, cle) {
     else if (!neuf && (c.cat !== slot.cat || c.titre !== slot.titre || c.salle !== (slot.salle || '') || c.affaires !== (slot.affaires || '') || c.notes !== (slot.notes || ''))) noterUsage('creneau-corrige');
     if (!neuf && slot.fait && !c.fait) noterUsage('creneau-decoche');
     sem.slots = L.poser(courant, c).slots || courant;
-    if (recId) { L.regenerer(data); L.propager(data, [recId]); }
+    if (recId) { L.regenerer(data); L.propager(data, [recId, ...absorbes.map(y => y.id)]); }
     ui.derniereCat = c.cat;
     maj();
     }
@@ -638,6 +650,8 @@ const joursChoix = (nom, sel = []) => `<div class="jours-choix">${JOURS.map((n, 
 // Un créneau type : ce qui revient chaque semaine, les jours cochés.
 function editerRecurrent(r, jt = null) {
   const neuf = !r, v = r || { titre: '', cat: ui.derniereCat || data.cats[0]?.id, s: 8, e: 9, jours: [jt ?? L.jourSemaine(new Date())], salle: '', affaires: '' };
+  const colles = neuf ? {} : L.trajetsColles(data.recurrents, r, r, jourCommun);
+  const vTrajet = { avant: v.avant || L.minutes(colles.avant), apres: v.apres || L.minutes(colles.apres) };
   // V1.10.9 : on coche les jours ; un ancien jour décoché garde l'ancien réglage (le créneau type se sépare en deux).
   ouvrirDlg(`<form><h2>${neuf ? (jt !== null ? `Nouveau, le ${JOURS[jt]}` : 'Nouveau créneau type') : 'Créneau type'}</h2>
     <p class="muted">Il revient chaque semaine, les jours cochés. Le changer met à jour ta semaine à partir d’aujourd’hui ; le passé et ce qui est déjà validé ne bougent pas.</p>
@@ -647,11 +661,13 @@ function editerRecurrent(r, jt = null) {
     <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Début<input type="time" name="s" value="${L.hhmm(v.s)}" required></label><label class="champ">Fin<input type="time" name="e" value="${L.hhmm(v.e)}" required></label></div>
     <div class="zone-lieu" ${SANS_LIEU.includes(v.cat) ? 'hidden' : ''}><label class="champ">Lieu<input name="salle" value="${esc(v.salle)}" autocomplete="off"></label>
     <label class="champ">Affaires à prendre<input name="affaires" value="${esc(v.affaires)}" autocomplete="off"></label>
-    ${champsTrajet(v)}</div>
+    ${champsTrajet(vTrajet)}</div>
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
     if (choix === 'suppr') {
+      const partis = SANS_LIEU.includes(r.cat) ? [] : [colles.avant, colles.apres].filter(Boolean);
+      reprendre(partis, r.jours);
       data.recurrents = data.recurrents.filter(x => x !== r);
-      L.regenerer(data); L.propager(data, [r.id]);
+      L.regenerer(data); L.propager(data, [r.id, ...partis.map(x => x.id)]);
       maj(); dire('Créneau type supprimé, à partir d’aujourd’hui'); return;
     }
     const p0 = data.plage[0];
@@ -659,6 +675,8 @@ function editerRecurrent(r, jt = null) {
     c.titre = f.get('titre').trim() || cat(c.cat).nom;
     lireTrajets(f, c);
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
+    // Les créneaux types « Trajet » collés deviennent les trajets de celui-ci, ses jours-là (et dans la semaine aussi).
+    const absorbes = SANS_LIEU.includes(c.cat) ? [] : [colles.avant, colles.apres].filter(Boolean);
     if (!c.jours.length) { dire('Coche au moins un jour.'); return false; }
     // Un cours peut passer sur le déjeuner (il se coupera autour) ; deux créneaux types ordinaires, ou deux repas, non.
     const gene = data.recurrents.find(y => y !== r && y.jours.some(j => c.jours.includes(j)) && y.s < c.e && y.e > c.s && L.GARDES.includes(y.cat) === L.GARDES.includes(c.cat));
@@ -666,11 +684,12 @@ function editerRecurrent(r, jt = null) {
     const couvert = !L.GARDES.includes(c.cat) && data.recurrents.find(y => y !== r && L.GARDES.includes(y.cat) && y.jours.some(j => c.jours.includes(j)) && y.s <= c.s && y.e >= c.e);
     if (couvert) { dire(`Ce moment est pris par « ${couvert.titre} » (${L.hhmm(couvert.s)} – ${L.hhmm(couvert.e)}, ${L.joursTexte(couvert.jours.filter(j => c.jours.includes(j)))}).`); return false; }
     if (gene) { dire(`Ce moment est déjà pris par le créneau type « ${gene.titre} » (${L.hhmm(gene.s)} – ${L.hhmm(gene.e)}, ${L.joursTexte(gene.jours.filter(j => c.jours.includes(j)))}).`); return false; }
+    reprendre(absorbes, v.jours);
     let x = r;
     const gardes = neuf ? [] : r.jours.filter(j => !c.jours.includes(j));
     if (gardes.length) { r.jours = gardes; x = { id: L.uid(), ...c }; data.recurrents.push(x); }
     else if (neuf) { x = { id: L.uid(), ...c }; data.recurrents.push(x); } else { Object.assign(r, c); delete r.exemple; }
-    L.regenerer(data); L.propager(data, gardes.length ? [r.id, x.id] : [x.id]);
+    L.regenerer(data); L.propager(data, [...(gardes.length ? [r.id, x.id] : [x.id]), ...absorbes.map(y => y.id)]);
     ui.derniereCat = c.cat;
     noterUsage('creneau-type');
     maj(); dire(neuf ? 'Créneau type ajouté' : 'Créneau type modifié');
@@ -711,13 +730,16 @@ function finGeste() {
   geste = null;
 }
 const vueSem = $('#semaine');
+// Les bords d'un créneau étirent (le haut change le début, le bas la fin) ; le milieu déplace. V1.10.33 : un bord prend
+// au plus le quart du créneau, pour qu'un créneau d'une heure se déplace aussi sur téléphone.
+const bords = (blk, y) => { if (!blk) return { bas: false, haut: false }; const r = blk.getBoundingClientRect(), b = Math.min(14, r.height / 4); return { bas: y > r.bottom - b, haut: y < r.top + b }; };
 vueSem.addEventListener('pointerdown', e => {
   const col = e.target.closest('.wk-col');
   if (!col || e.button > 0) return;
   const blk = e.target.closest('.blk');
   const slot = blk && data.semaines[L.isoJour(ui.lundi)].slots.find(x => x.id === blk.dataset.id);
   geste = { mode: 'attente', x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, col, j: +col.dataset.j, h0: heureA(col, e.clientY),
-    slot, blk, bas: !!blk && e.clientY > blk.getBoundingClientRect().bottom - 14, haut: !!blk && e.clientY < blk.getBoundingClientRect().top + 14, pid: e.pointerId };
+    slot, blk, ...bords(blk, e.clientY), pid: e.pointerId };
   geste.timer = setTimeout(() => {
     if (!geste) return;
     geste.mode = slot ? (geste.bas ? 'etirer' : geste.haut ? 'etirer-haut' : 'deplacer') : 'creer';
@@ -745,7 +767,9 @@ vueSem.addEventListener('pointerup', () => {
   const sem = data.semaines[cle];
   // Un morceau glissé seul se détache de son créneau.
   const deplace = { ...g.slot, j: c.j, s: c.s, e: c.e }; delete deplace.groupe;
-  const base = L.sansTrajets(sem.slots);
+  let base = L.sansTrajets(sem.slots);
+  const colles = g.slot.lien ? {} : L.trajetsColles(base, g.slot);
+  for (const k of ['avant', 'apres']) if (colles[k] && !deplace[k]) { deplace[k] = L.minutes(colles[k]); base = base.filter(x => x !== colles[k]); }
   const detacher = () => { if (g.slot.lien) L.detacherTrajet(base, g.slot); };
   delete deplace.lien; delete deplace.cote;
   const pose = L.poser(base, deplace);
