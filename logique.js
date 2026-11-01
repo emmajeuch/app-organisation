@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.33';
+export const VERSION = '1.10.34';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -367,7 +367,7 @@ const SLOT = { id: ID, groupe: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 
   fait: BOOL, xpDonne: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT,
   avant: ENTRE(0, 180), apres: ENTRE(0, 180), lien: ID, cote: UN_DE('avant', 'apres') };
 const SCHEMA = {
-  version: UN_DE(1), debut: DATE, plage: [ENTRE(0, 26)], typeDefaut: ID,
+  version: UN_DE(1), debut: DATE, coursACocher: v => v === null ? null : DATE(v), plage: [ENTRE(0, 26)], typeDefaut: ID,
   recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL, avant: ENTRE(0, 180), apres: ENTRE(0, 180) }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
   bonusXp: ENTRE(0, 1e7), son: BOOL, theme: ID, niveauVu: ENTRE(1, 1000), xpGarde: ENTRE(0, 1e7), joursBonus: [DATE], couleurs: { fond: HEX, accent: HEX }, tutoVu: BOOL, cgu: ENTRE(0, 100), taux: ENTRE(0, 1000),
   cats: [{ id: ID, nom: TXT, couleur: TXT }],
@@ -598,6 +598,9 @@ export function migrer(o) {
     const tous = [...Object.values(o.semaines || {}).flatMap(x => x.slots || []), ...(o.recurrents || []), ...(o.types || []).flatMap(t => t.slots || [])];
     for (const s of tous) if (s.cat === 'cours' && s.titre === 'Trajet') s.cat = 'trajet';
   }
+  // V1.10.34 : les cours se cochent à partir de demain ; jusque-là, ils restaient validés tout seuls. Posé une seule fois,
+  // et seulement si l'app a déjà servi (un nouvel utilisateur coche ses cours dès le départ).
+  if (!('coursACocher' in o)) o.coursACocher = debutDe(o) ? isoJour(ajouterJours(momentLogique(new Date()).date, 1)) : null;
   return o;
 }
 
@@ -712,19 +715,22 @@ export const faitsSemaine = (h, lundi) => {
 // Tout se recalcule à partir de ce qui a été fait : ouvrir l'app sans rien faire ne rapporte rien,
 // et décocher retire ce que cocher avait donné.
 
-// Sommeil, cours, trajets et repas se valident tout seuls (Emma, 24/10) : seuls les autres créneaux se cochent.
-export const AUTO = ['sommeil', 'cours', 'trajet', 'repas'];
+// Sommeil, trajets et repas se valident tout seuls (Emma, 24/10) : seuls les autres créneaux se cochent.
+// V1.10.34 (Emma, 1/11) : les cours se cochent comme le reste. Avant data.coursACocher, l'ancienne règle
+// (cours validés tout seuls) : aucune journée déjà validée ne se perd.
+export const AUTO = ['sommeil', 'trajet', 'repas'];
 export const auto = x => AUTO.includes(x.cat);
-export const journeeValidee = slots => { const v = slots.filter(x => !auto(x)); return v.length > 0 && v.every(x => x.fait); };
-// Une journée faite seulement de sommeil, cours et repas n'a rien à cocher : elle se valide toute seule une fois passée (Emma, 24/10).
-export const rienACocher = slots => slots.length > 0 && slots.every(auto);
+export const autoLe = (data, iso) => x => auto(x) || (x.cat === 'cours' && !!data.coursACocher && iso < data.coursACocher);
+export const journeeValidee = (slots, estAuto = auto) => { const v = slots.filter(x => !estAuto(x)); return v.length > 0 && v.every(x => x.fait); };
+// Une journée faite seulement de sommeil, trajets et repas n'a rien à cocher : elle se valide toute seule une fois passée (Emma, 24/10).
+export const rienACocher = (slots, estAuto = auto) => slots.length > 0 && slots.every(estAuto);
 // Le premier jour d'usage (posé quand on construit son app ; sinon le premier jour où l'app a servi).
 // Ce jour-là et avant, rien ne se fait tout seul : pas d'heures « réalisées » ni de journée validée d'office.
 export const debutDe = data => data.debut || Object.keys(data.usage || {}).sort()[0] || null;
 const apresDebut = (data, iso) => { const d = debutDe(data); return !!d && iso > d; };
 // Un créneau automatique compte comme fait une fois terminé, à partir du lendemain du premier jour d'usage.
 export function autoFait(data, iso, x, maintenant = new Date()) {
-  if (!auto(x) || !apresDebut(data, iso)) return false;
+  if (!autoLe(data, iso)(x) || !apresDebut(data, iso)) return false;
   const { date, h } = momentLogique(maintenant), auj = isoJour(date);
   return iso < auj || (iso === auj && x.e <= h);
 }
@@ -734,8 +740,8 @@ export function joursValides(data, maintenant = new Date()) {
   const v = new Set(), auj = isoJour(momentLogique(maintenant).date);
   for (const [cle, s] of Object.entries(data.semaines)) {
     for (let j = 0; j < 7; j++) {
-      const iso = isoJour(ajouterJours(deIso(cle), j)), du = s.slots.filter(x => x.j === j);
-      if (journeeValidee(du) || (rienACocher(du) && iso < auj && apresDebut(data, iso))) v.add(iso);
+      const iso = isoJour(ajouterJours(deIso(cle), j)), du = s.slots.filter(x => x.j === j), a = autoLe(data, iso);
+      if (journeeValidee(du, a) || (rienACocher(du, a) && iso < auj && apresDebut(data, iso))) v.add(iso);
     }
   }
   return v;
@@ -1022,7 +1028,7 @@ export function calculerRappels(data, maintenant, r = REGLAGES_RAPPELS) {
     const a = h => Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, Math.round(h * 60)).getTime() / 1000);
     // Le bilan d'abord : avant le dîner, il tombe à la même minute que le rappel du repas et les deux font une seule notification.
     if (r.soir && slots.length) {
-      const hb = heureBilan(slots), v = slots.filter(x => !auto(x) && x.e <= hb + .25);
+      const hb = heureBilan(slots), estAuto = autoLe(data, isoJour(d)), v = slots.filter(x => !estAuto(x) && x.e <= hb + .25);
       const ok = v.filter(x => x.fait).map(x => x.titre), reste = v.filter(x => !x.fait).map(x => x.titre);
       const resume = [ok.length && `Validé : ${ok.join(', ')}`, reste.length && `À valider : ${reste.join(', ')}`].filter(Boolean).join(' · ');
       ajout(a(hb), 'Bilan de ta journée', i === 0 && resume ? resume.slice(0, 180) : 'Avant de manger, valide ce que tu as fait aujourd’hui.');

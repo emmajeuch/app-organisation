@@ -288,7 +288,31 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   const d = L.vide(); d.semaines['2026-10-26'] = { slots: jour };
   const b = L.calculerRappels(d, new Date(2026, 9, 26, 7, 0).getTime(), { ...L.REGLAGES_RAPPELS }).find(x => x.titre.startsWith('Bilan de ta journée'));
   assert.equal(b.t, new Date(2026, 9, 26, 18, 45).getTime() / 1000);
-  assert.equal(b.corps, 'Validé : Révisions · À valider : Renfo');
+  assert.equal(b.corps, 'Validé : Révisions · À valider : TD, Renfo');   // V1.10.34 : le cours se coche aussi
+}
+
+// V1.10.34 (Emma, 1/11) : les cours se cochent. Avant coursACocher, l'ancienne règle : rien de déjà validé ne se perd.
+{
+  const jour = [{ j: 0, s: 7, e: 8, cat: 'sommeil' }, { j: 0, s: 9, e: 11, cat: 'cours', titre: 'TD' }, { j: 0, s: 12, e: 13, cat: 'repas' }];
+  assert.ok(!L.auto({ cat: 'cours' }) && L.auto({ cat: 'trajet' }));
+  assert.equal(L.journeeValidee(jour), false);
+  assert.equal(L.journeeValidee(jour.map(x => x.cat === 'cours' ? { ...x, fait: true } : x)), true);
+  assert.ok(!L.rienACocher(jour));
+  const d = L.vide();
+  assert.equal(d.coursACocher, null);   // nouvel utilisateur : ses cours se cochent dès le départ
+  d.debut = '2026-10-25'; d.coursACocher = '2026-10-28';
+  d.semaines['2026-10-26'] = { slots: [0, 1, 2, 3].flatMap(j => jour.map(x => ({ ...x, j }))) };
+  d.semaines['2026-10-26'].slots.find(x => x.j === 3 && x.cat === 'cours').fait = true;
+  // lundi et mardi : ancienne règle, validés tout seuls ; mercredi : cours pas coché ; jeudi : coché
+  assert.deepEqual([...L.joursValides(d, new Date(2026, 9, 31, 12))].sort(), ['2026-10-26', '2026-10-27', '2026-10-29']);
+  assert.equal(L.heuresPeriode(d, new Date(2026, 9, 26), new Date(2026, 10, 1), new Date(2026, 9, 31, 12), new Date(2026, 9, 31, 12)).fait.cours, 6);
+  // une sauvegarde d'avant la 1.10.34 : la bascule est posée à demain, une seule fois ; l'import la garde
+  const vieux = JSON.parse(JSON.stringify(d)); delete vieux.coursACocher;
+  const m = L.migrer(vieux), demain = L.isoJour(L.ajouterJours(L.momentLogique(new Date()).date, 1));
+  assert.equal(m.coursACocher, demain);
+  assert.equal(L.migrer(m).coursACocher, demain);
+  assert.equal(L.validerImport(JSON.parse(JSON.stringify(d))).coursACocher, '2026-10-28');
+  assert.equal(L.validerImport({ ...JSON.parse(JSON.stringify(d)), coursACocher: null }).coursACocher, null);
 }
 
 // Compte : identifiant et mot de passe donnent toujours le même identifiant de copie ; un autre mot de passe ne lit rien.
@@ -311,6 +335,7 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
 // Une journée qui n'a que ça se valide toute seule une fois passée (Emma, 24/10).
 {
   const d = L.vide(), lundi = '2026-10-26';
+  d.coursACocher = '2026-11-02';   // ancienne règle (avant la 1.10.34) : les cours se validaient tout seuls
   d.semaines[lundi] = { slots: [
     { j: 0, s: 8, e: 12, cat: 'cours', titre: 'Cours' }, { j: 0, s: 12, e: 13, cat: 'repas', titre: 'Déjeuner' },
     { j: 1, s: 8, e: 17, cat: 'cours', titre: 'Cours' }, { j: 1, s: 17, e: 18, cat: 'sport', titre: 'Renfo' },
@@ -326,7 +351,7 @@ assert.equal(L.hhmm(L.versHeure('13:45')), '13:45');
   // mardi a un créneau à cocher : pas validé tout seul ; jeudi (que des cours) pas encore passé
   assert.deepEqual([...L.joursValides(d, mer)], []);
   assert.deepEqual([...L.joursValides(d, new Date(2026, 9, 30, 9))], ['2026-10-28', '2026-10-29']);
-  assert.ok(L.rienACocher(d.semaines[lundi].slots.filter(x => x.j === 2)) && !L.rienACocher([]));
+  assert.ok(L.rienACocher(d.semaines[lundi].slots.filter(x => x.j === 2), L.autoLe(d, '2026-10-28')) && !L.rienACocher([]));
   // sans « debut », le premier jour où l'app a servi en tient lieu ; « debut » survit à une sauvegarde
   const e = L.vide(); e.usage['2026-10-27'] = { notes: 1 };
   assert.equal(L.debutDe(e), '2026-10-27');

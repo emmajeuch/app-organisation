@@ -8,7 +8,6 @@ if (window.top !== window.self) {
 }
 
 const KEY = 'orga-v1';
-const ROW = 14; // hauteur d'une demi-heure en px, comme --row dans index.html
 const JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -130,7 +129,7 @@ const commence = (cle, x) => { const { date, h } = L.momentLogique(new Date()), 
 // Seuls les créneaux cochés rapportent de l'XP ; la relecture seule ne fait pas compter la journée.
 function relecture(jour) {
   const d = L.deIso(jour), cle = cleSem(d), j = L.jourSemaine(d), sem = semaineDe(cle);
-  const slots = sem.slots.filter(x => x.j === j && !L.auto(x));
+  const estAuto = L.autoLe(data, jour), slots = sem.slots.filter(x => x.j === j && !estAuto(x));
   const hier = jour !== aujIso(), aVenir = x => !commence(cle, x);
   const servi = L.utiliseEnJournee(data, jour);
   ouvrirDlg(`<form><h2>${hier ? 'Relire hier' : 'Relire ta journée'}</h2>
@@ -344,9 +343,9 @@ function vueAujourdhui() {
 
   // Hier pas validé : on le relit le lendemain (la veille ne compte dans l'essai que si elle a servi pendant la journée).
   const hier = L.ajouterJours(date, -1), semHier = data.semaines[cleSem(hier)];
-  const slotsHier = semHier ? semHier.slots.filter(x => x.j === L.jourSemaine(hier)) : [];
-  if (slotsHier.some(x => !L.auto(x)) && !L.journeeValidee(slotsHier)) {
-    html += `<div class="card type"><div class="txt"><b>Hier n’est pas validé</b><small>${pl(slotsHier.filter(x => !x.fait && !L.auto(x)).length, 'créneau', 'créneaux')} à relire pour garder ta série</small></div><button class="btn gris petit" data-act="relecture" data-jour="${L.isoJour(hier)}">Valider hier</button></div>`;
+  const slotsHier = semHier ? semHier.slots.filter(x => x.j === L.jourSemaine(hier)) : [], autoHier = L.autoLe(data, L.isoJour(hier));
+  if (slotsHier.some(x => !autoHier(x)) && !L.journeeValidee(slotsHier, autoHier)) {
+    html += `<div class="card type"><div class="txt"><b>Hier n’est pas validé</b><small>${pl(slotsHier.filter(x => !x.fait && !autoHier(x)).length, 'créneau', 'créneaux')} à relire pour garder ta série</small></div><button class="btn gris petit" data-act="relecture" data-jour="${L.isoJour(hier)}">Valider hier</button></div>`;
   }
   if (actif('sport')) {
     const regle = L.regleCompetition(data.competitions, L.isoJour(date));
@@ -376,29 +375,30 @@ function vueAujourdhui() {
     html += `<div class="now"><div class="now-label">Maintenant</div><div class="now-title">Créneau libre</div><div class="next">${ensuite}</div></div>`;
   }
 
-  const passes = slots.filter(x => x.e <= h && !L.auto(x)), hBilan = L.heureBilan(slots);
+  const estAuto = L.autoLe(data, L.isoJour(date)), passes = slots.filter(x => x.e <= h && !estAuto(x)), hBilan = L.heureBilan(slots);
   html += `<div class="sec"><h2>La journée <span>${passes.length ? `${pl(passes.filter(x => x.fait).length, 'validé', 'validés')} sur ${pl(passes.length, 'passé', 'passés')}` : ''}</span></h2>`;
   // La journée en forme d'emploi du temps : la grille d'un seul jour, un bouton de validation sur chaque créneau passé.
   const [p0, p1] = data.plage;
   html += slots.length ? `<div class="wk seul jour-edt" style="--n:1;--rows:${(p1 - p0) * 2}"><div class="wk-body">
     <div class="wk-hours">${Array.from({ length: p1 - p0 - 1 }, (_, i) => `<span style="--s:${i + 1}">${(p0 + i + 1) % 24}</span>`).join('')}</div>
-    <div class="wk-col">${slots.filter(x => x.e > p0 && x.s < p1).map(x => {
+    <div class="wk-col" data-j="${j}">${slots.filter(x => x.e > p0 && x.s < p1).map(x => {
       const s = Math.max(x.s, p0), e = Math.min(x.e, p1), passe = x.e <= h, actuel = x.s <= h && h < x.e, liees = notesLiees(x.titre).length;
       const sous = [`${L.hhmm(x.s)} – ${L.hhmm(x.e)}`, infos(x), liees ? `${liees} note${liees > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
-      return `<div class="blk${actuel ? ' actuel' : ''}${x.fait ? ' fait' : ''}" data-act="slot" data-id="${x.id}" style="${teinte(x.cat)};--s:${s - p0};--d:${e - s}">${esc(x.titre)}<small>${esc(sous)}</small>
-        ${passe && !L.auto(x) ? `<button class="valid" data-act="valider" data-id="${x.id}" aria-pressed="${!!x.fait}" aria-label="Valider ${esc(x.titre)}">${I.check}</button>` : ''}</div>`;
+      // V1.10.34 : toucher, glisser, étirer comme dans Semaine (gestesGrille) : plus de data-act ici, la fiche s'ouvrirait deux fois.
+      return `<div class="blk${actuel ? ' actuel' : ''}${x.fait ? ' fait' : ''}" data-id="${x.id}" style="${teinte(x.cat)};--s:${s - p0};--d:${e - s}">${esc(x.titre)}<small>${esc(sous)}</small>
+        ${passe && !estAuto(x) ? `<button class="valid" data-act="valider" data-id="${x.id}" aria-pressed="${!!x.fait}" aria-label="Valider ${esc(x.titre)}">${I.check}</button>` : ''}</div>`;
     }).join('')}${actif('habitudes') ? L.habitudesAHeure(data.habitudes, L.jourSemaine(date)).map(hb => habBlocHtml(hb, p0, p1, L.isoJour(date))).join('') : ''}${h >= p0 && h < p1 ? `<div class="nowline" style="--s:${h - p0}"></div>` : ''}</div></div></div>`
     : '<p class="vide">Rien de prévu aujourd’hui. Ajoute un créneau avec le bouton +.</p>';
   // Dès l'heure du bilan (avant le dîner, sinon 20 h), la relecture : chaque créneau se coche un par un.
   const iso = L.isoJour(date), servi = L.utiliseEnJournee(data, iso);
-  if (L.rienACocher(slots)) {
-    html += '<p class="vide">Rien à cocher aujourd’hui : sommeil, cours et repas se valident tout seuls, et la journée aussi.</p>';
-  } else if (L.journeeValidee(slots)) {
+  if (L.rienACocher(slots, estAuto)) {
+    html += '<p class="vide">Rien à cocher aujourd’hui : sommeil, trajets et repas se valident tout seuls, et la journée aussi.</p>';
+  } else if (L.journeeValidee(slots, estAuto)) {
     html += `<p class="vide">${servi ? `Journée validée, elle compte dans l’essai${actif('motivation') ? ` : +${L.XP.jour} XP de bonus` : ''}.` : 'Journée validée, mais elle ne compte pas dans l’essai : aucun créneau touché pendant la journée.'}</p>`;
-  } else if (h >= hBilan && slots.some(x => !L.auto(x))) {
+  } else if (h >= hBilan && slots.some(x => !estAuto(x))) {
     html += `<button class="btn plein" data-act="relecture" data-jour="${iso}">Relire et valider la journée</button>`;
   } else if (slots.length) {
-    html += `<p class="aide">Valide chaque créneau avec son bouton peu après sa fin${servi ? '' : ' : c’est ce qui fait compter la journée'}. Sommeil, cours et repas se valident tout seuls. Le bilan de la journée ouvre à ${L.hhmm(hBilan)}.</p>`;
+    html += `<p class="aide">Valide chaque créneau avec son bouton peu après sa fin${servi ? '' : ' : c’est ce qui fait compter la journée'}. Sommeil, trajets et repas se valident tout seuls. Le bilan de la journée ouvre à ${L.hhmm(hBilan)}.</p>`;
   }
   html += '</div>';
 
@@ -699,7 +699,8 @@ function editerRecurrent(r, jt = null) {
 
 // Gestes sur la grille : appui long (320 ms) pour remplir, déplacer ou étirer ; sinon le doigt fait défiler.
 let geste = null;
-const heureA = (col, y) => data.plage[0] + Math.floor((y - col.getBoundingClientRect().top) / ROW) / 2;
+// La hauteur d'une demi-heure se lit sur la grille touchée (14 px dans Semaine, 19 px dans Aujourd'hui).
+const heureA = (col, y) => { const r = col.getBoundingClientRect(); return data.plage[0] + Math.floor((y - r.top) / (r.height / ((data.plage[1] - data.plage[0]) * 2))) / 2; };
 function cible(g) {
   const [p0, p1] = data.plage;
   const sous = document.elementFromPoint(g.cx, g.cy)?.closest('.wk-col');
@@ -707,7 +708,7 @@ function cible(g) {
   const h = Math.min(Math.max(heureA(col, g.cy), p0), p1 - .5);
   if (g.mode === 'creer') return { col, j: g.j, s: Math.min(g.h0, h), e: Math.max(g.h0, h) + .5 };
   // Étirer s'arrête au créneau voisin (V1.10.5) : on ne recouvre jamais un autre créneau.
-  const voisins = data.semaines[L.isoJour(ui.lundi)].slots.filter(x => x.j === g.slot?.j && x.id !== g.slot?.id && (L.GARDES.includes(g.slot.cat) || !L.GARDES.includes(x.cat)));
+  const voisins = data.semaines[g.cle].slots.filter(x => x.j === g.slot?.j && x.id !== g.slot?.id && (L.GARDES.includes(g.slot.cat) || !L.GARDES.includes(x.cat)));
   if (g.mode === 'etirer') return { col, j: g.slot.j, s: g.slot.s, e: Math.min(Math.max(g.slot.s + .5, h + .5), ...voisins.filter(x => x.s >= g.slot.e).map(x => x.s), p1) };
   if (g.mode === 'etirer-haut') return { col, j: g.slot.j, s: Math.max(Math.min(g.slot.e - .5, h), ...voisins.filter(x => x.e <= g.slot.s).map(x => x.e), p0), e: g.slot.e };
   const d = g.slot.e - g.slot.s;
@@ -717,7 +718,7 @@ function cible(g) {
 function apercu() {
   const c = cible(geste), f = geste.fantome;
   f.style.cssText = `${teinte(geste.slot ? geste.slot.cat : ui.derniereCat || data.cats[0]?.id)};--s:${c.s - data.plage[0]};--d:${c.e - c.s}`;
-  const pris = geste.mode === 'deplacer' && L.poser(L.sansTrajets(data.semaines[L.isoJour(ui.lundi)].slots), { ...geste.slot, j: c.j, s: c.s, e: c.e }).gene;
+  const pris = geste.mode === 'deplacer' && L.poser(L.sansTrajets(data.semaines[geste.cle].slots), { ...geste.slot, j: c.j, s: c.s, e: c.e }).gene;
   f.classList.toggle('refus', !!pris);
   f.textContent = pris ? `Sur : ${pris.titre}` : `${L.hhmm(c.s)}–${L.hhmm(c.e)}`;
   if (f.parentNode !== c.col) c.col.append(f);
@@ -733,53 +734,58 @@ const vueSem = $('#semaine');
 // Les bords d'un créneau étirent (le haut change le début, le bas la fin) ; le milieu déplace. V1.10.33 : un bord prend
 // au plus le quart du créneau, pour qu'un créneau d'une heure se déplace aussi sur téléphone.
 const bords = (blk, y) => { if (!blk) return { bas: false, haut: false }; const r = blk.getBoundingClientRect(), b = Math.min(14, r.height / 4); return { bas: y > r.bottom - b, haut: y < r.top + b }; };
-vueSem.addEventListener('pointerdown', e => {
-  const col = e.target.closest('.wk-col');
-  if (!col || e.button > 0) return;
-  const blk = e.target.closest('.blk');
-  const slot = blk && data.semaines[L.isoJour(ui.lundi)].slots.find(x => x.id === blk.dataset.id);
-  geste = { mode: 'attente', x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, col, j: +col.dataset.j, h0: heureA(col, e.clientY),
-    slot, blk, ...bords(blk, e.clientY), pid: e.pointerId };
-  geste.timer = setTimeout(() => {
+// V1.10.34 : les mêmes gestes sur la grille d'Aujourd'hui (Emma, 1/11) ; cleDe donne la semaine de la grille.
+function gestesGrille(vue, cleDe) {
+  vue.addEventListener('pointerdown', e => {
+    const col = e.target.closest('.wk-col');
+    if (!col || e.button > 0 || e.target.closest('button, .hab')) return;   // valider un créneau ou une habitude reste un simple toucher
+    const cle = cleDe(), blk = e.target.closest('.blk');
+    const slot = blk && data.semaines[cle].slots.find(x => x.id === blk.dataset.id);
+    geste = { mode: 'attente', x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, col, j: +col.dataset.j, h0: heureA(col, e.clientY),
+      slot, blk, ...bords(blk, e.clientY), pid: e.pointerId, cle };
+    geste.timer = setTimeout(() => {
+      if (!geste) return;
+      geste.mode = slot ? (geste.bas ? 'etirer' : geste.haut ? 'etirer-haut' : 'deplacer') : 'creer';
+      try { col.setPointerCapture(geste.pid); } catch {}
+      blk?.classList.add('leve');
+      geste.fantome = Object.assign(document.createElement('div'), { className: 'blk fantome' });
+      navigator.vibrate?.(10);
+      apercu();
+    }, 320);
+  });
+  vue.addEventListener('pointermove', e => {
     if (!geste) return;
-    geste.mode = slot ? (geste.bas ? 'etirer' : geste.haut ? 'etirer-haut' : 'deplacer') : 'creer';
-    try { col.setPointerCapture(geste.pid); } catch {}
-    blk?.classList.add('leve');
-    geste.fantome = Object.assign(document.createElement('div'), { className: 'blk fantome' });
-    navigator.vibrate?.(10);
+    geste.cx = e.clientX; geste.cy = e.clientY;
+    if (geste.mode === 'attente') { if (Math.hypot(e.clientX - geste.x, e.clientY - geste.y) > 8) finGeste(); return; }
     apercu();
-  }, 320);
-});
-vueSem.addEventListener('pointermove', e => {
-  if (!geste) return;
-  geste.cx = e.clientX; geste.cy = e.clientY;
-  if (geste.mode === 'attente') { if (Math.hypot(e.clientX - geste.x, e.clientY - geste.y) > 8) finGeste(); return; }
-  apercu();
-});
-vueSem.addEventListener('pointerup', () => {
-  if (!geste) return;
-  const g = geste, c = g.mode === 'attente' ? null : cible(g);
-  finGeste();
-  const cle = L.isoJour(ui.lundi);
-  if (!c) return editerSlot(g.slot || nouveauSlot(g.j, g.h0, Math.min(g.h0 + 1, data.plage[1])), cle);
-  finDernierGeste = Date.now();
-  if (g.mode === 'creer') return editerSlot(nouveauSlot(c.j, c.s, c.e), cle);
-  const sem = data.semaines[cle];
-  // Un morceau glissé seul se détache de son créneau.
-  const deplace = { ...g.slot, j: c.j, s: c.s, e: c.e }; delete deplace.groupe;
-  let base = L.sansTrajets(sem.slots);
-  const colles = g.slot.lien ? {} : L.trajetsColles(base, g.slot);
-  for (const k of ['avant', 'apres']) if (colles[k] && !deplace[k]) { deplace[k] = L.minutes(colles[k]); base = base.filter(x => x !== colles[k]); }
-  const detacher = () => { if (g.slot.lien) L.detacherTrajet(base, g.slot); };
-  delete deplace.lien; delete deplace.cote;
-  const pose = L.poser(base, deplace);
-  if (pose.gene) { rendre(); return conflit(base, deplace, pose.gene, s => { detacher(); sem.slots = s; noterUsage('creneau-deplace'); maj(); }); }
-  detacher();
-  sem.slots = pose.slots;
-  noterUsage('creneau-deplace');
-  maj();
-});
-vueSem.addEventListener('pointercancel', finGeste);
+  });
+  vue.addEventListener('pointerup', () => {
+    if (!geste) return;
+    const g = geste, c = g.mode === 'attente' ? null : cible(g);
+    finGeste();
+    const cle = g.cle;
+    if (!c) return editerSlot(g.slot || nouveauSlot(g.j, g.h0, Math.min(g.h0 + 1, data.plage[1])), cle);
+    finDernierGeste = Date.now();
+    if (g.mode === 'creer') return editerSlot(nouveauSlot(c.j, c.s, c.e), cle);
+    const sem = data.semaines[cle];
+    // Un morceau glissé seul se détache de son créneau.
+    const deplace = { ...g.slot, j: c.j, s: c.s, e: c.e }; delete deplace.groupe;
+    let base = L.sansTrajets(sem.slots);
+    const colles = g.slot.lien ? {} : L.trajetsColles(base, g.slot);
+    for (const k of ['avant', 'apres']) if (colles[k] && !deplace[k]) { deplace[k] = L.minutes(colles[k]); base = base.filter(x => x !== colles[k]); }
+    const detacher = () => { if (g.slot.lien) L.detacherTrajet(base, g.slot); };
+    delete deplace.lien; delete deplace.cote;
+    const pose = L.poser(base, deplace);
+    if (pose.gene) { rendre(); return conflit(base, deplace, pose.gene, s => { detacher(); sem.slots = s; noterUsage('creneau-deplace'); maj(); }); }
+    detacher();
+    sem.slots = pose.slots;
+    noterUsage('creneau-deplace');
+    maj();
+  });
+  vue.addEventListener('pointercancel', finGeste);
+}
+gestesGrille(vueSem, () => L.isoJour(ui.lundi));
+gestesGrille($('#aujourdhui'), () => cleSem(L.momentLogique(new Date()).date));
 // Glisser vers la gauche ou la droite change de semaine (retour des testeurs, 24/10), sauf juste après un geste sur la grille.
 let glisse = null, finDernierGeste = 0;
 vueSem.addEventListener('touchstart', e => {
@@ -1930,7 +1936,7 @@ const TUTO = [
   ['La grille', 'Touche une case vide pour ajouter un créneau. Appui long puis glisse : sur du vide pour en remplir plusieurs, au milieu d’un créneau pour le déplacer, sur son haut ou son bas pour changer l’heure. Deux créneaux ne se chevauchent pas ; le sommeil et les repas passent en premier et coupent le reste.'],
   ['Ta semaine type', 'Semaine › Modifier : ce qui revient chaque semaine, jour par jour (le lundi type, le mardi type…). Coche les jours d’un créneau type ; « Régler par catégories » remplit le sommeil, les repas, les cours et le sport en quelques questions.'],
   ['Ajouter', 'Le bouton + d’Aujourd’hui et de Semaine ajoute un créneau ou une tâche. Dans Notes, chaque rubrique a son propre +. Une liste se partage avec son bouton Partager.'],
-  ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée et allume ta flamme. Sommeil, cours et repas se valident tout seuls. Avant le dîner, une notification fait le bilan.'],
+  ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée et allume ta flamme. Sommeil, trajets et repas se valident tout seuls. Avant le dîner, une notification fait le bilan.'],
   ['Ta progression', 'Chaque chose faite rapporte de l’XP. Tous les 5 niveaux, un tirage : une créature pour ta collection. Choisis-en une comme compagnon : il se promène en bas de l’écran, grandit avec tes journées validées, et réagit quand tu le touches.'],
   ['Ta sauvegarde', 'Avec un compte, une copie chiffrée de tes données part toute seule : sur un nouveau téléphone, tu te connectes et tout revient. Sans compte, elles ne sont que sur ce téléphone : crée-le dans Profil › ⚙ › Compte et sauvegarde. Et ne supprime pas l’icône : ça peut effacer tes données.'],
   ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes et de tes tâches, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
