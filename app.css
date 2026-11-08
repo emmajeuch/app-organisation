@@ -523,6 +523,7 @@ dialog[open]::backdrop { animation: fondu .3s ease-out; }
 .chargement img { border-radius: 20px; animation: respire 1.4s ease-in-out infinite; }
 .chargement.fini { opacity: 0; pointer-events: none; }
 @keyframes chargement-fin { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .chargement { animation: chargement-fin .01s 10s forwards !important; } }
 .tape { animation: tape .4s cubic-bezier(.3, 1.6, .5, 1); }
 .jour-edt .blk .valid.tape { animation: tape-v .4s cubic-bezier(.3, 1.6, .5, 1); }
 @keyframes tape { 35% { transform: scale(1.4) rotate(-6deg); } 70% { transform: scale(.92) rotate(3deg); } }

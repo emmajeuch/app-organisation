@@ -1731,7 +1731,7 @@ async function seConnecter(ident, mdp, apres) {
   const o = await L.dechiffrerCopie(await r.text(), cles);
   const lier = () => { ecrireSauvAuto({ ident, ...cles, quand: new Date().toISOString() }); apres?.(); };
   // Sur un téléphone vide, les données reviennent tout de suite ; sinon on demande avant de remplacer.
-  if (!data.types.length) { dlg.close(); data = L.validerImport(o); lier(); maj(); dire('Connexion réussie : tes données sont revenues'); }
+  if (!data.types.length) { const v = L.validerImport(o); dlg.close(); data = v; lier(); maj(); dire('Connexion réussie : tes données sont revenues'); }
   else proposerSauvegarde(o, lier);
 }
 function deconnecter() {

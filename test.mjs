@@ -782,6 +782,9 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
   assert.equal(L.navigateurInstallable(`${android} Chrome/130.0 Mobile Safari/537.36`), 'android');
   assert.equal(L.navigateurInstallable(`${android} SamsungBrowser/25.0 Chrome/121.0 Mobile Safari/537.36`), null);
   assert.equal(L.navigateurInstallable(`Mozilla/5.0 (Linux; Android 14; K; wv) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36`), null);
+  assert.equal(L.navigateurInstallable(`${webkit} GSA/300.0 Mobile/15E148 Safari/604.1`), null);      // app Google
+  assert.equal(L.navigateurInstallable(`${webkit} Version/18.0 Mobile/15E148 Ddg/18.0 Safari/604.1`), null);      // DuckDuckGo
+  assert.equal(L.navigateurInstallable(`${android} Chrome/130.0 Mobile Safari/537.36 XiaoMi/MiuiBrowser/14.0`), null);
 }
 
 console.log('ok');

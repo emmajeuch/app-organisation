@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.38';
+export const VERSION = '1.10.39';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -1070,8 +1070,8 @@ export const identValide = s => /^[\p{L}\p{N}._-]{3,40}$/u.test(normIdent(s));
 export const sauvegardePossible = () => typeof CompressionStream === 'function' && !!globalThis.crypto?.subtle;
 // Le navigateur où afficher le mode d'emploi d'installation : Safari sur iPhone ou iPad, Chrome sur Android.
 export function navigateurInstallable(ua, tactile = false) {
-  if (/iPhone|iPad|iPod/.test(ua) || (tactile && /Macintosh/.test(ua))) return /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|OPT\//.test(ua) ? 'ios' : null;
-  return /Android/.test(ua) && /Chrome\//.test(ua) && !/EdgA|OPR|SamsungBrowser|Firefox|; wv\)/.test(ua) ? 'android' : null;
+  if (/iPhone|iPad|iPod/.test(ua) || (tactile && /Macintosh/.test(ua))) return /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|GSA\/|Ddg\//.test(ua) ? 'ios' : null;
+  return /Android/.test(ua) && /Chrome\//.test(ua) && !/EdgA|OPR|SamsungBrowser|MiuiBrowser|Firefox|; wv\)/.test(ua) ? 'android' : null;
 }
 const enc = new TextEncoder();
 const versB64 = u => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
