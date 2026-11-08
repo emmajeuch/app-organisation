@@ -1695,29 +1695,38 @@ function compte(mode = 'creer', apres) {
     if (!L.identValide(ident)) { dire('Identifiant : 3 à 40 lettres, chiffres, points ou tirets'); return false; }
     if (creer && mdp !== f.get('mdp2')) { dire('Les deux mots de passe ne sont pas pareils'); return false; }
     if (creer && L.mdpTropSimple(mdp, ident)) { dire('Mot de passe trop simple : mélange plus de caractères différents, sans ton identifiant.'); return false; }
-    dire(creer ? 'Création du compte…' : 'Connexion…');
-    (creer ? creerCompte : seConnecter)(ident, mdp, apres).catch(() => { dire('Pas de réseau : réessaie plus tard.'); apres?.(); });
+    // La fenêtre reste ouverte pendant le calcul et l'envoi : creerCompte ou seConnecter la ferme si tout a marché.
+    const boutons = [...dlg.querySelectorAll('button')], principal = dlg.querySelector('button.plein'), texte = principal.textContent;
+    document.activeElement?.blur();   // le clavier ne cache pas les messages
+    boutons.forEach(b => b.disabled = true);
+    principal.textContent = creer ? 'Création du compte…' : 'Connexion…';
+    dlg.dataset.collant = '1';
+    (creer ? creerCompte : seConnecter)(ident, mdp, apres)
+      .catch(() => dire('Pas de réseau : réessaie plus tard.'))
+      .finally(() => { if (!dlg.contains(principal)) return; boutons.forEach(b => b.disabled = false); principal.textContent = texte; dlg.dataset.collant = ''; });
+    return false;
   });
 }
 async function creerCompte(ident, mdp, apres) {
   const cles = await L.clesDuCompte(ident, mdp);
   const r = await envoyer('/compte-creer', await L.chiffrerCopie(data, cles));
   // Refus sans dire pourquoi : on n'apprend jamais qu'un compte existe déjà.
-  if (r.status === 409) { dire('Impossible de créer ce compte : choisis un autre identifiant ou un autre mot de passe.'); setTimeout(() => compte('creer', apres), 2200); return; }
+  if (r.status === 409) { dire('Impossible de créer ce compte : choisis un autre identifiant ou un autre mot de passe.'); return; }
   if (!r.ok) throw new Error('serveur ' + r.status);
   ecrireSauvAuto({ ident, ...cles, quand: new Date().toISOString() });
+  dlg.close();
   dire('Compte créé : tes données sont sauvegardées');
   maj(); apres?.();
 }
 async function seConnecter(ident, mdp, apres) {
   const cles = await L.clesDuCompte(ident, mdp);
   const r = await envoyer('/restauration', JSON.stringify({ id: cles.id }), 'application/json');
-  if (r.status === 404) { dire('Identifiant ou mot de passe incorrect'); setTimeout(() => compte('connexion', apres), 2200); return; }
+  if (r.status === 404) { dire('Identifiant ou mot de passe incorrect'); return; }
   if (!r.ok) throw new Error('serveur ' + r.status);
   const o = await L.dechiffrerCopie(await r.text(), cles);
   const lier = () => { ecrireSauvAuto({ ident, ...cles, quand: new Date().toISOString() }); apres?.(); };
   // Sur un téléphone vide, les données reviennent tout de suite ; sinon on demande avant de remplacer.
-  if (!data.types.length) { data = L.validerImport(o); lier(); maj(); dire('Connexion réussie : tes données sont revenues'); }
+  if (!data.types.length) { dlg.close(); data = L.validerImport(o); lier(); maj(); dire('Connexion réussie : tes données sont revenues'); }
   else proposerSauvegarde(o, lier);
 }
 function deconnecter() {
