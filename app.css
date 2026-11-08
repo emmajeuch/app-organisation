@@ -518,6 +518,11 @@ dialog[open] { animation: monte-dlg .3s cubic-bezier(.2, .9, .3, 1); }
 dialog[open]::backdrop { animation: fondu .3s ease-out; }
 @keyframes monte-dlg { from { transform: translateY(110%); } 70% { transform: translateY(-2%); } }
 @keyframes fondu { from { opacity: 0; } }
+/* Écran de chargement : retiré par app.js dès que l'app est prête, et tout seul au bout de 10 s si elle a planté. */
+.chargement { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--bg); color: var(--ink); font-size: 20px; transition: opacity .25s; animation: chargement-fin .01s 10s forwards; }
+.chargement img { border-radius: 20px; animation: respire 1.4s ease-in-out infinite; }
+.chargement.fini { opacity: 0; pointer-events: none; }
+@keyframes chargement-fin { to { visibility: hidden; } }
 .tape { animation: tape .4s cubic-bezier(.3, 1.6, .5, 1); }
 .jour-edt .blk .valid.tape { animation: tape-v .4s cubic-bezier(.3, 1.6, .5, 1); }
 @keyframes tape { 35% { transform: scale(1.4) rotate(-6deg); } 70% { transform: scale(.92) rotate(3deg); } }

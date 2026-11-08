@@ -319,6 +319,7 @@ dlg.addEventListener('change', e => {
 dlg.addEventListener('cancel', e => { if (dlg.dataset.collant) e.preventDefault(); });
 
 const bienvenue = () => `<div class="card bientot"><b>Bienvenue</b>
+  <p>Un agenda montre ce qui est prévu. Ici, tu valides ce que tu as vraiment fait : ta flamme s’allume, tu gagnes de l’XP et ton compagnon grandit.</p>
   <p>Règle tes catégories une par une (sommeil, repas, cours, sport…) et ta semaine se remplit. Tu peux aussi partir d’une semaine d’exemple, ou de zéro.</p>
   <button class="btn plein" data-act="assistant">Construire mon app</button>
   <div class="rangee"><button class="btn gris" data-act="depart-exemple">Semaine d’exemple</button><button class="btn gris" data-act="depart-vide">Partir de zéro</button></div>
@@ -1946,15 +1947,11 @@ function appliquerConstruction(r) {
 }
 
 const TUTO = [
-  ['Bienvenue', 'Ton emploi du temps à la minute près, tes tâches, tes notes et ton sport, au même endroit. Tout reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire.'],
-  ['Les onglets', 'Aujourd’hui : le créneau en cours et ta journée. Semaine : la grille ; glisse vers la gauche ou la droite pour changer de semaine. Notes : tâches, habitudes, objectifs, listes et notes. Sport, puis Profil pour ta progression et les Réglages (la roue).'],
-  ['La grille', 'Touche une case vide pour ajouter un créneau. Appui long puis glisse : sur du vide pour en remplir plusieurs, au milieu d’un créneau pour le déplacer, sur son haut ou son bas pour changer l’heure. Deux créneaux ne se chevauchent pas ; le sommeil et les repas passent en premier et coupent le reste.'],
-  ['Ta semaine type', 'Semaine › Modifier : ce qui revient chaque semaine, jour par jour (le lundi type, le mardi type…). Coche les jours d’un créneau type ; « Régler par catégories » remplit le sommeil, les repas, les cours et le sport en quelques questions.'],
-  ['Ajouter', 'Le bouton + d’Aujourd’hui et de Semaine ajoute un créneau ou une tâche. Dans Notes, chaque rubrique a son propre +. Une liste se partage avec son bouton Partager.'],
-  ['Valider tes créneaux', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée et allume ta flamme. Sommeil, trajets et repas se valident tout seuls. Avant le dîner, une notification fait le bilan.'],
-  ['Ta progression', 'Chaque chose faite rapporte de l’XP. Tous les 5 niveaux, un tirage : une créature pour ta collection. Choisis-en une comme compagnon : il se promène en bas de l’écran, grandit avec tes journées validées, et réagit quand tu le touches.'],
-  ['Ta sauvegarde', 'Avec un compte, une copie chiffrée de tes données part toute seule : sur un nouveau téléphone, tu te connectes et tout revient. Sans compte, elles ne sont que sur ce téléphone : crée-le dans Profil › ⚙ › Compte et sauvegarde. Et ne supprime pas l’icône : ça peut effacer tes données.'],
-  ['Les rappels', 'Un rappel avant tes cours et tes séances, à l’heure de tes habitudes et de tes tâches, avant le dîner pour le bilan de ta journée, le dimanche pour le bilan. Seules les heures partent vers le serveur, jamais tes cours.'],
+  ['Plus qu’un agenda', 'Un agenda montre ce qui est prévu. Ici, tu valides ce que tu as vraiment fait : ta flamme s’allume, tu gagnes de l’XP, ton compagnon grandit. Tes tâches, tes habitudes, tes notes et ton sport sont au même endroit.'],
+  ['Ta semaine', 'Aujourd’hui montre ta journée, Semaine la grille. Touche une case vide pour ajouter un créneau, touche un créneau pour le modifier ; appui long puis glisse pour le déplacer. Semaine › Modifier règle ce qui revient chaque semaine.'],
+  ['Valider', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Sommeil, trajets et repas se valident tout seuls.'],
+  ['Tes données', 'Tout reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire. Ne supprime pas l’icône : ça peut effacer tes données.'],
+  ['Les rappels', 'Un rappel avant tes créneaux, à l’heure de tes habitudes, et avant le dîner pour le bilan. Seules les heures partent vers le serveur, jamais ce que tu as écrit.'],
 ];
 // Les conditions d'utilisation : acceptées une fois, et de nouveau quand leur version change.
 const CGU = 3;   // 2 : la sauvegarde automatique ; 3 : le compte (24/10)
@@ -1970,14 +1967,14 @@ function conditions() {
   }, { collant: true });
 }
 function tutoriel(i = 0) {
-  const [titre, texte] = TUTO[i];
-  const rappels = titre === 'Les rappels';
-  ouvrirDlg(`<form><h2>${titre}</h2><p>${texte}</p>${rappels ? (peutActiverRappels() ? '<button type="button" class="btn plein" data-choix="rappels">Activer les rappels</button>' : '<p class="aide">Tu pourras les activer dans Profil › Réglages › Notifications, en ouvrant l’app depuis son icône.</p>') : ''}<p class="aide">${i + 1} sur ${TUTO.length}</p>
-    <div class="rangee"><button type="button" class="btn gris" data-choix="passer">${i === TUTO.length - 1 ? 'Fermer' : 'Passer'}</button>${i < TUTO.length - 1 ? '<button class="btn plein">Suivant</button>' : ''}</div></form>`, choix => {
+  const [titre, texte] = TUTO[i], fin = i === TUTO.length - 1, rappels = titre === 'Les rappels' && peutActiverRappels();
+  // La première fois, on ne le saute pas : il n'est compté comme vu qu'à la fin. Revu depuis Profil, on peut le fermer.
+  ouvrirDlg(`<form><h2>${titre}</h2><p>${texte}</p>${titre === 'Les rappels' ? (rappels ? '<button type="button" class="btn plein" data-choix="rappels">Activer les rappels</button>' : '<p class="aide">Tu pourras les activer dans Profil › Réglages › Notifications, en ouvrant l’app depuis son icône.</p>') : ''}<p class="aide">${i + 1} sur ${TUTO.length}</p>
+    <div class="rangee">${data.tutoVu ? '<button type="button" class="btn gris" data-fermer>Fermer</button>' : ''}<button class="btn ${rappels ? 'gris' : 'plein'}">${fin ? 'Terminer' : 'Suivant'}</button></div></form>`, choix => {
+    if (choix === 'ok' && !fin) { tutoriel(i + 1); return false; }
     data.tutoVu = true; sauver();
-    if (choix === 'rappels') { activerRappels(); return; }
-    if (choix === 'ok' && i < TUTO.length - 1) { tutoriel(i + 1); return false; }
-  });
+    if (choix === 'rappels') activerRappels();
+  }, { collant: !data.tutoVu });
 }
 
 // Donner mon avis : de 1 à 5 étoiles et un texte libre, envoyés au serveur (retour des testeurs, 24/10).
@@ -2427,6 +2424,7 @@ rendre();
 dernier = L.stats(data, new Date());
 verifierNiveau(dernier);
 ouvrir(ui.onglet);
+const ecran = $('#chargement'); ecran.classList.add('fini'); setTimeout(() => ecran.remove(), 300);
 if (data.cgu !== CGU) conditions(); else if (!data.tutoVu && data.types.length) tutoriel();
 if (data.notifs?.actif) synchroRappels(false);
 majPastille();
