@@ -441,7 +441,7 @@ function vueSemaine() {
   if (!data.types.length) { $('#semaine').innerHTML = html + bienvenue(); return; }
 
   const sem = semaineDe(cle), nRec = data.recurrents.length;
-  html += `<div class="card type"><div class="txt"><b>Créneaux types</b><small>${nRec ? `${pl(nRec, 'créneau revient', 'créneaux reviennent')} chaque semaine` : 'Rien ne revient encore chaque semaine'}</small></div><button class="btn gris petit" data-act="sem-actions">Modifier</button></div>`;
+  html += `<div class="card type"><div class="txt"><b>Créneaux types</b><small>${nRec ? `${pl(nRec, 'créneau revient', 'créneaux reviennent')} chaque semaine. Pour un seul jour, touche le créneau dans la grille.` : 'Rien ne revient encore chaque semaine'}</small></div><button class="btn gris petit" data-act="sem-actions">Modifier</button></div>`;
 
   const [p0, p1] = data.plage;
   const { date, h } = L.momentLogique(new Date());
@@ -453,7 +453,7 @@ function vueSemaine() {
     <div class="wk-body"><div class="wk-hours">${Array.from({ length: p1 - p0 - 1 }, (_, i) => `<span style="--s:${i + 1}">${(p0 + i + 1) % 24}</span>`).join('')}</div>
     ${jours.map(j => `<div class="wk-col" data-j="${j}">${sem.slots.filter(x => x.j === j && x.e > p0 && x.s < p1).map(x => blocHtml(x, p0, p1)).join('')}${actif('habitudes') ? L.habitudesAHeure(data.habitudes, j).map(hb => habBlocHtml(hb, p0, p1)).join('') : ''}${j === jNow && h >= p0 && h < p1 ? `<div class="nowline" style="--s:${h - p0}"></div>` : ''}</div>`).join('')}
     </div></div>
-    <p class="aide">Touche une case vide pour ajouter un créneau, un créneau pour le modifier. Appui long puis glisse : sur du vide pour remplir plusieurs demi-heures, sur un créneau pour le déplacer, sur son bas pour l’étirer. Touche un jour pour le voir seul. Glisse vers la gauche ou la droite pour changer de semaine.</p>
+    <p class="aide">Touche une case vide pour ajouter un créneau, un créneau pour le modifier ce jour-là seulement. Appui long puis glisse : sur du vide pour remplir plusieurs demi-heures, sur un créneau pour le déplacer, sur son bas pour l’étirer. Touche un jour pour le voir seul. Glisse vers la gauche ou la droite pour changer de semaine.</p>
     <ul class="legend">${data.cats.map(c => `<li><span class="dot" style="${teinte(c.id)}"></span>${esc(c.nom)}</li>`).join('')}</ul>`;
   // Les réglages de la grille vivent ici, à côté d'elle (retour des testeurs, 24/10).
   const opt = (vals, sel) => vals.map(x => `<option value="${x}" ${x === sel ? 'selected' : ''}>${L.hhmm(x)}</option>`).join('');
@@ -507,7 +507,9 @@ function editerSlot(slot, cle) {
   const [p0, p1] = data.plage;
   const heure = (nom, h) => `<input type="time" name="${nom}" value="${L.hhmm(h)}" required>`;
   const liees = slot.titre ? notesLiees(slot.titre) : [];
-  ouvrirDlg(`<form><h2>${neuf ? 'Nouveau créneau' : 'Créneau'}</h2>
+  const leJour = L.deIso(dateDuSlot(cle, slot.j)).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  ouvrirDlg(`<form><h2>${neuf ? 'Nouveau créneau' : `Créneau du ${leJour}`}</h2>
+    ${rec ? '<p class="muted">Ce que tu changes ici ne vaut que pour ce jour-là. Pour que ça revienne chaque semaine, coche « Modifier aussi le créneau type » en bas.</p>' : ''}
     <label class="champ">Titre<input name="titre" value="${esc(slot.titre)}" placeholder="${esc(cat(slot.cat).nom)}" autocomplete="off"></label>
     <div class="cats" role="radiogroup" aria-label="Catégorie">${data.cats.map(c => `<label><input type="radio" name="cat" value="${c.id}" ${c.id === slot.cat ? 'checked' : ''}><span style="${teinte(c.id)}">${esc(c.nom)}</span></label>`).join('')}</div>
     <div class="champs">
@@ -1948,7 +1950,7 @@ function appliquerConstruction(r) {
 
 const TUTO = [
   ['Plus qu’un agenda', 'Un agenda montre ce qui est prévu. Ici, tu valides ce que tu as vraiment fait : ta flamme s’allume, tu gagnes de l’XP, ton compagnon grandit. Tes tâches, tes habitudes, tes notes et ton sport sont au même endroit.'],
-  ['Ta semaine', 'Aujourd’hui montre ta journée, Semaine la grille. Touche une case vide pour ajouter un créneau, touche un créneau pour le modifier ; appui long puis glisse pour le déplacer. Semaine › Modifier règle ce qui revient chaque semaine.'],
+  ['Ta semaine', 'Aujourd’hui montre ta journée, Semaine la grille. Touche une case vide pour ajouter un créneau, touche un créneau pour le changer ce jour-là seulement ; appui long puis glisse pour le déplacer. Semaine › Modifier règle ce qui revient chaque semaine.'],
   ['Valider', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Sommeil, trajets et repas se valident tout seuls.'],
   ['Tes données', 'Tout reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire. Ne supprime pas l’icône : ça peut effacer tes données.'],
   ['Les rappels', 'Un rappel avant tes créneaux, à l’heure de tes habitudes, et avant le dîner pour le bilan. Seules les heures partent vers le serveur, jamais ce que tu as écrit.'],
