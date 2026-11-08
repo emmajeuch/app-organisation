@@ -772,22 +772,26 @@ function gestesGrille(vue, cleDe) {
     if (!c) return editerSlot(g.slot || nouveauSlot(g.j, g.h0, Math.min(g.h0 + 1, data.plage[1])), cle);
     finDernierGeste = Date.now();
     if (g.mode === 'creer') return editerSlot(nouveauSlot(c.j, c.s, c.e), cle);
-    const sem = data.semaines[cle];
-    // Un morceau glissé seul se détache de son créneau.
-    const deplace = { ...g.slot, j: c.j, s: c.s, e: c.e }; delete deplace.groupe;
-    let base = L.sansTrajets(sem.slots);
-    const colles = g.slot.lien ? {} : L.trajetsColles(base, g.slot);
-    for (const k of ['avant', 'apres']) if (colles[k] && !deplace[k]) { deplace[k] = L.minutes(colles[k]); base = base.filter(x => x !== colles[k]); }
-    const detacher = () => { if (g.slot.lien) L.detacherTrajet(base, g.slot); };
-    delete deplace.lien; delete deplace.cote;
-    const pose = L.poser(base, deplace);
-    if (pose.gene) { rendre(); return conflit(base, deplace, pose.gene, s => { detacher(); sem.slots = s; noterUsage('creneau-deplace'); maj(); }); }
-    detacher();
-    sem.slots = pose.slots;
-    noterUsage('creneau-deplace');
-    maj();
+    deplacerSlot(g.slot, cle, c);
   });
   vue.addEventListener('pointercancel', finGeste);
+}
+// Déplace un créneau dans sa semaine : c = { j, s, e }. Sert au geste sur la grille et au compagnon.
+function deplacerSlot(slot, cle, c) {
+  const sem = data.semaines[cle];
+  // Un morceau glissé seul se détache de son créneau.
+  const deplace = { ...slot, j: c.j, s: c.s, e: c.e }; delete deplace.groupe;
+  let base = L.sansTrajets(sem.slots);
+  const colles = slot.lien ? {} : L.trajetsColles(base, slot);
+  for (const k of ['avant', 'apres']) if (colles[k] && !deplace[k]) { deplace[k] = L.minutes(colles[k]); base = base.filter(x => x !== colles[k]); }
+  const detacher = () => { if (slot.lien) L.detacherTrajet(base, slot); };
+  delete deplace.lien; delete deplace.cote;
+  const pose = L.poser(base, deplace);
+  if (pose.gene) { rendre(); return conflit(base, deplace, pose.gene, s => { detacher(); sem.slots = s; noterUsage('creneau-deplace'); maj(); }); }
+  detacher();
+  sem.slots = pose.slots;
+  noterUsage('creneau-deplace');
+  maj();
 }
 gestesGrille(vueSem, () => L.isoJour(ui.lundi));
 gestesGrille($('#aujourdhui'), () => cleSem(L.momentLogique(new Date()).date));
@@ -1421,7 +1425,8 @@ function vueReglages() {
        <div class="ligne-couleur"><button type="button" class="pastille-couleur" data-act="choisir-couleur" data-id="accent" style="--c:${couleursTheme().accent || '#FF9600'}"><i></i><span><b>Boutons et flamme</b><small>Toucher pour changer</small></span></button><button type="button" class="btn gris petit" data-act="couleur" data-id="accent" data-c="" aria-pressed="${!couleursTheme().accent}">Par défaut</button></div>
        <label class="coche"><input type="checkbox" class="chk" data-act="son" ${data.son ? 'checked' : ''}>Petit son quand je coche quelque chose</label>`)}
     ${groupe('aide', 'Aide et avis', 'Tutoriel, avis, notice, conditions',
-      `<div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
+      `<button class="btn gris" data-act="discuter">Parler au compagnon</button>
+       <div class="rangee"><button class="btn gris" data-act="tutoriel">Revoir le tutoriel</button><button class="btn gris" data-act="avis">Donner mon avis</button></div>
        <button class="btn gris" data-act="exporter">Télécharger une copie de mes données</button>
        <p><a href="installer.html">Notice d’installation à envoyer</a> · <a href="conditions.html">Conditions d’utilisation</a> · <a href="confidentialite.html">Confidentialité et mentions légales</a></p>`)}
     <p class="aide version">App d’organisation · version ${L.VERSION}</p>`;
@@ -1949,7 +1954,7 @@ function appliquerConstruction(r) {
 }
 
 const TUTO = [
-  ['Plus qu’un agenda', 'Un agenda montre ce qui est prévu. Ici, tu valides ce que tu as vraiment fait : ta flamme s’allume, tu gagnes de l’XP, ton compagnon grandit. Tes tâches, tes habitudes, tes notes et ton sport sont au même endroit.'],
+  ['Plus qu’un agenda', 'Un agenda montre ce qui est prévu. Ici, tu valides ce que tu as vraiment fait : ta flamme s’allume, tu gagnes de l’XP, ton compagnon grandit. Tes tâches, tes habitudes, tes notes et ton sport sont au même endroit. Touche deux fois ton compagnon pour lui parler.'],
   ['Ta semaine', 'Aujourd’hui montre ta journée, Semaine la grille. Touche une case vide pour ajouter un créneau, touche un créneau pour le changer ce jour-là seulement ; appui long puis glisse pour le déplacer. Semaine › Modifier règle ce qui revient chaque semaine.'],
   ['Valider', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Sommeil, trajets et repas se valident tout seuls.'],
   ['Tes données', 'Tout reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire. Ne supprime pas l’icône : ça peut effacer tes données.'],
@@ -1977,6 +1982,39 @@ function tutoriel(i = 0) {
     data.tutoVu = true; sauver();
     if (choix === 'rappels') activerRappels();
   }, { collant: !data.tutoVu });
+}
+
+// Parler au compagnon (V2, étape 1) : deux taps sur lui, ou Profil › ⚙ › Aide et avis. Rien ne part du téléphone.
+function discuter() {
+  const c = monCompagnon();
+  ouvrirDlg(`<form><h2>${c ? esc(c.nom) : 'Aide'}</h2>
+    <div class="echanges" role="log" aria-live="polite"><p class="lui">Dis-moi « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou pose-moi une question sur l’app.</p></div>
+    <div class="ajout"><input name="q" placeholder="Écris ici…" aria-label="Ton message" autocomplete="off" enterkeyhint="send"><button aria-label="Envoyer">${I.droite}</button></div>
+    <button type="button" class="btn gris" data-fermer>Fermer</button></form>`, (choix, f) => {
+    const q = f.get('q').trim();
+    if (!q) return false;
+    const r = L.comprendre(q);
+    if (r.type === 'creneau') { const d = L.deIso(r.date), s = nouveauSlot(L.jourSemaine(d), r.s, r.e); s.titre = r.titre; setTimeout(() => editerSlot(s, cleSem(d))); return; }
+    if (r.type === 'tache') { setTimeout(() => editerTache(null, { titre: r.titre, echeance: r.echeance, heure: r.heure })); return; }
+    let rep = r.type === 'question' ? L.reponseAide(q) : r.titre ? 'Dis-moi quand : « déplace sport à jeudi 17h ».' : 'Dis-moi quoi : « ajoute dentiste demain 18h ».';
+    if (r.type === 'deplacer') {
+      const t = L.creneauAVenir(data, r.titre, r.source), d = r.date && L.deIso(r.date);
+      rep = !t ? `Je ne trouve pas « ${r.titre} » dans tes prochains créneaux.`
+        : t.slot.groupe ? 'Ce créneau est en plusieurs morceaux : touche-le dans la grille.'
+        : d && cleSem(d) !== t.cle ? 'Je ne sais pas encore le changer de semaine.' : null;   // ponytail: même semaine seulement, à élargir si ça manque
+      if (!rep) { setTimeout(() => confirmerDeplacement(t, d ? L.jourSemaine(d) : t.slot.j, r.s ?? t.slot.s)); return; }
+    }
+    const z = dlg.querySelector('.echanges');
+    z.insertAdjacentHTML('beforeend', `<p class="moi">${esc(q)}</p><p class="lui">${esc(rep)}</p>`);
+    z.scrollTop = z.scrollHeight;
+    dlg.querySelector('[name=q]').value = '';
+    return false;
+  });
+}
+function confirmerDeplacement({ slot, cle }, j, s) {
+  ouvrirDlg(`<form><h2>Déplacer ce créneau ?</h2><p>« ${esc(slot.titre)} » : ${JOURS[slot.j]} ${L.hhmm(slot.s)} → ${JOURS[j]} ${L.hhmm(s)}</p>
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Déplacer</button></div></form>`,
+    () => { setTimeout(() => { deplacerSlot(slot, cle, { j, s, e: s + slot.e - slot.s }); if (!dlg.open) dire('Créneau déplacé'); }); });
 }
 
 // Donner mon avis : de 1 à 5 étoiles et un texte libre, envoyés au serveur (retour des testeurs, 24/10).
@@ -2238,6 +2276,11 @@ function reagirBalade(type) {
   baladeMinuteur = setTimeout(b.etape, type === 'fete' ? 2600 : 1900);
 }
 document.addEventListener('pointerdown', e => { if (e.target.closest('#balade .compagnon')) { navigator.vibrate?.(12); reagirBalade('touche'); } });
+let toucheCompagnon = 0;
+document.addEventListener('click', e => {
+  if (!e.target.closest('#balade .compagnon')) return;
+  if (e.timeStamp - toucheCompagnon < 400) { toucheCompagnon = 0; discuter(); } else toucheCompagnon = e.timeStamp;
+});
 
 // Ce qu'on vient de cocher, pour le faire rebondir une fois redessiné.
 let tape = null;
@@ -2347,6 +2390,7 @@ document.addEventListener('click', e => {
     case 'revenir-avant': return revenirAvant();
     case 'assistant': return construire();
     case 'tutoriel': return tutoriel();
+    case 'discuter': return discuter();
     case 'avis': return donnerAvis();
     case 'importer': return $('#fichier').click();
   }

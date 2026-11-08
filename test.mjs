@@ -787,4 +787,43 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
   assert.equal(L.navigateurInstallable(`${android} Chrome/130.0 Mobile Safari/537.36 XiaoMi/MiuiBrowser/14.0`), null);
 }
 
+// Le compagnon qui parle : les phrases comprises par des règles (dimanche 8/11/2026, 18 h).
+{
+  const nowD = new Date(2026, 10, 8, 18, 0), c = t => L.comprendre(t, nowD);
+  const lundi = '2026-11-09', mardi = '2026-11-10', jeudi = '2026-11-12', dim = '2026-11-08', dimSuiv = '2026-11-15';
+  assert.deepEqual(c('ajoute dentiste demain 18h'), { type: 'creneau', titre: 'Dentiste', date: lundi, s: 18, e: 19 });
+  assert.deepEqual(c('Ajoute un rendez-vous chez le dentiste demain à 18h30'), { type: 'creneau', titre: 'Rendez-vous chez le dentiste', date: lundi, s: 18.5, e: 19.5 });
+  assert.deepEqual(c('mets révisions jeudi de 14h à 16h'), { type: 'creneau', titre: 'Révisions', date: jeudi, s: 14, e: 16 });
+  assert.deepEqual(c('peux-tu ajouter sport ce soir à 19h ?'), { type: 'creneau', titre: 'Sport', date: dim, s: 19, e: 20 });
+  assert.equal(c('ajoute soirée samedi de 23h à 1h').e, 25);
+  assert.deepEqual(c('ajoute-moi yoga dimanche prochain 10:30'), { type: 'creneau', titre: 'Yoga', date: dimSuiv, s: 10.5, e: 11.5 });
+  assert.deepEqual(c('ajoute acheter du pain'), { type: 'tache', titre: 'Acheter du pain', echeance: '', heure: null });
+  assert.deepEqual(c('ajoute une tâche rendre le dossier vendredi'), { type: 'tache', titre: 'Rendre le dossier', echeance: '2026-11-13', heure: null });
+  assert.deepEqual(c('ajoute une tâche appeler maman demain 17h'), { type: 'tache', titre: 'Appeler maman', echeance: lundi, heure: 17 });
+  assert.equal(c('note le 15/11 payer le loyer').echeance, dimSuiv);
+  assert.equal(c('ajoute truc 01/02').echeance, '2027-02-01');
+  assert.deepEqual(c('ajoute un créneau lecture demain'), { type: 'creneau', titre: 'Lecture', date: lundi, s: 9, e: 10 });
+  assert.deepEqual(c('déplace sport à jeudi 17h'), { type: 'deplacer', titre: 'Sport', source: null, date: jeudi, s: 17 });
+  assert.deepEqual(c('décale dentiste à 17h'), { type: 'deplacer', titre: 'Dentiste', source: null, date: null, s: 17 });
+  assert.deepEqual(c('déplace le sport de mardi à jeudi'), { type: 'deplacer', titre: 'Sport', source: mardi, date: jeudi, s: null });
+  assert.equal(c('déplace sport de 14h à 16h').s, 16);
+  assert.deepEqual(c('déplace sport'), { type: 'manque', titre: 'Sport' });
+  assert.equal(c('ajoute demain 18h').type, 'manque');
+  for (const q of ['comment ajouter un créneau ?', 'à quoi ça sert', 'bonjour', '']) assert.equal(c(q).type, 'question');
+  assert.equal(L.comprendre('ajoute x demain 18h', new Date(2026, 10, 9, 0, 30)).date, lundi);   // à minuit et demie, on est encore dimanche
+  assert.match(L.reponseAide('comment valider une journée ?'), /^Valide chaque/);
+  assert.match(L.reponseAide('Comment activer les rappels'), /Notifications/);
+  assert.match(L.reponseAide('c’est quoi la différence avec un agenda'), /^Un agenda/);
+  assert.match(L.reponseAide('comment ajouter un créneau ?'), /case vide/);
+  assert.match(L.reponseAide('je veux sauvegarder mes données'), /Compte et sauvegarde/);
+  assert.match(L.reponseAide('bonjour'), /^Je n’ai pas compris/);
+  const s = (id, j, deb, fin, titre, plus = {}) => ({ id, j, s: deb, e: fin, titre, ...plus });
+  const d = { semaines: { '2026-11-02': { slots: [s('a', 6, 8, 9, 'Sport'), s('b', 6, 20, 21, 'Sport')] }, '2026-11-09': { slots: [s('c', 1, 18, 19, 'Séance de sport'), s('d', 3, 18, 19, 'Sport', { fait: true }), s('e', 3, 19, 20, 'Trajet sport', { lien: 'x' }), s('f', 4, 9, 10, 'Dentiste')] } } };
+  assert.equal(L.creneauAVenir(d, 'sport', null, nowD).slot.id, 'b');      // celui de ce soir, pas celui de ce matin
+  assert.equal(L.creneauAVenir(d, 'sport', mardi, nowD).slot.id, 'c');     // le jour demandé, accents ignorés
+  assert.equal(L.creneauAVenir(d, 'sport', jeudi, nowD), null);            // validé ou trajet lié : exclu
+  assert.equal(L.creneauAVenir(d, 'piscine', null, nowD), null);
+  assert.equal(L.creneauAVenir(d, 'dentiste', null, nowD).cle, '2026-11-09');
+}
+
 console.log('ok');

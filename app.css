@@ -570,7 +570,11 @@ body:not([data-onglet="aujourdhui"]):not([data-onglet="semaine"]) .fab { display
 .choix-couleur .teintes i { left: var(--hx); top: 50%; background: hsl(var(--h) 100% 50%); }
 
 /* Le compagnon se touche (V1.10.7) : il réagit, ainsi qu'à ce que tu fais ; il bouscule un onglet ou le + sans les actionner */
-.balade .compagnon { pointer-events: auto; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.balade .compagnon { pointer-events: auto; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.echanges { display: flex; flex-direction: column; gap: 8px; max-height: 45vh; overflow-y: auto; }
+.echanges p { margin: 0; padding: 8px 12px; border-radius: 14px; max-width: 85%; }
+.echanges .lui { background: var(--surface-2); align-self: flex-start; }
+.echanges .moi { background: var(--accent); color: var(--on-accent); align-self: flex-end; }
 .balade .bulle { font-size: 13px; background: var(--surface); color: var(--ink); padding: 3px 8px; border-radius: 10px; box-shadow: var(--shadow); }
 .balade.reagit-touche .pas { animation: saut .45s cubic-bezier(.3, 0, .4, 1) 2; }
 .balade.reagit-content .pas { animation: saut .4s cubic-bezier(.3, 0, .4, 1) 3; }

@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '1.10.39';
+export const VERSION = '2.0.0';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -1072,6 +1072,80 @@ export const sauvegardePossible = () => typeof CompressionStream === 'function' 
 export function navigateurInstallable(ua, tactile = false) {
   if (/iPhone|iPad|iPod/.test(ua) || (tactile && /Macintosh/.test(ua))) return /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|GSA\/|Ddg\//.test(ua) ? 'ios' : null;
   return /Android/.test(ua) && /Chrome\//.test(ua) && !/EdgA|OPR|SamsungBrowser|MiuiBrowser|Firefox|; wv\)/.test(ua) ? 'android' : null;
+}
+
+// ---------- Le compagnon qui parle : des règles, tout se passe sur le téléphone ----------
+const sansAccent = s => String(s).normalize('NFD').replace(/\p{M}/gu, '').replace(/’/g, "'").toLowerCase();
+const NOMS_JOURS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+const AJOUT = new Set(['ajoute', 'ajouter', 'rajoute', 'rajouter', 'mets', 'mettre', 'cree', 'creer', 'note', 'noter', 'planifie', 'planifier']);
+const DEPLACE = new Set(['deplace', 'deplacer', 'decale', 'decaler', 'bouge', 'bouger', 'repousse', 'repousser']);
+const LIENS = new Set(['a', 'au', 'de', 'du', 'le', 'pour', 'vers', "jusqu'a"]);
+const ARTICLES = new Set(['un', 'une', 'le', 'la', 'les', "l'", 'mon', 'ma', 'mes', 'du', 'des', 'de', ':']);
+const lireHeure = m => { const r = /^(\d{1,2})(?:h(\d{2})?|:(\d{2}))$/.exec(m); if (!r) return null; const h = +r[1], mn = +(r[2] || r[3] || 0); return h <= 24 && mn < 60 ? h + mn / 60 : null; };
+// Une date dite à partir du mot i : { iso, n } (n = nombre de mots pris), ou null.
+function lireDate(n, i, auj) {
+  const dans = (k, l = 1) => ({ iso: isoJour(ajouterJours(auj, k)), n: l });
+  if (n[i] === "aujourd'hui") return dans(0);
+  if (n[i] === 'ce' && /^(soir|matin|midi)$/.test(n[i + 1])) return dans(0, 2);
+  if (n[i] === 'demain') return dans(1, /^(soir|matin|midi)$/.test(n[i + 1]) ? 2 : 1);
+  if (n[i] === 'apres-demain') return dans(2);
+  if (n[i] === 'apres' && n[i + 1] === 'demain') return dans(2, 2);
+  const j = NOMS_JOURS.indexOf(n[i]);
+  if (j >= 0) { const k = (j - jourSemaine(auj) + 7) % 7, pro = n[i + 1] === 'prochain'; return dans(pro && !k ? 7 : k, pro ? 2 : 1); }
+  const d = /^(\d{1,2})\/(\d{1,2})$/.exec(n[i]);
+  if (d) { let x = new Date(auj.getFullYear(), +d[2] - 1, +d[1]); if (x < auj) x = new Date(auj.getFullYear() + 1, +d[2] - 1, +d[1]); return { iso: isoJour(x), n: 1 }; }
+  return null;
+}
+// Comprend une phrase. Renvoie { type: 'creneau' | 'tache' | 'deplacer' | 'manque' | 'question', … }.
+export function comprendre(texte, maintenant = new Date()) {
+  const propre = String(texte).trim().replace(/[?!.]+$/, '').trim(), mots = propre.split(/\s+/), n = mots.map(m => sansAccent(m).replace(/-moi$/, ''));
+  const iv = /^(comment|pourquoi|ou|quand|quoi|combien|est-ce|c'est|qu'est-ce)$/.test(n[0]) ? -1 : n.findIndex(m => AJOUT.has(m) || DEPLACE.has(m));
+  if (iv < 0 || iv > 2) return { type: 'question' };
+  const auj = momentLogique(maintenant).date, deplacer = DEPLACE.has(n[iv]), dates = [], heures = [], reste = [];
+  for (let i = iv + 1; i < n.length;) {
+    const d = lireDate(n, i, auj), h = lireHeure(n[i]);
+    if (!d && h === null) { reste.push(i++); continue; }
+    while (reste.length && LIENS.has(n[reste.at(-1)])) reste.pop();
+    if (d) { dates.push(d.iso); i += d.n; } else { heures.push(h); i++; }
+  }
+  while (reste.length && LIENS.has(n[reste.at(-1)])) reste.pop();
+  while (reste.length && ARTICLES.has(n[reste[0]])) reste.shift();
+  let sorte = null;
+  if (/^(tache|creneau)$/.test(n[reste[0]])) { sorte = n[reste.shift()]; while (reste.length && ARTICLES.has(n[reste[0]])) reste.shift(); }
+  const titre = reste.map(i => mots[i]).join(' ').replace(/^./, c => c.toUpperCase());
+  if (!titre) return { type: 'manque' };
+  if (deplacer) {
+    if (!dates.length && !heures.length) return { type: 'manque', titre };
+    return { type: 'deplacer', titre, source: dates.length > 1 ? dates[0] : null, date: dates.at(-1) || null, s: heures.length ? heures.at(-1) : null };
+  }
+  if (sorte === 'tache' || (!heures.length && sorte !== 'creneau')) return { type: 'tache', titre, echeance: dates[0] || '', heure: heures[0] ?? null };
+  const s = heures[0] ?? 9;
+  return { type: 'creneau', titre, date: dates[0] || isoJour(auj), s, e: heures[1] === undefined ? s + 1 : heures[1] > s ? heures[1] : heures[1] + 24 };
+}
+const AIDE = [
+  [['valider', 'valide', 'validation', 'flamme', 'serie', 'journee', 'bilan'], 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée et allume ta flamme. Sommeil, trajets et repas se valident tout seuls.'],
+  [['type', 'types', 'revient', 'reviennent', 'recurrent', 'categories'], 'Semaine › Modifier : ce qui revient chaque semaine, jour par jour. « Régler par catégories » remplit le sommeil, les repas, les cours et le sport en quelques questions.'],
+  [['creneau', 'creneaux', 'grille', 'modifier', 'deplacer', 'supprimer', 'semaine'], 'Touche une case vide pour ajouter un créneau, touche un créneau pour le changer ce jour-là seulement. Appui long puis glisse : au milieu pour le déplacer, sur son haut ou son bas pour changer l’heure.'],
+  [['tache', 'taches', 'habitude', 'habitudes', 'objectif', 'objectifs', 'liste', 'listes', 'note', 'notes'], 'Tout est dans Notes : tâches, habitudes, objectifs, listes et notes. Chaque rubrique a son propre +, et une liste se partage avec son bouton Partager.'],
+  [['xp', 'niveau', 'niveaux', 'tirage', 'tirages', 'creature', 'creatures', 'collection', 'compagnon'], 'Chaque chose faite rapporte de l’XP. Tous les 5 niveaux, un tirage te donne une créature. Choisis-en une comme compagnon dans Profil : elle grandit avec tes journées validées.'],
+  [['compte', 'sauvegarde', 'sauvegarder', 'donnees', 'passe', 'telephone'], 'Tes données restent sur ton téléphone. Avec un compte, une copie chiffrée part toute seule : Profil › ⚙ › Compte et sauvegarde. Ne supprime pas l’icône, ça peut tout effacer.'],
+  [['rappel', 'rappels', 'notification', 'notifications'], 'Les rappels s’activent dans Profil › ⚙ › Notifications, en ouvrant l’app depuis son icône. Seules les heures partent vers le serveur, jamais ce que tu as écrit.'],
+  [['installer', 'installation', 'icone', 'accueil'], 'Dans Safari : bouton Partager › Sur l’écran d’accueil › Ajouter. Puis ouvre l’app par son icône.'],
+  [['sport', 'seance', 'seances', 'exercice', 'exercices', 'competition', 'competitions'], 'L’onglet Sport regroupe tes séances, tes exercices et tes compétitions. Une compétition a son compte à rebours dans Aujourd’hui.'],
+  [['agenda', 'calendrier', 'difference', 'sert'], 'Un agenda montre ce qui est prévu. Ici, tu valides ce que tu as vraiment fait : ta flamme s’allume, tu gagnes de l’XP et je grandis.'],
+];
+export function reponseAide(texte) {
+  const n = sansAccent(texte).split(/[^a-z0-9]+/);
+  let mieux = null, score = 0;
+  for (const [mots, rep] of AIDE) { const s = mots.filter(m => n.includes(m)).length; if (s > score) { score = s; mieux = rep; } }
+  return mieux || 'Je n’ai pas compris. Essaie « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou demande-moi comment valider, sauvegarder ou activer les rappels.';
+}
+// Le prochain créneau à venir dont le titre contient ces mots (ni validé, ni trajet ajouté par son créneau).
+export function creneauAVenir(data, titre, source, maintenant = new Date()) {
+  const q = sansAccent(titre), { date, h } = momentLogique(maintenant), auj = isoJour(date);
+  return Object.entries(data.semaines).flatMap(([cle, s]) => s.slots.map(slot => ({ cle, slot, iso: isoJour(ajouterJours(deIso(cle), slot.j)) })))
+    .filter(x => !x.slot.fait && !x.slot.lien && (x.iso > auj || (x.iso === auj && x.slot.e > h)) && (!source || x.iso === source) && sansAccent(x.slot.titre).includes(q))
+    .sort((a, b) => a.iso.localeCompare(b.iso) || a.slot.s - b.slot.s)[0] || null;
 }
 const enc = new TextEncoder();
 const versB64 = u => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
