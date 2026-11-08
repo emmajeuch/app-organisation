@@ -769,4 +769,19 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
   assert.equal(b.apres, undefined);
 }
 
+// Le bandeau d'installation : Safari sur iPhone ou iPad, Chrome sur Android, rien ailleurs.
+{
+  const webkit = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)';
+  const android = 'Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko)';
+  const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
+  assert.equal(L.navigateurInstallable(`${webkit} Version/18.0 Mobile/15E148 Safari/604.1`), 'ios');
+  assert.equal(L.navigateurInstallable(mac, true), 'ios');      // iPad
+  assert.equal(L.navigateurInstallable(mac, false), null);      // Mac
+  assert.equal(L.navigateurInstallable(`${webkit} CriOS/130.0 Mobile/15E148 Safari/604.1`), null);
+  assert.equal(L.navigateurInstallable(`${webkit} Mobile/15E148 Instagram 300.0`), null);
+  assert.equal(L.navigateurInstallable(`${android} Chrome/130.0 Mobile Safari/537.36`), 'android');
+  assert.equal(L.navigateurInstallable(`${android} SamsungBrowser/25.0 Chrome/121.0 Mobile Safari/537.36`), null);
+  assert.equal(L.navigateurInstallable(`Mozilla/5.0 (Linux; Android 14; K; wv) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36`), null);
+}
+
 console.log('ok');

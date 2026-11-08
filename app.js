@@ -331,6 +331,8 @@ function vueAujourdhui() {
   const st = L.stats(data, new Date());
   let html = `<header class="top"><div><h1>Aujourd’hui</h1><p>${date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p></div>
     ${actif('motivation') ? `<div class="chips"><button class="chip" data-act="ouvrir-profil" aria-label="Série de ${st.serie} jours">${flamme(st.valides.has(aujIso()))}${st.serie}</button><button class="chip" data-act="ouvrir-profil" aria-label="Niveau ${st.niveau.n}">Niv. ${st.niveau.n}</button></div>` : ''}</header>`;
+  const install = !enApp() && L.navigateurInstallable(navigator.userAgent, navigator.maxTouchPoints > 1);
+  if (install) html += `<div class="card type"><div class="txt"><b>Installe l’app sur ton téléphone</b><small>${AIDE_INSTALL[install]} <a href="installer.html">Voir la notice</a></small></div></div>`;
   const jExport = joursDepuisExport();
   if (jExport === null || jExport > 7) {
     if (sauvAuto()) html += `<div class="card type alerte-export"><div class="txt"><b>Dernière sauvegarde il y a ${jExport} jours</b><small>La copie automatique n’a pas pu partir : ouvre l’app avec du réseau.</small></div></div>`;
@@ -1745,6 +1747,10 @@ function deconnecter() {
 const peutActiverRappels = () => !!L.SERVEUR_RAPPELS && pushPossible() && enApp() && Notification.permission !== 'denied' && !data.notifs?.actif;
 const pushPossible = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 const enApp = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const AIDE_INSTALL = {
+  ios: 'Bouton Partager (dans ••• sur les iPhone récents) › Sur l’écran d’accueil › Ajouter. Ouvre-la ensuite par son icône : elle a ses propres données, séparées de Safari.',
+  android: 'Menu ⋮ de Chrome › Ajouter à l’écran d’accueil (ou Installer l’application) › Installer. Ouvre-la ensuite par son icône.',
+};
 const aleatoire = () => b64url(crypto.getRandomValues(new Uint8Array(24)));
 function b64url(u) { return btoa(String.fromCharCode(...u)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
 const deB64url = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '=')), c => c.charCodeAt(0));
