@@ -1,6 +1,6 @@
 // Vérifie le serveur des rappels avec un faux stockage et un faux service de notifications : node serveur/test-worker.mjs
 import assert from 'node:assert/strict';
-import { traiter, tourner, lireInscription, ENVOIS_MAX } from './worker.js';
+import { traiter, tourner, lireInscription, lireReponse, COMPAGNON_PAR_JOUR, ENVOIS_MAX } from './worker.js';
 import { b64 } from './webpush.js';
 
 // Faux stockage KV de Cloudflare.
@@ -160,6 +160,48 @@ assert.equal(abonnes().length, 0); assert.deepEqual(index(), []);
   const avis = await r.json();
   assert.deepEqual(avis.map(a => [a.note, a.texte]), [[null, 'Sans note'], [4, 'Super app']]);
   assert.ok(!JSON.stringify(avis).includes('Léa'));
+}
+
+// Le compagnon : question vers l'IA, sortie vérifiée, limite par jour, rien de la question gardé.
+{
+  let appels = [], sortie = JSON.stringify({ reponse: 'Cale tes révisions le matin.', action: null });
+  const AI = { run: async (m, o) => { appels.push({ m, o }); if (sortie instanceof Error) throw sortie; return { choices: [{ message: { content: sortie } }] }; } };
+  const envIA = { ...env, AI }, idC = 'zyxwvutsrqponmlkjihgfedcba012345';
+  const poser = (corps, e = envIA, t = T0) => traiter(requete('/compagnon', corps, undefined), e, t);
+  const q = 'Comment caser mes révisions de Marie Curie ?', date = '2026-10-26';
+  assert.equal((await traiter(requete('/compagnon', { id: idC, q, date }, 'https://pirate.exemple'), envIA, T0)).status, 403);
+  for (const c of [{ id: 'court', q, date }, { id: idC, q: '  ', date }, { id: idC, q, date: 'hier' }, { id: idC, q: 5, date }]) assert.equal((await poser(c)).status, 422);
+  assert.equal(appels.length, 0);
+  let r = await poser({ id: idC, q: q + 'x'.repeat(900), date, titre: 'Secret' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { reponse: 'Cale tes révisions le matin.', action: null });
+  assert.equal(appels[0].o.chat_template_kwargs.enable_thinking, false);
+  const [sys, usr] = appels[0].o.messages;
+  assert.equal(sys.role, 'system'); assert.ok(sys.content.includes('lundi 2026-10-26'));
+  assert.equal(usr.content.length, 500); assert.ok(!JSON.stringify(appels[0].o).includes('Secret'));
+  const gardes = [...stock.entries()].filter(([k]) => k.startsWith('c:'));
+  assert.equal(gardes.length, 1); assert.equal(gardes[0][1], '1'); assert.ok(!gardes[0][0].includes(idC));
+  assert.ok(![...stock.values()].some(v => String(v).includes('Marie Curie')));
+  // limite du jour : plus d'appel à l'IA ; le lendemain, ça repart
+  stock.set(gardes[0][0], String(COMPAGNON_PAR_JOUR));
+  const n = appels.length;
+  assert.equal((await poser({ id: idC, q, date })).status, 429);
+  assert.equal(appels.length, n);
+  assert.equal((await poser({ id: idC, q, date }, envIA, T0 + 864e5)).status, 200);
+  // quota épuisé ou modèle indisponible : 503, sans compter le message
+  const avant = [...stock.keys()].filter(k => k.startsWith('c:')).length;
+  sortie = new Error('quota');
+  assert.equal((await poser({ id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', q, date })).status, 503);
+  assert.equal([...stock.keys()].filter(k => k.startsWith('c:')).length, avant);
+  sortie = 'pas du json';
+  assert.equal((await poser({ id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', q, date })).status, 502);
+  // ce que renvoie l'IA est filtré
+  assert.deepEqual(lireReponse('Voici : {"reponse":"Ok","action":{"type":"creneau","titre":" Dentiste ","date":"2026-11-09","s":18,"x":"<b>"}} fin'), { reponse: 'Ok', action: { type: 'creneau', titre: 'Dentiste', date: '2026-11-09', s: 18, e: 19 } });
+  assert.deepEqual(lireReponse({ reponse: 'Ok', action: { type: 'tache', titre: 'Pain', date: '', heure: 40 } }).action, { type: 'tache', titre: 'Pain', echeance: '', heure: null });
+  assert.deepEqual(lireReponse({ reponse: 'Ok', action: { type: 'deplacer', titre: 'Sport', date: null, s: 17 } }).action, { type: 'deplacer', titre: 'Sport', source: null, date: null, s: 17 });
+  for (const a of [{ type: 'supprimer', titre: 'Tout' }, { type: 'creneau', titre: 'X', date: 'demain', s: 18 }, { type: 'creneau', date: '2026-11-09', s: 18 }, { type: 'deplacer', titre: 'X', date: null, s: null }, 'x']) assert.equal(lireReponse({ reponse: 'Ok', action: a }).action, null);
+  assert.equal(lireReponse({ reponse: '' }), null);
+  assert.equal(lireReponse(null), null);
 }
 
 console.log('ok');

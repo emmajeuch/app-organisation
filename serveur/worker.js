@@ -66,6 +66,36 @@ export function lireInscription(o, maintenant) {
   return { id, abonnement: { endpoint: abonnement.endpoint, keys: { p256dh: k.p256dh, auth: k.auth } }, rappels: t };
 }
 
+// Le compagnon : la question part vers Workers AI ; rien n'est gardé, sauf le compteur du jour, sous l'empreinte d'un identifiant tiré au hasard.
+const MODELE = '@cf/google/gemma-4-26b-a4b-it', QUESTION_MAX = 500;
+export const COMPAGNON_PAR_JOUR = 30;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const consigne = date => `Tu es le compagnon d'une app d'organisation sur téléphone. Tu réponds en français, en tutoyant, en deux phrases au plus. Tu ne parles que d'organisation, de tâches, d'habitudes, de sport courant et de l'app ; sinon, dis gentiment que ce n'est pas ton rôle. N'invente aucune fonction de l'app : si tu ne sais pas, dis-le.
+Aujourd'hui : ${['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][new Date(date + 'T12:00:00Z').getUTCDay()]} ${date}.
+L'app : Aujourd'hui montre la journée ; Semaine montre la grille, Semaine › Modifier règle ce qui revient chaque semaine. On valide chaque créneau après sa fin, ce qui allume la flamme et donne de l'XP. Notes regroupe tâches, habitudes, objectifs, listes et notes. Sport regroupe séances, exercices et compétitions. Profil montre la progression et les Réglages (la roue).
+Réponds uniquement par un objet JSON : {"reponse": "ton texte", "action": null}.
+Seulement si on te demande d'ajouter ou de déplacer quelque chose, "action" vaut l'un de ceux-ci (heures en nombre décimal, 18.5 pour 18 h 30) :
+{"type":"creneau","titre":"…","date":"AAAA-MM-JJ","s":18,"e":19}
+{"type":"tache","titre":"…","date":"AAAA-MM-JJ ou vide","heure":null}
+{"type":"deplacer","titre":"…","date":"AAAA-MM-JJ ou null","s":18}`;
+// Ce que renvoie l'IA n'est pas fiable : seuls des champs vérifiés repartent vers le téléphone.
+function lireAction(a) {
+  if (!a || typeof a !== 'object') return null;
+  const titre = typeof a.titre === 'string' ? a.titre.trim().slice(0, 80) : '', date = DATE.test(a.date) ? a.date : '', h = x => typeof x === 'number' && x >= 0 && x <= 26 ? x : null;
+  if (!titre) return null;
+  const s = h(a.s), e = h(a.e);
+  if (a.type === 'creneau' && date && s !== null) return { type: 'creneau', titre, date, s, e: e > s ? e : s + 1 };
+  if (a.type === 'tache') return { type: 'tache', titre, echeance: date, heure: h(a.heure) };
+  if (a.type === 'deplacer' && (date || s !== null)) return { type: 'deplacer', titre, source: null, date: date || null, s };
+  return null;
+}
+export function lireReponse(brut) {
+  let o = brut;
+  if (typeof o === 'string') { try { o = JSON.parse(o.slice(o.indexOf('{'), o.lastIndexOf('}') + 1)); } catch { return null; } }
+  const reponse = typeof o?.reponse === 'string' ? o.reponse.trim().slice(0, 600) : '';
+  return reponse ? { reponse, action: lireAction(o.action) } : null;
+}
+
 export async function traiter(req, env, maintenant = Date.now()) {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (req.headers.get('Origin') !== ORIGINE) return repondre(403, 'origine refusée');
@@ -114,6 +144,22 @@ export async function traiter(req, env, maintenant = Date.now()) {
     for (const { name } of page.keys) { const a = await env.RAPPELS.get(name, 'json'); if (a) avis.push(a); }
     avis.sort((a, b) => b.date.localeCompare(a.date));
     return new Response(JSON.stringify(avis), { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
+  }
+  if (chemin === '/compagnon') {
+    const q = typeof o.q === 'string' ? o.q.trim().slice(0, QUESTION_MAX) : '';
+    if (!idValide(o.id) || !q || !DATE.test(o.date)) return repondre(422);
+    // ponytail: une écriture KV par message (1 000 par jour pour tout le serveur) ; à revoir au-delà d'une cinquantaine d'utilisateurs.
+    const cle = await cleDe(o.id, `c:${new Date(maintenant).toISOString().slice(0, 10)}:`);
+    const deja = +(await env.RAPPELS.get(cle)) || 0;
+    if (deja >= COMPAGNON_PAR_JOUR) return repondre(429);
+    let sortie;
+    try {
+      const r = await env.AI.run(MODELE, { messages: [{ role: 'system', content: consigne(o.date) }, { role: 'user', content: q }], max_completion_tokens: 300, response_format: { type: 'json_object' }, chat_template_kwargs: { enable_thinking: false } });   // sans ça, le modèle use tous ses jetons à réfléchir
+      sortie = lireReponse(r.choices?.[0]?.message?.content ?? r.response);
+    } catch (e) { console.log('IA', e?.name); return repondre(503); }   // quota du jour épuisé ou modèle indisponible ; la question n'est jamais écrite dans les journaux
+    if (!sortie) return repondre(502);
+    try { await env.RAPPELS.put(cle, String(deja + 1), { expirationTtl: 2 * 864e2 }); } catch { console.log('écriture refusée'); }
+    return new Response(JSON.stringify(sortie), { status: 200, headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
   }
   if (chemin === '/abonnement') {
     const ins = lireInscription(o, maintenant);

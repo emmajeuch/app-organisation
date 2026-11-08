@@ -1138,8 +1138,9 @@ export function reponseAide(texte) {
   const n = sansAccent(texte).split(/[^a-z0-9]+/);
   let mieux = null, score = 0;
   for (const [mots, rep] of AIDE) { const s = mots.filter(m => n.includes(m)).length; if (s > score) { score = s; mieux = rep; } }
-  return mieux || 'Je n’ai pas compris. Essaie « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou demande-moi comment valider, sauvegarder ou activer les rappels.';
+  return mieux;
 }
+export const PAS_COMPRIS = 'Je n’ai pas compris. Essaie « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou demande-moi comment valider, sauvegarder ou activer les rappels.';
 // Le prochain créneau à venir dont le titre contient ces mots (ni validé, ni trajet ajouté par son créneau).
 export function creneauAVenir(data, titre, source, maintenant = new Date()) {
   const q = sansAccent(titre), { date, h } = momentLogique(maintenant), auj = isoJour(date);

@@ -1957,14 +1957,14 @@ const TUTO = [
   ['Plus qu’un agenda', 'Un agenda montre ce qui est prévu. Ici, tu valides ce que tu as vraiment fait : ta flamme s’allume, tu gagnes de l’XP, ton compagnon grandit. Tes tâches, tes habitudes, tes notes et ton sport sont au même endroit. Touche deux fois ton compagnon pour lui parler.'],
   ['Ta semaine', 'Aujourd’hui montre ta journée, Semaine la grille. Touche une case vide pour ajouter un créneau, touche un créneau pour le changer ce jour-là seulement ; appui long puis glisse pour le déplacer. Semaine › Modifier règle ce qui revient chaque semaine.'],
   ['Valider', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Sommeil, trajets et repas se valident tout seuls.'],
-  ['Tes données', 'Tout reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire. Ne supprime pas l’icône : ça peut effacer tes données.'],
+  ['Tes données', 'Tout reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire. Seul ce que ton compagnon ne comprend pas part vers son IA, sans ton nom. Ne supprime pas l’icône : ça peut effacer tes données.'],
   ['Les rappels', 'Un rappel avant tes créneaux, à l’heure de tes habitudes, et avant le dîner pour le bilan. Seules les heures partent vers le serveur, jamais ce que tu as écrit.'],
 ];
 // Les conditions d'utilisation : acceptées une fois, et de nouveau quand leur version change.
-const CGU = 3;   // 2 : la sauvegarde automatique ; 3 : le compte (24/10)
+const CGU = 4;   // 2 : la sauvegarde automatique ; 3 : le compte (24/10) ; 4 : l'IA du compagnon (8/11)
 function conditions() {
   ouvrirDlg(`<form><h2>Avant de commencer</h2>
-    <p>L’app est gratuite. Ce que tu écris reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire est gardée sur le serveur. Si tu oublies ton mot de passe, personne ne peut la récupérer. Les rappels peuvent arriver en retard ou pas du tout.</p>
+    <p>L’app est gratuite. Ce que tu écris reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire est gardée sur le serveur. Si tu oublies ton mot de passe, personne ne peut la récupérer. Ce que ton compagnon ne comprend pas seul part, sans ton nom, vers l’IA de Cloudflare ; ses réponses peuvent être fausses. Les rappels peuvent arriver en retard ou pas du tout.</p>
     <p><a href="conditions.html">Conditions d’utilisation</a> · <a href="confidentialite.html">Confidentialité</a></p>
     <button class="btn plein">J’ai lu et j’accepte</button></form>`, () => {
     data.cgu = CGU; sauver();
@@ -1984,30 +1984,58 @@ function tutoriel(i = 0) {
   }, { collant: !data.tutoVu });
 }
 
-// Parler au compagnon (V2, étape 1) : deux taps sur lui, ou Profil › ⚙ › Aide et avis. Rien ne part du téléphone.
+// Ouvre ce qu'une phrase demande, à confirmer d'un tap. Renvoie le texte à répondre quand il n'y a rien à ouvrir, sinon null.
+function agir(r) {
+  if (r.type === 'creneau') { const d = L.deIso(r.date), s = nouveauSlot(L.jourSemaine(d), r.s, r.e); s.titre = r.titre; setTimeout(() => editerSlot(s, cleSem(d))); return null; }
+  if (r.type === 'tache') { setTimeout(() => editerTache(null, { titre: r.titre, echeance: r.echeance, heure: r.heure })); return null; }
+  const t = L.creneauAVenir(data, r.titre, r.source), d = r.date && L.deIso(r.date);
+  const rep = !t ? `Je ne trouve pas « ${r.titre} » dans tes prochains créneaux.`
+    : t.slot.groupe ? 'Ce créneau est en plusieurs morceaux : touche-le dans la grille.'
+    : d && cleSem(d) !== t.cle ? 'Je ne sais pas encore le changer de semaine.' : null;   // ponytail: même semaine seulement, à élargir si ça manque
+  if (!rep) setTimeout(() => confirmerDeplacement(t, d ? L.jourSemaine(d) : t.slot.j, r.s ?? t.slot.s));
+  return rep;
+}
+const echange = (moi, lui) => {
+  const z = dlg.querySelector('.echanges');
+  z.insertAdjacentHTML('beforeend', `<p class="moi">${esc(moi)}</p><p class="lui">${esc(lui)}</p>`);
+  z.scrollTop = z.scrollHeight;
+  dlg.querySelector('[name=q]').value = '';
+  return z.lastElementChild;
+};
+const idCompagnon = () => { let i = localStorage.getItem('orga-compagnon'); if (!i) { i = crypto.randomUUID().replace(/-/g, ''); localStorage.setItem('orga-compagnon', i); } return i; };
+// Ce que les règles ne comprennent pas part vers l'IA ; sans réseau ou après le quota, les règles prennent le relais.
+async function demanderIA(q) {
+  const bulle = echange(q, '…');
+  let rep = L.PAS_COMPRIS, action = null;
+  try {
+    const r = await fetch(L.SERVEUR_RAPPELS + '/compagnon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({ id: idCompagnon(), q, date: L.isoJour(L.momentLogique(new Date()).date) }) });
+    if (r.status === 429) rep = `Je suis fatigué pour aujourd’hui, on reprend demain. Je comprends encore « ajoute dentiste demain 18h » et les questions sur l’app.`;
+    else if (r.ok) ({ reponse: rep, action } = await r.json());
+  } catch {}
+  if (!dlg.open || !dlg.contains(bulle)) return;   // la discussion a été fermée entre-temps
+  bulle.textContent = rep;
+  bulle.parentNode.scrollTop = bulle.parentNode.scrollHeight;
+  if (action) { const t = agir(action); if (t) bulle.textContent = t; }
+}
+// Parler au compagnon : deux taps sur lui, ou Profil › ⚙ › Aide et avis.
 function discuter() {
   const c = monCompagnon();
   ouvrirDlg(`<form><h2>${c ? esc(c.nom) : 'Aide'}</h2>
-    <div class="echanges" role="log" aria-live="polite"><p class="lui">Dis-moi « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou pose-moi une question sur l’app.</p></div>
+    <div class="echanges" role="log" aria-live="polite"><p class="lui">Dis-moi « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou pose-moi une question sur l’app. Ce que je ne comprends pas seul part, sans ton nom, vers l’IA de Cloudflare.</p></div>
     <div class="ajout"><input name="q" placeholder="Écris ici…" aria-label="Ton message" autocomplete="off" enterkeyhint="send"><button aria-label="Envoyer">${I.droite}</button></div>
     <button type="button" class="btn gris" data-fermer>Fermer</button></form>`, (choix, f) => {
     const q = f.get('q').trim();
     if (!q) return false;
     const r = L.comprendre(q);
-    if (r.type === 'creneau') { const d = L.deIso(r.date), s = nouveauSlot(L.jourSemaine(d), r.s, r.e); s.titre = r.titre; setTimeout(() => editerSlot(s, cleSem(d))); return; }
-    if (r.type === 'tache') { setTimeout(() => editerTache(null, { titre: r.titre, echeance: r.echeance, heure: r.heure })); return; }
-    let rep = r.type === 'question' ? L.reponseAide(q) : r.titre ? 'Dis-moi quand : « déplace sport à jeudi 17h ».' : 'Dis-moi quoi : « ajoute dentiste demain 18h ».';
-    if (r.type === 'deplacer') {
-      const t = L.creneauAVenir(data, r.titre, r.source), d = r.date && L.deIso(r.date);
-      rep = !t ? `Je ne trouve pas « ${r.titre} » dans tes prochains créneaux.`
-        : t.slot.groupe ? 'Ce créneau est en plusieurs morceaux : touche-le dans la grille.'
-        : d && cleSem(d) !== t.cle ? 'Je ne sais pas encore le changer de semaine.' : null;   // ponytail: même semaine seulement, à élargir si ça manque
-      if (!rep) { setTimeout(() => confirmerDeplacement(t, d ? L.jourSemaine(d) : t.slot.j, r.s ?? t.slot.s)); return; }
+    if (r.type === 'question') {
+      const rep = L.reponseAide(q);
+      if (rep) echange(q, rep); else demanderIA(q);
+      return false;
     }
-    const z = dlg.querySelector('.echanges');
-    z.insertAdjacentHTML('beforeend', `<p class="moi">${esc(q)}</p><p class="lui">${esc(rep)}</p>`);
-    z.scrollTop = z.scrollHeight;
-    dlg.querySelector('[name=q]').value = '';
+    const rep = r.type === 'manque' ? (r.titre ? 'Dis-moi quand : « déplace sport à jeudi 17h ».' : 'Dis-moi quoi : « ajoute dentiste demain 18h ».') : agir(r);
+    if (rep === null) return;
+    echange(q, rep);
     return false;
   });
 }
