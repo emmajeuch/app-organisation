@@ -1,6 +1,6 @@
 // Vérifie le serveur des rappels avec un faux stockage et un faux service de notifications : node serveur/test-worker.mjs
 import assert from 'node:assert/strict';
-import { traiter, tourner, lireInscription, lireReponse, COMPAGNON_PAR_JOUR, ENVOIS_MAX } from './worker.js';
+import { traiter, tourner, lireInscription, lireReponse, personnalite, COMPAGNON_PAR_JOUR, ENVOIS_MAX } from './worker.js';
 import { b64 } from './webpush.js';
 
 // Faux stockage KV de Cloudflare.
@@ -195,6 +195,13 @@ assert.equal(abonnes().length, 0); assert.deepEqual(index(), []);
   assert.equal([...stock.keys()].filter(k => k.startsWith('c:')).length, avant);
   sortie = 'pas du json';
   assert.equal((await poser({ id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', q, date })).status, 502);
+  // une personnalité par créature ; une créature inconnue donne le ton neutre
+  sortie = JSON.stringify({ reponse: 'Ok', action: null });
+  const sysDe = async creature => { const avantN = appels.length; assert.equal((await poser({ id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', q, date, creature })).status, 200); assert.equal(appels.length, avantN + 1); return appels.at(-1).o.messages[0].content; };
+  assert.ok((await sysDe('caillou')).includes('Ton caractère : Jamais plus de six mots'));
+  assert.ok((await sysDe('cactou')).includes('jamais l\'exactitude'));
+  for (const c of [undefined, 'inconnue', '__proto__', 'constructor', 5, { a: 1 }]) assert.ok(!(await sysDe(c)).includes('Ton caractère'));
+  assert.equal(personnalite('astro').length > 0, true);
   // ce que renvoie l'IA est filtré
   assert.deepEqual(lireReponse('Voici : {"reponse":"Ok","action":{"type":"creneau","titre":" Dentiste ","date":"2026-11-09","s":18,"x":"<b>"}} fin'), { reponse: 'Ok', action: { type: 'creneau', titre: 'Dentiste', date: '2026-11-09', s: 18, e: 19 } });
   assert.deepEqual(lireReponse({ reponse: 'Ok', action: { type: 'tache', titre: 'Pain', date: '', heure: 40 } }).action, { type: 'tache', titre: 'Pain', echeance: '', heure: null });

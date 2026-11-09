@@ -2009,7 +2009,7 @@ async function demanderIA(q) {
   let rep = L.PAS_COMPRIS, action = null;
   try {
     const r = await fetch(L.SERVEUR_RAPPELS + '/compagnon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(20000),
-      body: JSON.stringify({ id: idCompagnon(), q, date: L.isoJour(L.momentLogique(new Date()).date) }) });
+      body: JSON.stringify({ id: idCompagnon(), q, date: L.isoJour(L.momentLogique(new Date()).date), creature: monCompagnon()?.id }) });
     if (r.status === 429) rep = `Je suis fatigué pour aujourd’hui, on reprend demain. Je comprends encore « ajoute dentiste demain 18h » et les questions sur l’app.`;
     else if (r.ok) ({ reponse: rep, action } = await r.json());
   } catch {}
