@@ -365,7 +365,7 @@ const NUM_OU_VIDE = v => v === '' ? '' : NUM(v);
 const HEURE_OU_RIEN = v => v === null ? null : ENTRE(0, 26)(v);
 const SLOT = { id: ID, groupe: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID, titre: TXT, salle: TXT, affaires: TXT, notes: TXT,
   fait: BOOL, xpDonne: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT,
-  avant: ENTRE(0, 180), apres: ENTRE(0, 180), lien: ID, cote: UN_DE('avant', 'apres') };
+  avant: ENTRE(0, 180), apres: ENTRE(0, 180), lien: ID, cote: UN_DE('avant', 'apres'), competition: ID };
 const SCHEMA = {
   version: UN_DE(1), debut: DATE, coursACocher: v => v === null ? null : DATE(v), plage: [ENTRE(0, 26)], typeDefaut: ID,
   recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL, avant: ENTRE(0, 180), apres: ENTRE(0, 180) }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
@@ -387,8 +387,8 @@ const SCHEMA = {
   tirages: [TXT], collection: [{ id: ID, date: DATE, raison: TXT, sport: TXT }],
   bilans: { '*': { date: DATE, ailleurs: ENTRE(0, 7), ailleursNote: TXT, comptent: ENTRE(0, 7), validees: TXT, usage: { '*': NUM } } },
   usage: { '*': { '*': NUM } }, modules: { '*': BOOL },
-  profil: { prenom: TXT, etudes: BOOL, travail: BOOL, sports: [TXT] },
-  competitions: [{ id: ID, sport: TXT, nom: TXT, date: DATE, lieu: TXT, categorie: TXT, resultat: TXT }],
+  profil: { prenom: TXT, etudes: BOOL, travail: BOOL, sports: [TXT], sportsInfos: [{ nom: TXT, club: TXT, role: TXT, mode: UN_DE('combat', 'artistique', 'les deux') }] },
+  competitions: [{ id: ID, sport: TXT, nom: TXT, date: DATE, lieu: TXT, categorie: TXT, resultat: TXT, debut: ENTRE(0, 26), fin: ENTRE(0, 26), avant: ENTRE(0, 180), apres: ENTRE(0, 180), medailles: { or: ENTRE(0, 50), argent: ENTRE(0, 50), bronze: ENTRE(0, 50) } }],
   compagnon: { id: ID, stade: ENTRE(0, 4) },
 };
 export function nettoyer(v, sch) {
@@ -771,7 +771,7 @@ export function niveau(xp) {
   return { n, de: seuil(n), a: seuil(n + 1) };
 }
 
-export const XP = { creneau: 5, tache: 20, tacheImportante: 30, seance: 30, habitude: 5, objectif: { semaine: 25, mois: 60, annee: 150 }, projet: 100, jour: 15, bilan: 50 };
+export const XP = { creneau: 5, tache: 20, tacheImportante: 30, seance: 30, habitude: 5, objectif: { semaine: 25, mois: 60, annee: 150 }, projet: 100, jour: 15, bilan: 50, medaille: { or: 100, argent: 75, bronze: 50 } };
 const completions = t => t.faits?.length || (t.fait ? 1 : 0);
 // V1.10.24 : une tâche simple, un objectif ou un créneau rapporte son XP une seule fois, la première fois qu'il est fait
 // (xpDonne). Décocher ne retire rien, recocher ne rajoute rien : plus d'XP en boucle. Une tâche qui revient rapporte à chaque fois.
@@ -803,7 +803,7 @@ export function stats(data, auj) {
   const sources = {
     creneaux: new Set(slots.filter(x => x.fait || x.xpDonne).map(x => x.groupe || x.id)).size * XP.creneau,
     taches: data.taches.reduce((k, t) => k + completionsXp(t) * (important(t) ? XP.tacheImportante : XP.tache), 0),
-    sport: seancesComptees * XP.seance,
+    sport: seancesComptees * XP.seance + (data.competitions || []).filter(c => c.date <= isoJour(auj)).reduce((k, c) => k + Object.entries(XP.medaille).reduce((t, [m, xp]) => t + (c.medailles?.[m] || 0) * xp, 0), 0),
     habitudes: data.habitudes.reduce((k, h) => k + new Set([...h.faits, ...(h.xpJours || [])]).size, 0) * XP.habitude,
     objectifs: data.objectifs.filter(o => o.fait || o.xpDonne).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
     bonus: new Set([...valides, ...(data.joursBonus || [])]).size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,
@@ -1141,6 +1141,48 @@ export function reponseAide(texte) {
   return mieux;
 }
 export const PAS_COMPRIS = 'Je n’ai pas compris. Essaie « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou demande-moi comment valider, sauvegarder ou activer les rappels.';
+// Les fiches sport : résumés écrits à partir des règlements officiels (relevé du 9/11/2026, détail dans le coffre).
+// L'ordre compte : « tennis de table » avant « tennis ». Pas de lien : plusieurs fédérations les soumettent à autorisation.
+export const FICHES_SPORT = [
+  { re: /sabre.?laser/, source: 'Fédération Française d’Escrime, règlement 2026-2027', modes: true, lignes: [
+    ['Combat', 'Duel en 15 points, en 3 minutes.'], ['Points', 'Tête et tronc 5 ; bras et jambes 3 ; mains et poignée 1. Coups d’estoc interdits.'],
+    ['Terrain', 'Arène de 8 m de diamètre, mise en garde à 6 m (6 m et 4 m pour les 9-12 ans).'], ['Arme', 'Lame de 810 mm dès 13 ans, 710 mm de 9 à 12 ans, à 20 mm près.'],
+    ['Artistique', 'Chorégraphie notée par un jury, en catégories Duel, Bataille et Ensemble.']] },
+  { re: /hockey(?! sur glace)/, source: 'Fédération Française de Hockey, page Le Jeu', lignes: [
+    ['But', 'Marquer plus de buts que l’adversaire à la fin du temps réglementaire.'], ['Durée', 'Quatre périodes de 15 minutes, 15 minutes de pause à la mi-temps.'],
+    ['Marquer', 'La balle doit avoir été touchée dans le cercle adverse par la crosse d’un attaquant.'], ['Terrain', '91,40 m sur 55 m, en gazon ; on joue avec le côté plat de la crosse.'],
+    ['Rôles', '11 joueurs par équipe dont un gardien ; deux arbitres.']] },
+  { re: /volley/, source: 'Règles officielles FIVB 2025-2028, données par la Fédération française de volley', lignes: [
+    ['But', 'Faire tomber le ballon dans le camp adverse, en trois touches au plus par équipe.'], ['Score', 'Set à 25 points avec 2 points d’écart ; match à 3 sets gagnants ; à 2-2, set décisif en 15 points.'],
+    ['Terrain', '18 m sur 9 m ; filet à 2,43 m pour les hommes, 2,24 m pour les femmes.'], ['Rôles', 'Passeur, attaquant, libero ; les joueurs servent à tour de rôle.']] },
+  { re: /\blutte\b/, source: 'Fédération française de lutte, règlement des compétitions individuelles 2024', lignes: [
+    ['But', 'Amener l’adversaire au sol et le maintenir les deux épaules au tapis (le tombé).'], ['Durée', 'Deux périodes de 3 minutes, 30 secondes de pause ; adaptée pour les plus jeunes.'],
+    ['Gagner', 'Points sur les actions techniques, selon leur difficulté ; le tombé donne la victoire.'], ['Styles', 'Libre, gréco-romaine (prises au-dessus de la ceinture), féminine ; catégories d’âge et de poids.']] },
+  { re: /tennis de table|ping.?pong/, source: 'Fédération Française de Tennis de Table, règlements sportifs 2026', lignes: [
+    ['Score', 'Manche à 11 points, avec 2 points d’écart à partir de 10-10.'], ['Partie', 'Au meilleur des 5 ou des 7 manches, en simple ou en double.'], ['Table', '2,74 m sur 1,525 m.']] },
+  { re: /\bgolf\b/, source: 'Fédération française de golf, Règles de golf 2023', lignes: [
+    ['But', 'Jouer un tour de 18 trous ou moins ; chaque trou finit quand la balle entre dans le trou sur le green.'], ['Principe', 'On joue le parcours comme il est et la balle comme elle repose, sauf exceptions prévues.'],
+    ['Matériel', '14 clubs au plus.'], ['Formes de jeu', 'Match play, stroke play, Stableford.']] },
+  { re: /taekwondo/, source: 'Fédération française de taekwondo, règlement des compétitions', lignes: [
+    ['Combat', 'Souvent 3 reprises de 2 minutes, 1 minute de repos, ajustable selon la catégorie.'], ['Touches', 'Du pied au plastron et au casque, du poing au plastron ; système variant selon l’âge.'],
+    ['Formes', 'Assaut et poomsae ; catégories de poids.']] },
+  { re: /karate/, partielle: true, source: 'Fédération française de karaté, règlement 2026-2027', lignes: [['Épreuves', 'Kata et kumite.'], ['Combat', 'S’arrête à huit points d’avance.']] },
+  { re: /natation/, partielle: true, source: 'Fédération française de natation, règlement World Aquatics', lignes: [['Épreuves', 'Nage libre de 50 à 1 500 m, brasse et papillon de 50 à 200 m, relais 4x100 et 4x200 m en nage libre.']] },
+  { re: /escalade/, partielle: true, source: 'Fédération française de la montagne et de l’escalade, règles 2026-2027', lignes: [['Épreuves', 'Voie et bloc.'], ['Bloc', 'Un départ marqué, une prise de zone et un Top.']] },
+  { re: /^tennis\b/, partielle: true, source: 'Fédération française de tennis, règles du jeu 2026', lignes: [['Filet', '0,914 m au centre, 1,07 m aux poteaux.'], ['Terrain', 'Lignes de service à 6,40 m du filet.']] },
+];
+export const ficheSport = nom => FICHES_SPORT.find(f => f.re.test(sansAccent(nom))) || null;
+// Les entraînements validés dans l'emploi du temps : créneaux Sport faits (pas les compétitions), entre deux dates exclues.
+// ponytail: avec plusieurs sports, seul le titre du créneau dit lequel ; un créneau titré autrement n'est compté pour aucun.
+export function entrainementsFaits(data, sport, apres = '', avant = '9999') {
+  const plusieurs = (data.profil.sports || []).length > 1, n = sansAccent(sport), vus = new Set();
+  for (const [cle, s] of Object.entries(data.semaines)) for (const x of sansTrajets(s.slots)) {
+    if (x.cat !== 'sport' || !x.fait || x.competition || (plusieurs && !sansAccent(x.titre).includes(n))) continue;
+    const iso = isoJour(ajouterJours(deIso(cle), x.j));
+    if (iso > apres && iso < avant) vus.add(x.groupe || x.id);
+  }
+  return vus.size;
+}
 // Le prochain créneau à venir dont le titre contient ces mots (ni validé, ni trajet ajouté par son créneau).
 export function creneauAVenir(data, titre, source, maintenant = new Date()) {
   const q = sansAccent(titre), { date, h } = momentLogique(maintenant), auj = isoJour(date);

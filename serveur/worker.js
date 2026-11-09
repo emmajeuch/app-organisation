@@ -106,14 +106,22 @@ const PERSONNALITES = {
   comete: 'Passe en coup de vent, très brève, parle de vœux.',
 };
 export const personnalite = c => typeof c === 'string' && Object.hasOwn(PERSONNALITES, c) ? PERSONNALITES[c] : '';
-const consigne = (date, creature) => `Tu es le compagnon d'une app d'organisation sur téléphone. Tu réponds en français, en tutoyant, en deux phrases au plus. Tu ne parles que d'organisation, de tâches, d'habitudes, de sport courant et de l'app ; sinon, dis gentiment que ce n'est pas ton rôle. N'invente aucune fonction de l'app : si tu ne sais pas, dis-le.
+// Le contexte d'une question de sport, vérifié : des champs courts, rien de plus.
+export function lireSport(s) {
+  if (!s || typeof s !== 'object' || typeof s.nom !== 'string' || !s.nom.trim()) return null;
+  const court = (v, n) => typeof v === 'string' ? v.trim().slice(0, n) : '';
+  return { nom: court(s.nom, 40), role: court(s.role, 60), mode: ['combat', 'artistique', 'les deux'].includes(s.mode) ? s.mode : '', fiche: court(s.fiche, 1000) };
+}
+const contexteSport = s => `\nQuestion sur le sport : ${s.nom}.${s.role ? ` Poste ou rôle : ${s.role}.` : ''}${s.mode ? ` Pratique : ${s.mode}.` : ''}
+${s.fiche ? `Repères tirés du règlement officiel : ${s.fiche}\n` : ''}Propose des exercices et des stratégies courants. Si la question porte sur une règle absente des repères, dis que tu n'es pas sûr et renvoie au règlement de la fédération. Pas de charge imposée ; en cas de douleur, arrête et parles-en à un professionnel.`;
+const consigne = (date, creature, sport) => `Tu es le compagnon d'une app d'organisation sur téléphone. Tu réponds en français, en tutoyant, en ${sport ? 'quatre' : 'deux'} phrases au plus. Tu ne parles que d'organisation, de tâches, d'habitudes, de sport courant et de l'app ; sinon, dis gentiment que ce n'est pas ton rôle. N'invente aucune fonction de l'app : si tu ne sais pas, dis-le.
 ${personnalite(creature) ? `Ton caractère : ${personnalite(creature)} Il change ton ton, jamais l'exactitude de tes conseils. Jamais de moquerie blessante.\n` : ''}Aujourd'hui : ${['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'][new Date(date + 'T12:00:00Z').getUTCDay()]} ${date}.
 L'app : Aujourd'hui montre la journée ; Semaine montre la grille, Semaine › Modifier règle ce qui revient chaque semaine. On valide chaque créneau après sa fin, ce qui allume la flamme et donne de l'XP. Notes regroupe tâches, habitudes, objectifs, listes et notes. Sport regroupe séances, exercices et compétitions. Profil montre la progression et les Réglages (la roue).
 Réponds uniquement par un objet JSON : {"reponse": "ton texte", "action": null}.
 Seulement si on te demande d'ajouter ou de déplacer quelque chose, "action" vaut l'un de ceux-ci (heures en nombre décimal, 18.5 pour 18 h 30) :
 {"type":"creneau","titre":"…","date":"AAAA-MM-JJ","s":18,"e":19}
 {"type":"tache","titre":"…","date":"AAAA-MM-JJ ou vide","heure":null}
-{"type":"deplacer","titre":"…","date":"AAAA-MM-JJ ou null","s":18}`;
+{"type":"deplacer","titre":"…","date":"AAAA-MM-JJ ou null","s":18}${sport ? contexteSport(sport) : ''}`;
 // Ce que renvoie l'IA n'est pas fiable : seuls des champs vérifiés repartent vers le téléphone.
 function lireAction(a) {
   if (!a || typeof a !== 'object') return null;
@@ -190,7 +198,7 @@ export async function traiter(req, env, maintenant = Date.now()) {
     if (deja >= COMPAGNON_PAR_JOUR) return repondre(429);
     let sortie;
     try {
-      const r = await env.AI.run(MODELE, { messages: [{ role: 'system', content: consigne(o.date, o.creature) }, { role: 'user', content: q }], max_completion_tokens: 300, response_format: { type: 'json_object' }, chat_template_kwargs: { enable_thinking: false } });   // sans ça, le modèle use tous ses jetons à réfléchir
+      const r = await env.AI.run(MODELE, { messages: [{ role: 'system', content: consigne(o.date, o.creature, lireSport(o.sport)) }, { role: 'user', content: q }], max_completion_tokens: 300, response_format: { type: 'json_object' }, chat_template_kwargs: { enable_thinking: false } });   // sans ça, le modèle use tous ses jetons à réfléchir
       sortie = lireReponse(r.choices?.[0]?.message?.content ?? r.response);
     } catch (e) { console.log('IA', e?.name); return repondre(503); }   // quota du jour épuisé ou modèle indisponible ; la question n'est jamais écrite dans les journaux
     if (!sortie) return repondre(502);

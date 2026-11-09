@@ -826,4 +826,35 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
   assert.equal(L.creneauAVenir(d, 'dentiste', null, nowD).cle, '2026-11-09');
 }
 
+// Étape 4 : fiches, entraînements comptés, plusieurs médailles.
+{
+  assert.equal(L.ficheSport('Tennis de table').source.includes('Tennis de Table'), true);
+  assert.equal(L.ficheSport('Tennis').partielle, true);
+  assert.equal(L.ficheSport('Sabre laser').modes, true);
+  assert.equal(L.ficheSport('Karaté').partielle, true);
+  assert.equal(L.ficheSport('Hockey sur glace'), null);
+  assert.equal(L.ficheSport('Football'), null);
+  const s = (id, j, plus) => ({ id, j, s: 18, e: 19, cat: 'sport', titre: 'Entraînement · volley', fait: true, ...plus });
+  const d = L.vide();
+  d.profil.sports = ['Volley'];
+  d.semaines = { '2026-11-02': { slots: [s('a', 0), s('b', 2, { fait: null }), s('c', 3, { competition: 'x' }), s('t', 4, { cat: 'trajet' }), s('g1', 5, { groupe: 'g' }), s('g2', 6, { groupe: 'g' }), s('l', 1, { lien: 'a' })] } };
+  assert.equal(L.entrainementsFaits(d, 'Volley'), 2);                                  // a et le groupe g (fait, compétition, trajet, lien exclus)
+  assert.equal(L.entrainementsFaits(d, 'Volley', '2026-11-02', '2026-11-08'), 1);      // dates exclues : seul g tombe après le lundi et avant le dimanche
+  d.profil.sports = ['Volley', 'Judo'];
+  assert.equal(L.entrainementsFaits(d, 'Judo'), 0);                                    // plusieurs sports : le titre décide
+  assert.equal(L.entrainementsFaits(d, 'Volley'), 2);
+  d.profil.sports = [];
+  d.semaines = {};
+  const avant = L.stats(d, new Date(2026, 10, 10)).sources.sport;
+  d.competitions = [{ id: 'c1', nom: 'A', date: '2026-11-08', medailles: { or: 2, argent: 1, bronze: 3 } }, { id: 'c2', nom: 'B', date: '2026-11-08', medailles: { or: 1 } }, { id: 'c3', nom: 'Future', date: '2026-12-01', medailles: { or: 5 } }];
+  assert.equal(L.stats(d, new Date(2026, 10, 10)).sources.sport - avant, 2 * 100 + 75 + 3 * 50 + 100);   // plusieurs médailles, y compris le même jour ; pas la future
+  d.competitions[0].debut = 9; d.competitions[0].fin = 12; d.competitions[0].avant = 30;
+  d.profil.sportsInfos = [{ nom: 'Sabre laser', club: 'X', role: 'Y', mode: 'combat' }, { nom: 'Z', mode: 'pirate' }];
+  const lu = L.validerImport(JSON.parse(JSON.stringify(d)));
+  assert.deepEqual(lu.competitions[0].medailles, { or: 2, argent: 1, bronze: 3 });
+  assert.equal(lu.competitions[0].fin, 12);
+  assert.equal(lu.profil.sportsInfos[0].mode, 'combat');
+  assert.equal(lu.profil.sportsInfos[1].mode, undefined);
+}
+
 console.log('ok');

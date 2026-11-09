@@ -202,6 +202,14 @@ assert.equal(abonnes().length, 0); assert.deepEqual(index(), []);
   assert.ok((await sysDe('cactou')).includes('jamais l\'exactitude'));
   for (const c of [undefined, 'inconnue', '__proto__', 'constructor', 5, { a: 1 }]) assert.ok(!(await sysDe(c)).includes('Ton caractère'));
   assert.equal(personnalite('astro').length > 0, true);
+  // question de sport : contexte vérifié, quatre phrases, rien sans sport
+  const avecSport = async sport => { assert.equal((await poser({ id: 'cccccccccccccccccccccccccccccccc', q, date, sport })).status, 200); return appels.at(-1).o.messages[0].content; };
+  let sp = await avecSport({ nom: 'Sabre laser', role: 'Duelliste', mode: 'combat', fiche: 'Points : tête 5.', club: 'Club secret' });
+  assert.ok(sp.includes('quatre phrases') && sp.includes('Question sur le sport : Sabre laser.') && sp.includes('Poste ou rôle : Duelliste.') && sp.includes('Pratique : combat.') && sp.includes('Repères tirés du règlement officiel : Points : tête 5.'));
+  assert.ok(!sp.includes('Club secret'));
+  sp = await avecSport({ nom: 'Curling', mode: 'pirate', fiche: 'x'.repeat(5000) });
+  assert.ok(!sp.includes('pirate') && !sp.includes('x'.repeat(1001)));
+  for (const s of [undefined, 'volley', { nom: '  ' }, { role: 'X' }]) { const c = await avecSport(s); assert.ok(c.includes('deux phrases') && !c.includes('Question sur le sport')); }
   // ce que renvoie l'IA est filtré
   assert.deepEqual(lireReponse('Voici : {"reponse":"Ok","action":{"type":"creneau","titre":" Dentiste ","date":"2026-11-09","s":18,"x":"<b>"}} fin'), { reponse: 'Ok', action: { type: 'creneau', titre: 'Dentiste', date: '2026-11-09', s: 18, e: 19 } });
   assert.deepEqual(lireReponse({ reponse: 'Ok', action: { type: 'tache', titre: 'Pain', date: '', heure: 40 } }).action, { type: 'tache', titre: 'Pain', echeance: '', heure: null });

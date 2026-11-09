@@ -713,7 +713,7 @@ function cible(g) {
   const h = Math.min(Math.max(heureA(col, g.cy), p0), p1 - .5);
   if (g.mode === 'creer') return { col, j: g.j, s: Math.min(g.h0, h), e: Math.max(g.h0, h) + .5 };
   // Étirer s'arrête au créneau voisin (V1.10.5) : on ne recouvre jamais un autre créneau.
-  const voisins = data.semaines[g.cle].slots.filter(x => x.j === g.slot?.j && x.id !== g.slot?.id && (L.GARDES.includes(g.slot.cat) || !L.GARDES.includes(x.cat)));
+  const voisins = data.semaines[g.cle].slots.filter(x => x.j === g.slot?.j && x.id !== g.slot?.id && x.lien !== (g.slot?.groupe || g.slot?.id) && (L.GARDES.includes(g.slot.cat) || !L.GARDES.includes(x.cat)));   // ses propres trajets ne le bloquent pas
   if (g.mode === 'etirer') return { col, j: g.slot.j, s: g.slot.s, e: Math.min(Math.max(g.slot.s + .5, h + .5), ...voisins.filter(x => x.s >= g.slot.e).map(x => x.s), p1) };
   if (g.mode === 'etirer-haut') return { col, j: g.slot.j, s: Math.max(Math.min(g.slot.e - .5, h), ...voisins.filter(x => x.e <= g.slot.s).map(x => x.e), p0), e: g.slot.e };
   const d = g.slot.e - g.slot.s;
@@ -750,7 +750,10 @@ function gestesGrille(vue, cleDe) {
       slot, blk, ...bords(blk, e.clientY), pid: e.pointerId, cle };
     geste.timer = setTimeout(() => {
       if (!geste) return;
-      geste.mode = slot ? (geste.bas ? 'etirer' : geste.haut ? 'etirer-haut' : 'deplacer') : 'creer';
+      // Appui long sur un trajet relié : c'est son créneau qu'on déplace. (Un créneau en morceaux garde l'ancien geste.)
+      const proprio = slot?.lien && data.semaines[cle].slots.find(x => x.id === slot.lien);
+      if (proprio) { geste.slot = proprio; geste.bas = geste.haut = false; }
+      geste.mode = geste.slot ? (geste.bas ? 'etirer' : geste.haut ? 'etirer-haut' : 'deplacer') : 'creer';
       try { col.setPointerCapture(geste.pid); } catch {}
       blk?.classList.add('leve');
       geste.fantome = Object.assign(document.createElement('div'), { className: 'blk fantome' });
@@ -1062,6 +1065,13 @@ function vueSport() {
     <button class="btn plein" data-act="seance" data-seance="${st ? st.id : ''}" data-slot="${p && !pSuiv && p.j === j ? p.id : ''}">${st ? 'Commencer cette séance' : 'Commencer une séance libre'}</button></div></div>`;
 
   const groupes = [];
+  // Un bloc repliable par sport : sa fiche, ses réglages, ses entraînements, et les questions à l'IA.
+  sportsDuProfil().forEach((sp, i) => {
+    const f = L.ficheSport(sp), inf = infosSport(sp), nb = L.entrainementsFaits(data, sp);
+    groupes.push(groupe('sp-' + i, esc(sp), esc([inf.role, inf.club, pl(nb, 'entraînement fait', 'entraînements faits')].filter(Boolean).join(' · ')), `
+      ${f ? `<ul class="list">${f.lignes.map(([k, v]) => `<li><div class="txt"><b>${esc(k)}</b><small>${esc(v)}</small></div></li>`).join('')}</ul><p class="aide">${f.partielle ? 'Fiche partielle. ' : ''}Résumé à vérifier, d’après : ${esc(f.source)}.</p>` : '<p class="aide">Pas encore de fiche pour ce sport.</p>'}
+      <div class="rangee"><button class="btn gris" data-act="sport-regler" data-sport="${esc(sp)}">Régler</button><button class="btn plein" data-act="sport-question" data-sport="${esc(sp)}">Poser une question</button></div>`));
+  });
   const avecProg = data.exos.filter(e => L.progression(data.journal, e.id, e.type).length);
   if (avecProg.length) {
     if (!avecProg.some(e => e.id === ui.progExo)) ui.progExo = avecProg[0].id;
@@ -1089,7 +1099,10 @@ function vueSport() {
     <p class="aide">Marque tes entraînements et tes matchs comme « club » dans leur créneau : validés, ils comptent dans le journal. Les exercices proposés sont du renforcement courant, à adapter avec ton coach.</p>`));
   const avenir = data.competitions.filter(c => c.date >= auj).sort((a, b) => a.date.localeCompare(b.date));
   const passees = data.competitions.filter(c => c.date < auj).sort((a, b) => b.date.localeCompare(a.date));
-  const compHtml = c => `<li data-act="competition" data-id="${c.id}" role="button" tabindex="0"><div class="txt"><b>${esc(c.nom)}</b><small>${[c.sport, c.lieu, c.categorie, c.resultat && `Résultat : ${c.resultat}`].filter(Boolean).map(esc).join(' · ')}</small></div><span class="pill${c.date < auj && !c.resultat ? ' retard' : ''}">${c.date >= auj ? `J-${L.joursAvant(c.date, date)}` : c.resultat ? L.deIso(c.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : 'Résultat ?'}</span></li>`;
+  const medaillesTxt = c => Object.keys(L.XP.medaille).filter(m => c.medailles?.[m]).map(m => `${c.medailles[m]} ${m}`).join(', ');
+  // Les entraînements validés depuis la compétition précédente du même sport.
+  const entAvant = c => { if (!c.sport) return ''; const prec = data.competitions.filter(x => x.sport === c.sport && x.date < c.date).map(x => x.date).sort().at(-1) || ''; return `${pl(L.entrainementsFaits(data, c.sport, prec, c.date), 'entraînement', 'entraînements')} avant`; };
+  const compHtml = c => `<li data-act="competition" data-id="${c.id}" role="button" tabindex="0"><div class="txt"><b>${esc(c.nom)}</b><small>${[c.sport, c.lieu, c.categorie, c.resultat && `Résultat : ${c.resultat}`, medaillesTxt(c) && `Médailles : ${medaillesTxt(c)}`, entAvant(c)].filter(Boolean).map(esc).join(' · ')}</small></div><span class="pill${c.date < auj && !c.resultat ? ' retard' : ''}">${c.date >= auj ? `J-${L.joursAvant(c.date, date)}` : c.resultat ? L.deIso(c.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : 'Résultat ?'}</span></li>`;
   groupes.push(groupe('s-comp', 'Compétitions', avenir.length ? `Prochaine : ${esc(avenir[0].nom)}, J-${L.joursAvant(avenir[0].date, date)}` : 'Aucune à venir', `
     ${avenir.length || passees.length ? `<ul class="list">${[...avenir, ...passees.slice(0, 5)].map(compHtml).join('')}</ul>` : '<p class="vide">Ajoute tes matchs et tournois : compte à rebours sur Aujourd’hui, et une séance adaptée la veille.</p>'}
     <button class="btn gris" data-act="competition">Nouvelle compétition</button>
@@ -1190,24 +1203,65 @@ function commencerSeance(seanceId, slotId) {
   }, { collant: true });
 }
 
+function retirerCreneauCompetition(id) { for (const s of Object.values(data.semaines)) s.slots = s.slots.filter(x => x.competition !== id); }
+// Une compétition avec des horaires a son créneau dans l'emploi du temps, avec son lieu et ses trajets.
+// valider() n'est appelé qu'une fois la place trouvée : annuler devant un conflit ne change rien.
+function creneauCompetition(c, valider) {
+  const ancien = Object.values(data.semaines).flatMap(s => s.slots).find(x => x.competition === c.id);
+  if (typeof c.debut !== 'number') { retirerCreneauCompetition(c.id); valider(); return maj(); }
+  const d = L.deIso(c.date), sem = semaineDe(cleSem(d)), base = L.sansTrajets(sem.slots).filter(y => y.competition !== c.id);
+  const x = { id: ancien?.id || L.uid(), j: L.jourSemaine(d), s: c.debut, e: c.fin, cat: 'sport', titre: c.nom, salle: c.lieu, affaires: '', notes: '', fait: ancien?.fait ?? null, ...(ancien?.xpDonne ? { xpDonne: true } : {}), competition: c.id, avant: c.avant || 0, apres: c.apres || 0 };
+  const poser = slots => { retirerCreneauCompetition(c.id); sem.slots = slots; valider(); maj(); };
+  const p = L.poser(base, x);
+  if (p.gene) { setTimeout(() => conflit(base, x, p.gene, poser)); return; }
+  poser(p.slots);
+}
 function editerCompetition(c) {
   const neuf = !c, v = c || { sport: sportsDuProfil()[0] || '', nom: '', date: '', lieu: '', categorie: '', resultat: '' };
+  const h = k => typeof v[k] === 'number' ? L.hhmm(v[k]) : '';
   ouvrirDlg(`<form><h2>${neuf ? 'Nouvelle compétition' : esc(v.nom)}</h2>
     <label class="champ">Nom<input name="nom" value="${esc(v.nom)}" placeholder="Ex. Tournoi régional" autocomplete="off"></label>
     <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Date<input type="date" name="date" value="${v.date || ''}"></label>
       <label class="champ">Sport<input name="sport" value="${esc(v.sport)}" list="sports-liste" autocomplete="off"><datalist id="sports-liste">${sportsDuProfil().map(x => `<option value="${esc(x)}">`).join('')}</datalist></label></div>
+    <div class="champs" style="grid-template-columns: 1fr 1fr"><label class="champ">Début<input type="time" name="debut" value="${h('debut')}"></label><label class="champ">Fin<input type="time" name="fin" value="${h('fin')}"></label></div>
+    <p class="aide">Avec des horaires, la compétition s’ajoute à ton emploi du temps.</p>
     <label class="champ">Lieu<input name="lieu" value="${esc(v.lieu)}" autocomplete="off"></label>
+    ${champsTrajet(v)}
     <label class="champ">Catégorie<input name="categorie" value="${esc(v.categorie)}" placeholder="Ex. U21, poule B" autocomplete="off"></label>
     <label class="champ">Résultat (après coup)<input name="resultat" value="${esc(v.resultat)}" placeholder="Ex. 2e, victoire 3-1" autocomplete="off"></label>
+    <div class="champ">Médailles (après coup)<div class="champs">${Object.keys(L.XP.medaille).map(m => `<label class="champ">${m[0].toUpperCase() + m.slice(1)}<input type="number" inputmode="numeric" min="0" max="50" name="m-${m}" value="${v.medailles?.[m] || 0}"></label>`).join('')}</div><p class="aide">Elles rapportent de l’XP une fois la compétition passée.</p></div>
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, f) => {
-    if (choix === 'suppr') { data.competitions = data.competitions.filter(x => x !== c); maj(); return; }
-    const champs = { nom: f.get('nom').trim(), date: f.get('date'), sport: f.get('sport').trim(), lieu: f.get('lieu').trim(), categorie: f.get('categorie').trim(), resultat: f.get('resultat').trim() };
+    if (choix === 'suppr') { retirerCreneauCompetition(c.id); data.competitions = data.competitions.filter(x => x !== c); maj(); return; }
+    const champs = { nom: f.get('nom').trim(), date: f.get('date'), sport: f.get('sport').trim(), lieu: f.get('lieu').trim(), categorie: f.get('categorie').trim(), resultat: f.get('resultat').trim(),
+      avant: +f.get('avant') || 0, apres: +f.get('apres') || 0, medailles: Object.fromEntries(Object.keys(L.XP.medaille).map(m => [m, Math.min(50, Math.max(0, Math.floor(+f.get('m-' + m) || 0)))])) };
     if (!champs.nom || !champs.date) { dire('Il faut au moins un nom et une date.'); return false; }
-    if (neuf) data.competitions.push({ id: L.uid(), ...champs }); else Object.assign(c, champs);
-    noterUsage('competitions');
+    const deb = f.get('debut'), fin = f.get('fin');
+    if (!!deb !== !!fin) { dire('Donne le début et la fin, ou aucun des deux.'); return false; }
+    champs.debut = deb ? L.versHeure(deb, data.plage[0]) : undefined;
+    champs.fin = fin ? L.versHeure(fin, data.plage[0]) : undefined;
+    if (deb && !(champs.fin > champs.debut && champs.fin <= 26)) { dire('La fin doit être après le début.'); return false; }
+    const id = neuf ? L.uid() : c.id;
+    creneauCompetition({ id, ...champs }, () => {
+      if (neuf) data.competitions.push({ id, ...champs }); else Object.assign(c, champs);
+      noterUsage('competitions');
+    });
+  });
+}
+const infosSport = sp => (data.profil.sportsInfos || []).find(x => x.nom === sp) || { nom: sp, club: '', role: '', mode: '' };
+function configurerSport(sp) {
+  const v = infosSport(sp), f = L.ficheSport(sp);
+  ouvrirDlg(`<form><h2>${esc(sp)}</h2>
+    <label class="champ">Club (facultatif)<input name="club" value="${esc(v.club)}" maxlength="60" autocomplete="off"></label>
+    <label class="champ">Poste ou rôle (facultatif)<input name="role" value="${esc(v.role)}" maxlength="60" autocomplete="off"></label>
+    ${f?.modes ? `<div class="champ">Pratique${radios('mode', { combat: 'Combat', artistique: 'Artistique', 'les deux': 'Les deux' }, v.mode || 'les deux')}</div>` : ''}
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, fd) => {
+    const infos = { nom: sp, club: fd.get('club').trim(), role: fd.get('role').trim(), ...(fd.get('mode') ? { mode: fd.get('mode') } : {}) };
+    data.profil.sportsInfos = [...(data.profil.sportsInfos || []).filter(x => x.nom !== sp), infos];
     maj();
   });
 }
+// Ce qui part avec une question de sport : ni le club, ni rien d'autre.
+function contexteSport(sp) { const inf = infosSport(sp), f = L.ficheSport(sp); return { nom: sp, role: inf.role, mode: inf.mode, fiche: f ? f.lignes.map(l => l.join(' : ')).join(' ').slice(0, 1000) : '' }; }
 
 function voirJournal(e) {
   ouvrirDlg(`<form><h2>${esc(e.nom)}</h2><p class="muted">${L.deIso(e.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}${e.ressenti ? ` · ressenti ${e.ressenti}/5` : ''}</p>
@@ -2004,12 +2058,14 @@ const echange = (moi, lui) => {
 };
 const idCompagnon = () => { let i = localStorage.getItem('orga-compagnon'); if (!i) { i = crypto.randomUUID().replace(/-/g, ''); localStorage.setItem('orga-compagnon', i); } return i; };
 // Ce que les règles ne comprennent pas part vers l'IA ; sans réseau ou après le quota, les règles prennent le relais.
-async function demanderIA(q) {
+async function demanderIA(q, sport) {
   const bulle = echange(q, '…');
   let rep = L.PAS_COMPRIS, action = null;
   try {
-    const r = await fetch(L.SERVEUR_RAPPELS + '/compagnon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(20000),
-      body: JSON.stringify({ id: idCompagnon(), q, date: L.isoJour(L.momentLogique(new Date()).date), creature: monCompagnon()?.id }) });
+    const stop = new AbortController();   // pas AbortSignal.timeout : il manque sur les iPhone restés avant iOS 16
+    setTimeout(() => stop.abort(), 20000);
+    const r = await fetch(L.SERVEUR_RAPPELS + '/compagnon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: stop.signal,
+      body: JSON.stringify({ id: idCompagnon(), q, date: L.isoJour(L.momentLogique(new Date()).date), creature: monCompagnon()?.id, sport: sport ? contexteSport(sport) : undefined }) });
     if (r.status === 429) rep = `Je suis fatigué pour aujourd’hui, on reprend demain. Je comprends encore « ajoute dentiste demain 18h » et les questions sur l’app.`;
     else if (r.ok) ({ reponse: rep, action } = await r.json());
   } catch {}
@@ -2019,18 +2075,18 @@ async function demanderIA(q) {
   if (action) { const t = agir(action); if (t) bulle.textContent = t; }
 }
 // Parler au compagnon : deux taps sur lui, ou Profil › ⚙ › Aide et avis.
-function discuter() {
+function discuter(sport) {
   const c = monCompagnon();
-  ouvrirDlg(`<form><h2>${c ? esc(c.nom) : 'Aide'}</h2>
-    <div class="echanges" role="log" aria-live="polite"><p class="lui">Dis-moi « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou pose-moi une question sur l’app. Ce que je ne comprends pas seul part, sans ton nom, vers l’IA de Cloudflare.</p></div>
+  ouvrirDlg(`<form><h2>${c ? esc(c.nom) : 'Aide'}${sport ? ` · ${esc(sport)}` : ''}</h2>
+    <div class="echanges" role="log" aria-live="polite"><p class="lui">${sport ? `Pose-moi ta question sur ${esc(sport.toLowerCase())} : exercices, stratégie, règles. Elle part, sans ton nom ni ton club, vers l’IA de Cloudflare ; mes réponses peuvent être fausses.` : 'Dis-moi « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou pose-moi une question sur l’app. Ce que je ne comprends pas seul part, sans ton nom, vers l’IA de Cloudflare.'}</p></div>
     <div class="ajout"><input name="q" placeholder="Écris ici…" aria-label="Ton message" autocomplete="off" enterkeyhint="send"><button aria-label="Envoyer">${I.droite}</button></div>
     <button type="button" class="btn gris" data-fermer>Fermer</button></form>`, (choix, f) => {
     const q = f.get('q').trim();
     if (!q) return false;
     const r = L.comprendre(q);
     if (r.type === 'question') {
-      const rep = L.reponseAide(q);
-      if (rep) echange(q, rep); else demanderIA(q);
+      const rep = sport ? null : L.reponseAide(q);
+      if (rep) echange(q, rep); else demanderIA(q, sport);
       return false;
     }
     const rep = r.type === 'manque' ? (r.titre ? 'Dis-moi quand : « déplace sport à jeudi 17h ».' : 'Dis-moi quoi : « ajoute dentiste demain 18h ».') : agir(r);
@@ -2409,7 +2465,9 @@ document.addEventListener('click', e => {
     case 'tout-effacer': return toutEffacer();
     case 'stats-per': ui.statsPer = id; return vueProfil();
     case 'choisir-compagnon': if (!data.collection.some(x => x.id === id)) return; data.compagnon = L.grandir({ id, stade: 0 }, L.stats(data, new Date()).joursValides); noterUsage('compagnon'); return maj();
-    case 'retirer-sport': data.profil.sports = sportsDuProfil().filter(x => x !== el.dataset.sport); return maj();
+    case 'retirer-sport': data.profil.sports = sportsDuProfil().filter(x => x !== el.dataset.sport); data.profil.sportsInfos = (data.profil.sportsInfos || []).filter(x => x.nom !== el.dataset.sport); return maj();
+    case 'sport-regler': return configurerSport(el.dataset.sport);
+    case 'sport-question': return discuter(el.dataset.sport);
     case 'sport-depart': {
       const p = L.seancesDeDepart(el.dataset.sport);
       return proposerProfil(L.lireProfil({ format: 'orga-profil', version: 1, exercices: p.exercices, seances: p.seances }), `Pour le ${el.dataset.sport.toLowerCase()}`);
