@@ -1069,7 +1069,9 @@ function vueSport() {
   sportsDuProfil().forEach((sp, i) => {
     const f = L.ficheSport(sp), inf = infosSport(sp), nb = L.entrainementsFaits(data, sp);
     groupes.push(groupe('sp-' + i, esc(sp), esc([inf.role, inf.club, pl(nb, 'entraînement fait', 'entraînements faits')].filter(Boolean).join(' · ')), `
-      ${f ? `<ul class="list">${f.lignes.map(([k, v]) => `<li><div class="txt"><b>${esc(k)}</b><small>${esc(v)}</small></div></li>`).join('')}</ul><p class="aide">${f.partielle ? 'Fiche partielle. ' : ''}Résumé à vérifier, d’après : ${esc(f.source)}.</p>` : '<p class="aide">Pas encore de fiche pour ce sport.</p>'}
+      ${f ? `<ul class="list">${f.lignes.map(([k, v]) => `<li><div class="txt"><b>${esc(k)}</b><small>${esc(v)}</small></div></li>`).join('')}</ul><p class="aide">${f.partielle ? 'Fiche partielle. ' : ''}Résumé fait avec une IA : il peut contenir des erreurs. Vérifie dans le règlement : ${esc(f.source)}.</p>` : '<p class="aide">Pas encore de fiche pour ce sport.</p>'}
+      ${inf.fiche ? `<div class="txt"><b>Ta fiche</b><small>Écrite par toi, non vérifiée${inf.ficheEnvoyee ? ' · envoyée pour vérification' : ' · pas encore envoyée'}</small><p>${esc(inf.fiche)}</p><p class="aide">Source indiquée : ${esc(inf.ficheSource)}</p></div>` : ''}
+      <button class="btn gris" data-act="sport-fiche" data-sport="${esc(sp)}">${f && !f.partielle ? 'Suggérer une correction' : inf.fiche ? 'Modifier ma fiche' : 'Écrire la fiche de ce sport'}</button>
       <div class="rangee"><button class="btn gris" data-act="sport-regler" data-sport="${esc(sp)}">Régler</button><button class="btn plein" data-act="sport-question" data-sport="${esc(sp)}">Poser une question</button></div>`));
   });
   const avecProg = data.exos.filter(e => L.progression(data.journal, e.id, e.type).length);
@@ -1255,13 +1257,41 @@ function configurerSport(sp) {
     <label class="champ">Poste ou rôle (facultatif)<input name="role" value="${esc(v.role)}" maxlength="60" autocomplete="off"></label>
     ${f?.modes ? `<div class="champ">Pratique${radios('mode', { combat: 'Combat', artistique: 'Artistique', 'les deux': 'Les deux' }, v.mode || 'les deux')}</div>` : ''}
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div></form>`, (choix, fd) => {
-    const infos = { nom: sp, club: fd.get('club').trim(), role: fd.get('role').trim(), ...(fd.get('mode') ? { mode: fd.get('mode') } : {}) };
-    data.profil.sportsInfos = [...(data.profil.sportsInfos || []).filter(x => x.nom !== sp), infos];
+    majInfosSport(sp, { club: fd.get('club').trim(), role: fd.get('role').trim(), ...(fd.get('mode') ? { mode: fd.get('mode') } : {}) });
     maj();
   });
 }
-// Ce qui part avec une question de sport : ni le club, ni rien d'autre.
-function contexteSport(sp) { const inf = infosSport(sp), f = L.ficheSport(sp); return { nom: sp, role: inf.role, mode: inf.mode, fiche: f ? f.lignes.map(l => l.join(' : ')).join(' ').slice(0, 1000) : '' }; }
+const majInfosSport = (sp, champs) => { data.profil.sportsInfos = [...(data.profil.sportsInfos || []).filter(x => x.nom !== sp), { ...infosSport(sp), ...champs }]; };
+// Une fiche écrite par l'utilisateur (sport sans fiche ou fiche partielle) reste sur son téléphone, marquée non vérifiée ;
+// elle part aussi toute seule pour vérification, comme une suggestion de correction d'une fiche existante.
+function ficheUtilisateur(sp) {
+  const f = L.ficheSport(sp), inf = infosSport(sp), correction = !!f && !f.partielle;
+  ouvrirDlg(`<form><h2>${correction ? 'Suggérer une correction' : 'Ta fiche'} · ${esc(sp)}</h2>
+    <p class="muted">${correction ? 'Ta suggestion part, sans ton nom, pour être vérifiée dans le règlement avant de changer la fiche.' : 'Ta fiche reste sur ton téléphone et sert au compagnon, marquée « non vérifiée ». Elle part aussi, sans ton nom, pour être vérifiée : si elle est juste, elle deviendra la fiche de ce sport pour tout le monde.'}</p>
+    <label class="champ">${correction ? 'Ce qui est faux ou ce qui manque' : 'Les règles'}<textarea name="regles" maxlength="1000" required>${correction ? '' : esc(inf.fiche || '')}</textarea></label>
+    <label class="champ">Source (règlement, fédération, année)<input name="source" maxlength="200" required value="${correction ? '' : esc(inf.ficheSource || '')}" autocomplete="off"></label>
+    <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">${correction ? 'Envoyer' : 'Enregistrer et envoyer'}</button></div></form>`, (choix, fd) => {
+    const regles = fd.get('regles').trim(), source = fd.get('source').trim();
+    if (!regles || !source) { dire('Il faut les règles et leur source.'); return false; }
+    if (!correction) { majInfosSport(sp, { fiche: regles, ficheSource: source, ficheEnvoyee: false }); maj(); }
+    envoyerFiche(sp, regles, source, correction);
+  });
+}
+// Par le circuit des avis : lu par l'autrice (avis.html) ou depuis le PC (serveur/lire-avis.mjs).
+async function envoyerFiche(sp, regles, source, correction) {
+  const texte = `[${correction ? 'Correction de fiche' : 'Fiche proposée'}] Sport : ${sp}\nSource : ${source}\n${regles}`.slice(0, 2000);
+  try {
+    const r = await fetch(L.SERVEUR_RAPPELS + '/avis', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ note: null, texte, version: L.VERSION }) });
+    if (!r.ok) throw new Error(r.status);
+    if (!correction) { majInfosSport(sp, { ficheEnvoyee: true }); maj(); }
+    dire(correction ? 'Merci, ta suggestion est envoyée' : 'Fiche enregistrée et envoyée pour vérification');
+  } catch { dire(correction ? 'Pas de réseau : ta suggestion n’est pas partie.' : 'Fiche enregistrée. Pas de réseau : elle n’est pas partie, enregistre-la de nouveau plus tard.'); }
+}
+// Ce qui part avec une question de sport : ni le club, ni rien d'autre. Une fiche officielle passe avant celle de l'utilisateur.
+function contexteSport(sp) {
+  const inf = infosSport(sp), f = L.ficheSport(sp), officielle = f ? f.lignes.map(l => l.join(' : ')).join(' ') : '';
+  return { nom: sp, role: inf.role, mode: inf.mode, fiche: (officielle || inf.fiche || '').slice(0, 1000), origine: officielle ? 'officielle' : inf.fiche ? 'utilisateur' : '' };
+}
 
 function voirJournal(e) {
   ouvrirDlg(`<form><h2>${esc(e.nom)}</h2><p class="muted">${L.deIso(e.date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}${e.ressenti ? ` · ressenti ${e.ressenti}/5` : ''}</p>
@@ -2078,7 +2108,7 @@ async function demanderIA(q, sport) {
 function discuter(sport) {
   const c = monCompagnon();
   ouvrirDlg(`<form><h2>${c ? esc(c.nom) : 'Aide'}${sport ? ` · ${esc(sport)}` : ''}</h2>
-    <div class="echanges" role="log" aria-live="polite"><p class="lui">${sport ? `Pose-moi ta question sur ${esc(sport.toLowerCase())} : exercices, stratégie, règles. Elle part, sans ton nom ni ton club, vers l’IA de Cloudflare ; mes réponses peuvent être fausses.` : 'Dis-moi « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou pose-moi une question sur l’app. Ce que je ne comprends pas seul part, sans ton nom, vers l’IA de Cloudflare.'}</p></div>
+    <div class="echanges" role="log" aria-live="polite"><p class="lui">${sport ? `Pose-moi ta question sur ${esc(sport.toLowerCase())} : exercices, stratégie, règles. Elle part, sans ton nom ni ton club, vers l’IA de Cloudflare ; mes réponses peuvent être fausses.` : 'Dis-moi « ajoute dentiste demain 18h », « déplace sport à jeudi 17h », ou pose-moi une question sur l’app. Ce que je ne comprends pas seul part, sans ton nom, vers l’IA de Cloudflare, et ses réponses peuvent être fausses.'}</p></div>
     <div class="ajout"><input name="q" placeholder="Écris ici…" aria-label="Ton message" autocomplete="off" enterkeyhint="send"><button aria-label="Envoyer">${I.droite}</button></div>
     <button type="button" class="btn gris" data-fermer>Fermer</button></form>`, (choix, f) => {
     const q = f.get('q').trim();
@@ -2467,6 +2497,7 @@ document.addEventListener('click', e => {
     case 'choisir-compagnon': if (!data.collection.some(x => x.id === id)) return; data.compagnon = L.grandir({ id, stade: 0 }, L.stats(data, new Date()).joursValides); noterUsage('compagnon'); return maj();
     case 'retirer-sport': data.profil.sports = sportsDuProfil().filter(x => x !== el.dataset.sport); data.profil.sportsInfos = (data.profil.sportsInfos || []).filter(x => x.nom !== el.dataset.sport); return maj();
     case 'sport-regler': return configurerSport(el.dataset.sport);
+    case 'sport-fiche': return ficheUtilisateur(el.dataset.sport);
     case 'sport-question': return discuter(el.dataset.sport);
     case 'sport-depart': {
       const p = L.seancesDeDepart(el.dataset.sport);

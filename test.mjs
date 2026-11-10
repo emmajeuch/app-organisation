@@ -831,9 +831,22 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
   assert.equal(L.ficheSport('Tennis de table').source.includes('Tennis de Table'), true);
   assert.equal(L.ficheSport('Tennis').partielle, true);
   assert.equal(L.ficheSport('Sabre laser').modes, true);
-  assert.equal(L.ficheSport('Karaté').partielle, true);
+  assert.equal(L.ficheSport('Karaté').partielle, undefined);
+  assert.ok(L.ficheSport('Boxe').source.includes('boxe'));
+  assert.equal(L.ficheSport('Boxe française'), null);
+  assert.ok(L.ficheSport('Judo').source.includes('judo'));
+  assert.ok(L.ficheSport('Football').source.includes('IFAB') && L.ficheSport('Foot').source.includes('IFAB'));
+  assert.equal(L.ficheSport('Football américain'), null);
+  assert.ok(L.ficheSport('Basket-ball').source.includes('FIBA'));
+  assert.ok(L.ficheSport('Badminton').source.includes('badminton'));
   assert.equal(L.ficheSport('Hockey sur glace'), null);
-  assert.equal(L.ficheSport('Football'), null);
+  assert.ok(L.ficheSport('Sabre laser').source.includes('d’Escrime') && L.ficheSport('Sabre laser').modes);   // pas la fiche de l'escrime
+  assert.ok(L.ficheSport('Épée').source.includes('internationale d’escrime'));
+  assert.ok(L.ficheSport('Sabre').source.includes('internationale d’escrime'));
+  assert.ok(L.ficheSport('Rugby').source.includes('World Rugby'));
+  assert.equal(L.ficheSport('Rugby à XIII'), null);
+  assert.ok(L.ficheSport('Handball').source.includes('handball'));
+  assert.equal(L.ficheSport('Beach handball'), null);
   const s = (id, j, plus) => ({ id, j, s: 18, e: 19, cat: 'sport', titre: 'Entraînement · volley', fait: true, ...plus });
   const d = L.vide();
   d.profil.sports = ['Volley'];
@@ -849,12 +862,13 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
   d.competitions = [{ id: 'c1', nom: 'A', date: '2026-11-08', medailles: { or: 2, argent: 1, bronze: 3 } }, { id: 'c2', nom: 'B', date: '2026-11-08', medailles: { or: 1 } }, { id: 'c3', nom: 'Future', date: '2026-12-01', medailles: { or: 5 } }];
   assert.equal(L.stats(d, new Date(2026, 10, 10)).sources.sport - avant, 2 * 100 + 75 + 3 * 50 + 100);   // plusieurs médailles, y compris le même jour ; pas la future
   d.competitions[0].debut = 9; d.competitions[0].fin = 12; d.competitions[0].avant = 30;
-  d.profil.sportsInfos = [{ nom: 'Sabre laser', club: 'X', role: 'Y', mode: 'combat' }, { nom: 'Z', mode: 'pirate' }];
+  d.profil.sportsInfos = [{ nom: 'Sabre laser', club: 'X', role: 'Y', mode: 'combat', fiche: 'Règles', ficheSource: 'FFE 2026', ficheEnvoyee: true }, { nom: 'Z', mode: 'pirate', ficheEnvoyee: 'oui' }];
   const lu = L.validerImport(JSON.parse(JSON.stringify(d)));
   assert.deepEqual(lu.competitions[0].medailles, { or: 2, argent: 1, bronze: 3 });
   assert.equal(lu.competitions[0].fin, 12);
   assert.equal(lu.profil.sportsInfos[0].mode, 'combat');
   assert.equal(lu.profil.sportsInfos[1].mode, undefined);
+  assert.deepEqual([lu.profil.sportsInfos[0].fiche, lu.profil.sportsInfos[0].ficheSource, lu.profil.sportsInfos[0].ficheEnvoyee, lu.profil.sportsInfos[1].ficheEnvoyee], ['Règles', 'FFE 2026', true, undefined]);
 }
 
 console.log('ok');

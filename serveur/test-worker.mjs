@@ -204,7 +204,10 @@ assert.equal(abonnes().length, 0); assert.deepEqual(index(), []);
   assert.equal(personnalite('astro').length > 0, true);
   // question de sport : contexte vérifié, quatre phrases, rien sans sport
   const avecSport = async sport => { assert.equal((await poser({ id: 'cccccccccccccccccccccccccccccccc', q, date, sport })).status, 200); return appels.at(-1).o.messages[0].content; };
-  let sp = await avecSport({ nom: 'Sabre laser', role: 'Duelliste', mode: 'combat', fiche: 'Points : tête 5.', club: 'Club secret' });
+  const perso = await avecSport({ nom: 'Curling', fiche: 'Huit pierres par manche.', origine: 'utilisateur' });
+  assert.ok(perso.includes('Repères écrits par l\'utilisateur, non vérifiés') && !perso.includes('règlement officiel :'));
+  assert.ok((await avecSport({ nom: 'Curling', fiche: 'X', origine: 'pirate' })).includes('non vérifiés'));   // origine inconnue : jamais officielle
+  let sp = await avecSport({ nom: 'Sabre laser', role: 'Duelliste', mode: 'combat', fiche: 'Points : tête 5.', origine: 'officielle', club: 'Club secret' });
   assert.ok(sp.includes('quatre phrases') && sp.includes('Question sur le sport : Sabre laser.') && sp.includes('Poste ou rôle : Duelliste.') && sp.includes('Pratique : combat.') && sp.includes('Repères tirés du règlement officiel : Points : tête 5.'));
   assert.ok(!sp.includes('Club secret'));
   sp = await avecSport({ nom: 'Curling', mode: 'pirate', fiche: 'x'.repeat(5000) });

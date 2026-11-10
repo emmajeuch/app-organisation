@@ -387,7 +387,7 @@ const SCHEMA = {
   tirages: [TXT], collection: [{ id: ID, date: DATE, raison: TXT, sport: TXT }],
   bilans: { '*': { date: DATE, ailleurs: ENTRE(0, 7), ailleursNote: TXT, comptent: ENTRE(0, 7), validees: TXT, usage: { '*': NUM } } },
   usage: { '*': { '*': NUM } }, modules: { '*': BOOL },
-  profil: { prenom: TXT, etudes: BOOL, travail: BOOL, sports: [TXT], sportsInfos: [{ nom: TXT, club: TXT, role: TXT, mode: UN_DE('combat', 'artistique', 'les deux') }] },
+  profil: { prenom: TXT, etudes: BOOL, travail: BOOL, sports: [TXT], sportsInfos: [{ nom: TXT, club: TXT, role: TXT, mode: UN_DE('combat', 'artistique', 'les deux'), fiche: TXT, ficheSource: TXT, ficheEnvoyee: BOOL }] },
   competitions: [{ id: ID, sport: TXT, nom: TXT, date: DATE, lieu: TXT, categorie: TXT, resultat: TXT, debut: ENTRE(0, 26), fin: ENTRE(0, 26), avant: ENTRE(0, 180), apres: ENTRE(0, 180), medailles: { or: ENTRE(0, 50), argent: ENTRE(0, 50), bronze: ENTRE(0, 50) } }],
   compagnon: { id: ID, stade: ENTRE(0, 4) },
 };
@@ -1166,9 +1166,45 @@ export const FICHES_SPORT = [
   { re: /taekwondo/, source: 'Fédération française de taekwondo, règlement des compétitions', lignes: [
     ['Combat', 'Souvent 3 reprises de 2 minutes, 1 minute de repos, ajustable selon la catégorie.'], ['Touches', 'Du pied au plastron et au casque, du poing au plastron ; système variant selon l’âge.'],
     ['Formes', 'Assaut et poomsae ; catégories de poids.']] },
-  { re: /karate/, partielle: true, source: 'Fédération française de karaté, règlement 2026-2027', lignes: [['Épreuves', 'Kata et kumite.'], ['Combat', 'S’arrête à huit points d’avance.']] },
-  { re: /natation/, partielle: true, source: 'Fédération française de natation, règlement World Aquatics', lignes: [['Épreuves', 'Nage libre de 50 à 1 500 m, brasse et papillon de 50 à 200 m, relais 4x100 et 4x200 m en nage libre.']] },
-  { re: /escalade/, partielle: true, source: 'Fédération française de la montagne et de l’escalade, règles 2026-2027', lignes: [['Épreuves', 'Voie et bloc.'], ['Bloc', 'Un départ marqué, une prise de zone et un Top.']] },
+  { re: /escrime|fleuret|epee|\bsabre\b/, source: 'Fédération internationale d’escrime, règles techniques août 2026', lignes: [
+    ['Match', 'En poule, 5 touches ou 3 minutes. En élimination directe, 15 touches ou trois périodes de 3 minutes, avec 1 minute de repos.'],
+    ['Armes', 'Fleuret : pointe, cible limitée au tronc. Épée : pointe, tout le corps est valable. Sabre : pointe, tranchant, plat et dos de la lame.'],
+    ['Terrain', 'Piste de 14 m de long.'], ['Arbitrage', 'L’arbitre analyse la phrase d’armes pour décider de la validité d’une touche.']] },
+  { re: /rugby(?! (a )?xiii)/, source: 'World Rugby, Lois du jeu 2026', lignes: [
+    ['Match', 'Deux mi-temps de 40 minutes au plus, 15 joueurs au plus par équipe.'], ['Points', 'Essai 5 ; transformation 2 ; essai de pénalité 7 ; pénalité 3 ; drop 3.'],
+    ['Buts', 'Le ballon doit passer au-dessus de la barre, entre les poteaux, sans toucher un partenaire ni le sol.'], ['Jeu', 'Une passe vers l’avant donne la mêlée à l’adversaire.']] },
+  { re: /^hand.?ball/, source: 'Fédération internationale de handball, règles du jeu en salle, juillet 2025', lignes: [
+    ['Durée', '2 x 30 minutes dès 16 ans, 10 minutes de pause ; 2 x 25 minutes de 12 à 16 ans.'], ['Équipe', '7 joueurs au plus sur le terrain en même temps, gardien compris.'],
+    ['Ballon', 'Pas plus de 3 secondes en main, pas plus de 3 pas.'], ['Sanctions', 'Exclusion de 2 minutes, disqualification.']] },
+  { re: /^foot(ball)?\b(?! americain)/, source: 'IFAB, Lois du jeu 2019/20 (édition ancienne : les Lois changent chaque saison)', lignes: [
+    ['Match', 'Deux périodes de 45 minutes ; 11 joueurs au plus par équipe dont un gardien, et pas de match à moins de 7.'],
+    ['But', 'Le ballon doit avoir entièrement franchi la ligne de but, entre les montants et sous la barre.'],
+    ['Résultat', 'L’équipe qui marque le plus de buts gagne ; à égalité, match nul, sauf si la compétition impose un vainqueur (prolongation, tirs au but).'],
+    ['Hors-jeu', 'Position de hors-jeu : dans la moitié adverse, plus près de la ligne de but adverse que le ballon et l’avant-dernier adversaire.']] },
+  { re: /^basket/, source: 'Règlement officiel FIBA 2022, traduction de la Fédération française de basketball (édition ancienne)', lignes: [
+    ['Match', 'Deux équipes de 5 joueurs ; 4 quart-temps de 10 minutes.'], ['Points', 'Lancer franc 1 ; tir de la zone à 2 points 2 ; tir de la zone à 3 points 3.'],
+    ['Temps', '24 secondes pour tirer ; 8 secondes pour passer la moitié du terrain ; 3 secondes au plus dans la zone restrictive adverse.'],
+    ['Fautes', 'Un joueur sort à sa 5e faute.'], ['Terrain', '28 m sur 15 m.']] },
+  { re: /badminton/, source: 'Fédération française de badminton, règles officielles (juillet 2025)', lignes: [
+    ['Match', 'Au meilleur des 3 sets ; un set se gagne à 21 points.'], ['Égalité', 'À 20-20, il faut 2 points d’écart ; à 29-29, le 30e point gagne le set.'],
+    ['Côtés', 'On change de côté à la fin de chaque set et à 11 points dans le 3e.'], ['Filet', '1,524 m au centre, 1,55 m sur les côtés.']] },
+  { re: /karate/, source: 'Fédération française de karaté, règlement des compétitions 2026-2027', lignes: [
+    ['Épreuves', 'Kata et kumite (combat).'], ['Durée', 'Seniors et espoirs 3 minutes ; juniors, cadets, minimes et vétérans 2 minutes ; benjamins et pupilles 1 min 30.'],
+    ['Combat', 'S’arrête dès huit points d’avance ; le premier point peut départager (senshu).'], ['Aire', 'Carré de 8 m sur tatamis, plus 1 m de sécurité de chaque côté.']] },
+  { re: /^boxe(?! (francaise|thai))|boxe anglaise/, source: 'Fédération française de boxe, code sportif boxe amateur 2026-2027', lignes: [
+    ['Combat', 'En reprises, dont le nombre et la durée dépendent de l’âge et de l’expérience (par exemple 3 x 2 min ou 3 x 3 min), avec 1 minute de repos entre deux reprises.'],
+    ['Protection', 'Casque obligatoire, sauf pour les seniors hommes qui boxent en 3 x 3 min.'], ['Décision', 'Victoire aux points ou avant la limite.'],
+    ['Niveaux', 'Gants de couleur selon le niveau ; catégories d’âge et de poids.']] },
+  { re: /judo/, source: 'Fédération française de judo, explication des règles internationales (mars 2023) et adaptations françaises 2026-2027', lignes: [
+    ['Points', 'Seulement ippon et waza-ari. Ippon : l’adversaire tombe sur le dos, avec vitesse, force et contrôle ; waza-ari si ces critères ne sont pas tous réunis.'],
+    ['Pénalités', 'Shido ; trois shido font perdre le combat.'], ['Égalité', 'Prolongation au golden score.'],
+    ['Jeunes', 'Adaptations françaises : par exemple, chez les poussins, randori arbitré de 1 min 30 et 1 min au sol ; étranglements interdits chez les vétérans de 60 ans et plus.']] },
+  { re: /natation/, partielle: true, source: 'Fédération française de natation, règlement natation course (édition de mai 2026)', lignes: [
+    ['Épreuves', 'Nage libre de 50 à 1 500 m ; brasse et papillon de 50 à 200 m ; 4 nages 200 et 400 m ; relais nage libre et 4 nages.'],
+    ['Départ', 'À l’ordre « à vos marques », les nageurs prennent position et restent immobiles jusqu’au signal.']] },
+  { re: /escalade/, partielle: true, source: 'Fédération française de la montagne et de l’escalade, règles du jeu 2026-2027', lignes: [
+    ['Disciplines', 'Bloc, difficulté et vitesse.'], ['Bloc', 'Un départ marqué, une prise de zone et un Top.'],
+    ['Tentatives', 'Au plus 6 minutes d’escalade par tentative ; en vitesse, une seule tentative par voie et par tour.']] },
   { re: /^tennis\b/, partielle: true, source: 'Fédération française de tennis, règles du jeu 2026', lignes: [['Filet', '0,914 m au centre, 1,07 m aux poteaux.'], ['Terrain', 'Lignes de service à 6,40 m du filet.']] },
 ];
 export const ficheSport = nom => FICHES_SPORT.find(f => f.re.test(sansAccent(nom))) || null;
