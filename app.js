@@ -248,6 +248,18 @@ function dire(msg) { const ici = dlg.open ? dlg : document.body; if (toast.paren
 let gainAffiche = 0;   // les XP additionnées tant que la bulle reste à l'écran (V1.10.22)
 
 const dlg = $('#dlg');
+// Clavier de l'iPhone : la fenêtre du bas se cale au-dessus du clavier, à la hauteur qui reste visible, au lieu de passer
+// dessous ou de sauter (retour d'Emma sur la discussion, 10/11).
+if (window.visualViewport) {
+  const caler = () => {
+    const vv = visualViewport, cache = Math.max(0, innerHeight - vv.height - vv.offsetTop), clavier = cache > 80;
+    dlg.style.marginBottom = clavier ? `${cache}px` : '';
+    dlg.style.maxHeight = clavier ? `${Math.round(vv.height - 8)}px` : '';
+    if (clavier && dlg.contains(document.activeElement)) document.activeElement.scrollIntoView({ block: 'nearest' });
+  };
+  visualViewport.addEventListener('resize', caler);
+  visualViewport.addEventListener('scroll', caler);
+}
 // Ouvre une fenêtre du bas. onChoix(choix, champs) ; renvoyer false la garde ouverte.
 // collant : ne se ferme pas d'un tap à côté (séance en cours).
 function ouvrirDlg(html, onChoix, { collant = false } = {}) {

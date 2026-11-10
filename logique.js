@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '2.0.1';
+export const VERSION = '2.0.2';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -1137,6 +1137,8 @@ const AIDE = [
   [['installer', 'installation', 'icone', 'accueil'], 'Dans Safari : bouton Partager › Sur l’écran d’accueil › Ajouter. Puis ouvre l’app par son icône.'],
   [['sport', 'seance', 'seances', 'exercice', 'exercices', 'competition', 'competitions'], 'L’onglet Sport regroupe tes séances, tes exercices et tes compétitions. Une compétition a son compte à rebours dans Aujourd’hui.'],
   [['agenda', 'calendrier', 'difference', 'sert'], 'Un agenda montre ce qui est prévu. Ici, tu valides ce que tu as vraiment fait : ta flamme s’allume, tu gagnes de l’XP et je grandis.'],
+  [['avis', 'bug', 'probleme', 'idee', 'retour', 'remarque', 'note'], 'Pour donner ton avis, signaler un bug ou proposer une idée : Profil › ⚙ › Aide et avis › Donner mon avis. Ça part sans ton nom.'],
+  [['fiche', 'fiches', 'feuille', 'feuilles', 'regle', 'regles', 'reglement', 'correction', 'corriger', 'suggerer', 'proposer'], 'Dans Sport, ouvre le bloc de ton sport : « Écrire la fiche de ce sport » s’il n’en a pas, ou « Suggérer une correction » s’il en a une. Elle part, sans ton nom, pour être vérifiée.'],
 ];
 export function reponseAide(texte) {
   const n = sansAccent(texte).split(/[^a-z0-9]+/);

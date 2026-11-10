@@ -178,6 +178,7 @@ assert.equal(abonnes().length, 0); assert.deepEqual(index(), []);
   assert.equal(appels[0].o.chat_template_kwargs.enable_thinking, false);
   const [sys, usr] = appels[0].o.messages;
   assert.equal(sys.role, 'system'); assert.ok(sys.content.includes('lundi 2026-10-26'));
+  assert.ok(sys.content.includes('Donner mon avis') && sys.content.includes('Suggérer une correction'));
   assert.equal(usr.content.length, 500); assert.ok(!JSON.stringify(appels[0].o).includes('Secret'));
   const gardes = [...stock.entries()].filter(([k]) => k.startsWith('c:'));
   assert.equal(gardes.length, 1); assert.equal(gardes[0][1], '1'); assert.ok(!gardes[0][0].includes(idC));

@@ -817,6 +817,11 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
   assert.match(L.reponseAide('comment ajouter un créneau ?'), /case vide/);
   assert.match(L.reponseAide('je veux sauvegarder mes données'), /Compte et sauvegarde/);
   assert.equal(L.reponseAide('bonjour'), null);
+  assert.match(L.reponseAide('où je peux soumettre un avis ?'), /Donner mon avis/);
+  assert.match(L.reponseAide('j’ai trouvé un bug'), /Donner mon avis/);
+  assert.match(L.reponseAide('où je peux suggérer une feuille sport ?'), /Écrire la fiche de ce sport/);
+  assert.match(L.reponseAide('comment proposer une fiche pour mon sport'), /Suggérer une correction/);
+  assert.match(L.reponseAide('comment valider une journée ?'), /^Valide chaque/);   // les anciens sujets gardent leur réponse
   const s = (id, j, deb, fin, titre, plus = {}) => ({ id, j, s: deb, e: fin, titre, ...plus });
   const d = { semaines: { '2026-11-02': { slots: [s('a', 6, 8, 9, 'Sport'), s('b', 6, 20, 21, 'Sport')] }, '2026-11-09': { slots: [s('c', 1, 18, 19, 'Séance de sport'), s('d', 3, 18, 19, 'Sport', { fait: true }), s('e', 3, 19, 20, 'Trajet sport', { lien: 'x' }), s('f', 4, 9, 10, 'Dentiste')] } } };
   assert.equal(L.creneauAVenir(d, 'sport', null, nowD).slot.id, 'b');      // celui de ce soir, pas celui de ce matin
