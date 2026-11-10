@@ -207,6 +207,8 @@ assert.equal(abonnes().length, 0); assert.deepEqual(index(), []);
   const perso = await avecSport({ nom: 'Curling', fiche: 'Huit pierres par manche.', origine: 'utilisateur' });
   assert.ok(perso.includes('Repères écrits par l\'utilisateur, non vérifiés') && !perso.includes('règlement officiel :'));
   assert.ok((await avecSport({ nom: 'Curling', fiche: 'X', origine: 'pirate' })).includes('non vérifiés'));   // origine inconnue : jamais officielle
+  const lesDeux = await avecSport({ nom: 'Tennis', fiche: 'Filet 0,914 m.', origine: 'officielle', perso: 'Jeu décisif à 7 points.' });   // fiche partielle + fiche perso
+  assert.ok(lesDeux.includes('règlement officiel : Filet 0,914 m.') && lesDeux.includes('non vérifiés (ne les présente pas comme officiels, signale s\'ils te semblent faux) : Jeu décisif à 7 points.'));
   let sp = await avecSport({ nom: 'Sabre laser', role: 'Duelliste', mode: 'combat', fiche: 'Points : tête 5.', origine: 'officielle', club: 'Club secret' });
   assert.ok(sp.includes('quatre phrases') && sp.includes('Question sur le sport : Sabre laser.') && sp.includes('Poste ou rôle : Duelliste.') && sp.includes('Pratique : combat.') && sp.includes('Repères tirés du règlement officiel : Points : tête 5.'));
   assert.ok(!sp.includes('Club secret'));

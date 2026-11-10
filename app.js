@@ -79,7 +79,6 @@ function maj() {
 }
 
 const ui = { statsPer: 'semaine', onglet: 'aujourdhui', lundi: L.lundiDe(new Date()), seul: null, tag: null, q: '', ouvertes: new Set(), derniereCat: null };
-try { ui.onglet = localStorage.getItem('orga-onglet') || ui.onglet; } catch {}
 
 const cat = id => data.cats.find(c => c.id === id) || { id, nom: 'Sans catégorie', couleur: '#9aa1ae' };
 const teinte = id => { const c = L.couleurSure(cat(id).couleur); return `--c:${c};--t:var(--t-${L.texteSur(c)})`; };
@@ -545,6 +544,7 @@ function editerSlot(slot, cle) {
         if (!rec.jours.length) data.recurrents = data.recurrents.filter(x => x !== rec);
         L.regenerer(data); L.propager(data, [rec.id]);
       }
+      if (slot.competition) majCompetition({ competition: slot.competition }, cle, true);
       maj(); dire('Créneau supprimé'); return;
     }
     const c = { id: slot.id, j: +f.get('j'), s: L.versHeure(f.get('s'), p0), e: L.versHeure(f.get('e'), p0), cat: f.get('cat') || slot.cat,
@@ -572,6 +572,7 @@ function editerSlot(slot, cle) {
     if (!(c.e > c.s) || c.e > 26) { dire('La fin doit être après le début.'); return false; }
     if (slot.src) c.src = slot.src;
     if (slot.tache) c.tache = slot.tache;
+    if (slot.competition) c.competition = slot.competition;
     if (c.cat === 'sport') { c.seance = f.get('seance') || null; c.club = !!f.get('club'); }
     if (c.cat === catTravail()?.id) c.collegue = (f.get('collegue') || '').trim();
     if (slot.groupe) c.groupe = slot.groupe;
@@ -603,6 +604,7 @@ function editerSlot(slot, cle) {
     if (!neuf && slot.fait && !c.fait) noterUsage('creneau-decoche');
     sem.slots = L.poser(courant, c).slots || courant;
     if (recId) { L.regenerer(data); L.propager(data, [recId, ...absorbes.map(y => y.id)]); }
+    if (c.competition) majCompetition(c, cle);
     ui.derniereCat = c.cat;
     maj();
     }
@@ -790,11 +792,19 @@ function deplacerSlot(slot, cle, c) {
   const detacher = () => { if (slot.lien) L.detacherTrajet(base, slot); };
   delete deplace.lien; delete deplace.cote;
   const pose = L.poser(base, deplace);
-  if (pose.gene) { rendre(); return conflit(base, deplace, pose.gene, s => { detacher(); sem.slots = s; noterUsage('creneau-deplace'); maj(); }); }
+  if (pose.gene) { rendre(); return conflit(base, deplace, pose.gene, s => { detacher(); sem.slots = s; if (deplace.competition) majCompetition(deplace, cle); noterUsage('creneau-deplace'); maj(); }); }
   detacher();
   sem.slots = pose.slots;
+  if (deplace.competition) majCompetition(deplace, cle);
   noterUsage('creneau-deplace');
   maj();
+}
+// Le créneau d'une compétition, changé dans la grille, met sa fiche à jour (date, horaires, lieu, trajets) ; supprimé, elle perd ses horaires.
+function majCompetition(x, cle, supprime = false) {
+  const comp = data.competitions.find(k => k.id === x.competition);
+  if (!comp) return;
+  if (supprime) { delete comp.debut; delete comp.fin; return; }
+  Object.assign(comp, { date: dateDuSlot(cle, x.j), debut: x.s, fin: x.e, nom: x.titre || comp.nom, lieu: x.salle ?? comp.lieu, avant: x.avant || 0, apres: x.apres || 0 });
 }
 gestesGrille(vueSem, () => L.isoJour(ui.lundi));
 gestesGrille($('#aujourdhui'), () => cleSem(L.momentLogique(new Date()).date));
@@ -1068,7 +1078,7 @@ function vueSport() {
   // Un bloc repliable par sport : sa fiche, ses réglages, ses entraînements, et les questions à l'IA.
   sportsDuProfil().forEach((sp, i) => {
     const f = L.ficheSport(sp), inf = infosSport(sp), nb = L.entrainementsFaits(data, sp);
-    groupes.push(groupe('sp-' + i, esc(sp), esc([inf.role, inf.club, pl(nb, 'entraînement fait', 'entraînements faits')].filter(Boolean).join(' · ')), `
+    groupes.push(groupe('sp-' + encodeURIComponent(sp), esc(sp), esc([inf.role, inf.club, pl(nb, 'entraînement fait', 'entraînements faits')].filter(Boolean).join(' · ')), `
       ${f ? `<ul class="list">${f.lignes.map(([k, v]) => `<li><div class="txt"><b>${esc(k)}</b><small>${esc(v)}</small></div></li>`).join('')}</ul><p class="aide">${f.partielle ? 'Fiche partielle. ' : ''}Résumé fait avec une IA : il peut contenir des erreurs. Vérifie dans le règlement : ${esc(f.source)}.</p>` : '<p class="aide">Pas encore de fiche pour ce sport.</p>'}
       ${inf.fiche ? `<div class="txt"><b>Ta fiche</b><small>Écrite par toi, non vérifiée${inf.ficheEnvoyee ? ' · envoyée pour vérification' : ' · pas encore envoyée'}</small><p>${esc(inf.fiche)}</p><p class="aide">Source indiquée : ${esc(inf.ficheSource)}</p></div>` : ''}
       <button class="btn gris" data-act="sport-fiche" data-sport="${esc(sp)}">${f && !f.partielle ? 'Suggérer une correction' : inf.fiche ? 'Modifier ma fiche' : 'Écrire la fiche de ce sport'}</button>
@@ -1290,7 +1300,8 @@ async function envoyerFiche(sp, regles, source, correction) {
 // Ce qui part avec une question de sport : ni le club, ni rien d'autre. Une fiche officielle passe avant celle de l'utilisateur.
 function contexteSport(sp) {
   const inf = infosSport(sp), f = L.ficheSport(sp), officielle = f ? f.lignes.map(l => l.join(' : ')).join(' ') : '';
-  return { nom: sp, role: inf.role, mode: inf.mode, fiche: (officielle || inf.fiche || '').slice(0, 1000), origine: officielle ? 'officielle' : inf.fiche ? 'utilisateur' : '' };
+  // La fiche de l'utilisateur part aussi quand la fiche officielle est partielle (ou absente), marquée non vérifiée.
+  return { nom: sp, role: inf.role, mode: inf.mode, fiche: officielle.slice(0, 1000), origine: officielle ? 'officielle' : '', perso: (inf.fiche || '').slice(0, 1000) };
 }
 
 function voirJournal(e) {
@@ -2076,8 +2087,12 @@ function agir(r) {
   const rep = !t ? `Je ne trouve pas « ${r.titre} » dans tes prochains créneaux.`
     : t.slot.groupe ? 'Ce créneau est en plusieurs morceaux : touche-le dans la grille.'
     : d && cleSem(d) !== t.cle ? 'Je ne sais pas encore le changer de semaine.' : null;   // ponytail: même semaine seulement, à élargir si ça manque
-  if (!rep) setTimeout(() => confirmerDeplacement(t, d ? L.jourSemaine(d) : t.slot.j, r.s ?? t.slot.s));
-  return rep;
+  if (rep) return rep;
+  // « à 1h » veut dire 1 h du matin : la grille compte la nuit après minuit comme 25 h, 26 h…
+  const s = r.s === null || r.s === undefined ? t.slot.s : r.s < data.plage[0] ? r.s + 24 : r.s;
+  if (s + t.slot.e - t.slot.s > data.plage[1]) return 'Ce créneau finirait trop tard dans la nuit pour la grille.';
+  setTimeout(() => confirmerDeplacement(t, d ? L.jourSemaine(d) : t.slot.j, s));
+  return null;
 }
 const echange = (moi, lui) => {
   const z = dlg.querySelector('.echanges');
@@ -2102,7 +2117,8 @@ async function demanderIA(q, sport) {
   if (!dlg.open || !dlg.contains(bulle)) return;   // la discussion a été fermée entre-temps
   bulle.textContent = rep;
   bulle.parentNode.scrollTop = bulle.parentNode.scrollHeight;
-  if (action) { const t = agir(action); if (t) bulle.textContent = t; }
+  // La réponse reste lisible un instant avant que la fiche proposée ne s'ouvre.
+  if (action) setTimeout(() => { if (!dlg.open || !dlg.contains(bulle)) return; const t = agir(action); if (t) bulle.textContent = t; }, 1500);
 }
 // Parler au compagnon : deux taps sur lui, ou Profil › ⚙ › Aide et avis.
 function discuter(sport) {
@@ -2114,6 +2130,8 @@ function discuter(sport) {
     const q = f.get('q').trim();
     if (!q) return false;
     const r = L.comprendre(q);
+    // Dans une question de sport, « mets-moi un exercice… » sans date ni heure est une question, pas une tâche.
+    if (sport && r.type === 'tache' && !r.echeance && r.heure === null) r.type = 'question';
     if (r.type === 'question') {
       const rep = sport ? null : L.reponseAide(q);
       if (rep) echange(q, rep); else demanderIA(q, sport);
@@ -2233,7 +2251,6 @@ function ouvrir(id) {
   clearTimeout(ouvrir.fin); ouvrir.fin = setTimeout(() => v.classList.remove('apparait'), 700);
   requestAnimationFrame(ajusterBalade);
   scrollTo(0, 0);
-  try { localStorage.setItem('orga-onglet', id); } catch {}
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => ouvrir(t.dataset.v)));
 

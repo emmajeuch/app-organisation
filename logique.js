@@ -803,7 +803,8 @@ export function stats(data, auj) {
   const sources = {
     creneaux: new Set(slots.filter(x => x.fait || x.xpDonne).map(x => x.groupe || x.id)).size * XP.creneau,
     taches: data.taches.reduce((k, t) => k + completionsXp(t) * (important(t) ? XP.tacheImportante : XP.tache), 0),
-    sport: seancesComptees * XP.seance + (data.competitions || []).filter(c => c.date <= isoJour(auj)).reduce((k, c) => k + Object.entries(XP.medaille).reduce((t, [m, xp]) => t + (c.medailles?.[m] || 0) * xp, 0), 0),
+    // Médailles : seulement pour une compétition passée (le jour même, une fois son heure de fin passée si elle en a une).
+    sport: seancesComptees * XP.seance + (data.competitions || []).filter(c => c.date < isoJour(auj) || (c.date === isoJour(auj) && !(c.fin > auj.getHours() + auj.getMinutes() / 60))).reduce((k, c) => k + Object.entries(XP.medaille).reduce((t, [m, xp]) => t + (c.medailles?.[m] || 0) * xp, 0), 0),
     habitudes: data.habitudes.reduce((k, h) => k + new Set([...h.faits, ...(h.xpJours || [])]).size, 0) * XP.habitude,
     objectifs: data.objectifs.filter(o => o.fait || o.xpDonne).reduce((k, o) => k + XP.objectif[o.horizon], 0) + projets * XP.projet,
     bonus: new Set([...valides, ...(data.joursBonus || [])]).size * XP.jour + Object.keys(data.bilans).length * XP.bilan + data.bonusXp,
@@ -1099,7 +1100,10 @@ function lireDate(n, i, auj) {
 // Comprend une phrase. Renvoie { type: 'creneau' | 'tache' | 'deplacer' | 'manque' | 'question', … }.
 export function comprendre(texte, maintenant = new Date()) {
   const propre = String(texte).trim().replace(/[?!.]+$/, '').trim(), mots = propre.split(/\s+/), n = mots.map(m => sansAccent(m).replace(/-moi$/, ''));
-  const iv = /^(comment|pourquoi|ou|quand|quoi|combien|est-ce|c'est|qu'est-ce)$/.test(n[0]) ? -1 : n.findIndex(m => AJOUT.has(m) || DEPLACE.has(m));
+  // Une vraie question (« Bouge pas, comment je valide ? ») ou « je note que… » n'est pas une commande.
+  const interrogation = /\?\s*$/.test(String(texte).trim()) && n.some(m => /^(comment|pourquoi|combien|quel|quelle|quels|quelles|quand|ou)$/.test(m));
+  const iv = interrogation || /^(comment|pourquoi|ou|quand|quoi|combien|est-ce|c'est|qu'est-ce)$/.test(n[0]) ? -1 : n.findIndex(m => AJOUT.has(m) || DEPLACE.has(m));
+  if (iv >= 0 && (n[iv + 1] === 'que' || /^qu'/.test(n[iv + 1] || ''))) return { type: 'question' };
   if (iv < 0 || iv > 2) return { type: 'question' };
   const auj = momentLogique(maintenant).date, deplacer = DEPLACE.has(n[iv]), dates = [], heures = [], reste = [];
   for (let i = iv + 1; i < n.length;) {
@@ -1148,11 +1152,12 @@ export const FICHES_SPORT = [
     ['Combat', 'Duel en 15 points, en 3 minutes.'], ['Points', 'Tête et tronc 5 ; bras et jambes 3 ; mains et poignée 1. Coups d’estoc interdits.'],
     ['Terrain', 'Arène de 8 m de diamètre, mise en garde à 6 m (6 m et 4 m pour les 9-12 ans).'], ['Arme', 'Lame de 810 mm dès 13 ans, 710 mm de 9 à 12 ans, à 20 mm près.'],
     ['Artistique', 'Chorégraphie notée par un jury, en catégories Duel, Bataille et Ensemble.']] },
-  { re: /hockey(?! sur glace)/, source: 'Fédération Française de Hockey, page Le Jeu', lignes: [
+  // « Hockey » seul : souvent sur glace, donc pas de fiche.
+  { re: /hockey sur gazon|field hockey/, source: 'Fédération Française de Hockey, page Le Jeu', lignes: [
     ['But', 'Marquer plus de buts que l’adversaire à la fin du temps réglementaire.'], ['Durée', 'Quatre périodes de 15 minutes, 15 minutes de pause à la mi-temps.'],
     ['Marquer', 'La balle doit avoir été touchée dans le cercle adverse par la crosse d’un attaquant.'], ['Terrain', '91,40 m sur 55 m, en gazon ; on joue avec le côté plat de la crosse.'],
     ['Rôles', '11 joueurs par équipe dont un gardien ; deux arbitres.']] },
-  { re: /volley/, source: 'Règles officielles FIVB 2025-2028, données par la Fédération française de volley', lignes: [
+  { re: /^volley(?!.*(assis|beach|plage))/, source: 'Règles officielles FIVB 2025-2028, données par la Fédération française de volley', lignes: [
     ['But', 'Faire tomber le ballon dans le camp adverse, en trois touches au plus par équipe.'], ['Score', 'Set à 25 points avec 2 points d’écart ; match à 3 sets gagnants ; à 2-2, set décisif en 15 points.'],
     ['Terrain', '18 m sur 9 m ; filet à 2,43 m pour les hommes, 2,24 m pour les femmes.'], ['Rôles', 'Passeur, attaquant, libero ; les joueurs servent à tour de rôle.']] },
   { re: /\blutte\b/, source: 'Fédération française de lutte, règlement des compétitions individuelles 2024', lignes: [
@@ -1170,18 +1175,18 @@ export const FICHES_SPORT = [
     ['Match', 'En poule, 5 touches ou 3 minutes. En élimination directe, 15 touches ou trois périodes de 3 minutes, avec 1 minute de repos.'],
     ['Armes', 'Fleuret : pointe, cible limitée au tronc. Épée : pointe, tout le corps est valable. Sabre : pointe, tranchant, plat et dos de la lame.'],
     ['Terrain', 'Piste de 14 m de long.'], ['Arbitrage', 'L’arbitre analyse la phrase d’armes pour décider de la validité d’une touche.']] },
-  { re: /rugby(?! (a )?xiii)/, source: 'World Rugby, Lois du jeu 2026', lignes: [
+  { re: /^rugby(?! (a )?(xiii|13|7|sept|league|sevens|toucher|touch|5|fauteuil))/, source: 'World Rugby, Lois du jeu 2026', lignes: [
     ['Match', 'Deux mi-temps de 40 minutes au plus, 15 joueurs au plus par équipe.'], ['Points', 'Essai 5 ; transformation 2 ; essai de pénalité 7 ; pénalité 3 ; drop 3.'],
     ['Buts', 'Le ballon doit passer au-dessus de la barre, entre les poteaux, sans toucher un partenaire ni le sol.'], ['Jeu', 'Une passe vers l’avant donne la mêlée à l’adversaire.']] },
   { re: /^hand.?ball/, source: 'Fédération internationale de handball, règles du jeu en salle, juillet 2025', lignes: [
     ['Durée', '2 x 30 minutes dès 16 ans, 10 minutes de pause ; 2 x 25 minutes de 12 à 16 ans.'], ['Équipe', '7 joueurs au plus sur le terrain en même temps, gardien compris.'],
     ['Ballon', 'Pas plus de 3 secondes en main, pas plus de 3 pas.'], ['Sanctions', 'Exclusion de 2 minutes, disqualification.']] },
-  { re: /^foot(ball)?\b(?! americain)/, source: 'IFAB, Lois du jeu 2019/20 (édition ancienne : les Lois changent chaque saison)', lignes: [
+  { re: /^foot(ball)?\b(?! (americain|us|en salle|a \d|australien|gaelique))/, source: 'IFAB, Lois du jeu 2019/20 (édition ancienne : les Lois changent chaque saison)', lignes: [
     ['Match', 'Deux périodes de 45 minutes ; 11 joueurs au plus par équipe dont un gardien, et pas de match à moins de 7.'],
     ['But', 'Le ballon doit avoir entièrement franchi la ligne de but, entre les montants et sous la barre.'],
     ['Résultat', 'L’équipe qui marque le plus de buts gagne ; à égalité, match nul, sauf si la compétition impose un vainqueur (prolongation, tirs au but).'],
     ['Hors-jeu', 'Position de hors-jeu : dans la moitié adverse, plus près de la ligne de but adverse que le ballon et l’avant-dernier adversaire.']] },
-  { re: /^basket/, source: 'Règlement officiel FIBA 2022, traduction de la Fédération française de basketball (édition ancienne)', lignes: [
+  { re: /^basket(?!.*3 ?x ?3)/, source: 'Règlement officiel FIBA 2022, traduction de la Fédération française de basketball (édition ancienne)', lignes: [
     ['Match', 'Deux équipes de 5 joueurs ; 4 quart-temps de 10 minutes.'], ['Points', 'Lancer franc 1 ; tir de la zone à 2 points 2 ; tir de la zone à 3 points 3.'],
     ['Temps', '24 secondes pour tirer ; 8 secondes pour passer la moitié du terrain ; 3 secondes au plus dans la zone restrictive adverse.'],
     ['Fautes', 'Un joueur sort à sa 5e faute.'], ['Terrain', '28 m sur 15 m.']] },

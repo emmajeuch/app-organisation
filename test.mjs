@@ -809,7 +809,7 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
   assert.equal(c('déplace sport de 14h à 16h').s, 16);
   assert.deepEqual(c('déplace sport'), { type: 'manque', titre: 'Sport' });
   assert.equal(c('ajoute demain 18h').type, 'manque');
-  for (const q of ['comment ajouter un créneau ?', 'à quoi ça sert', 'bonjour', '']) assert.equal(c(q).type, 'question');
+  for (const q of ['comment ajouter un créneau ?', 'à quoi ça sert', 'bonjour', '', 'je note que j’ai mal au genou', 'Bouge pas, comment je valide ?']) assert.equal(c(q).type, 'question', q);
   assert.equal(L.comprendre('ajoute x demain 18h', new Date(2026, 10, 9, 0, 30)).date, lundi);   // à minuit et demie, on est encore dimanche
   assert.match(L.reponseAide('comment valider une journée ?'), /^Valide chaque/);
   assert.match(L.reponseAide('Comment activer les rappels'), /Notifications/);
@@ -847,6 +847,14 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
   assert.equal(L.ficheSport('Rugby à XIII'), null);
   assert.ok(L.ficheSport('Handball').source.includes('handball'));
   assert.equal(L.ficheSport('Beach handball'), null);
+  for (const v of ['Rugby à 13', 'Rugby à 7', 'Rugby league', 'Beach volley', 'Volley assis', 'Foot US', 'Football en salle', 'Foot à 5', 'Hockey', 'Basket 3x3']) assert.equal(L.ficheSport(v), null, v);
+  for (const v of ['Rugby', 'Rugby à XV', 'Volley-ball', 'Volley', 'Foot', 'Football', 'Hockey sur gazon', 'Basket', 'Basket-ball']) assert.ok(L.ficheSport(v), v);
+  { const c = L.vide(); c.semaines = {}; const xp = d => L.stats(c, d).sources.sport;
+    c.competitions = [{ id: 'j', nom: 'Jour', date: '2026-11-10', fin: 18, medailles: { or: 1 } }];
+    assert.equal(xp(new Date(2026, 10, 10, 12)), 0);      // le jour même, avant la fin : pas encore
+    assert.equal(xp(new Date(2026, 10, 10, 19)), 100);    // après la fin
+    delete c.competitions[0].fin;
+    assert.equal(xp(new Date(2026, 10, 10, 12)), 100); }  // sans horaires : le jour même
   const s = (id, j, plus) => ({ id, j, s: 18, e: 19, cat: 'sport', titre: 'Entraînement · volley', fait: true, ...plus });
   const d = L.vide();
   d.profil.sports = ['Volley'];
