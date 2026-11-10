@@ -1090,60 +1090,70 @@ function vueSport() {
   let html = `<header class="top"><div><h1>Sport</h1><p>${nbPerso + nbClub} séance${nbPerso + nbClub > 1 ? 's' : ''} cette semaine${nbClub ? `, dont ${nbClub} au club` : ''}</p></div></header>`;
   if (!actif('sport')) { $('#sport').innerHTML = html; return; }
 
-  // En haut, seulement la prochaine séance ; le reste est rangé dans des groupes repliables (retour des testeurs, 24/10).
-  html += `<div class="sec"><h2>Prochaine séance ${p ? `<span>${JOURS[p.j]}${pSuiv ? ' prochain' : ''} · ${L.hhmm(p.s)}</span>` : ''}</h2><div class="card seance">
+  // V2 (Emma, 10/11) : un bloc par sport pratiqué ; le toucher déroule tout le reste (fiche, questions, séances, journal,
+  // exercices, compétitions, minuteur). Avec plusieurs sports, ce qui est commun à tous est dans le bloc « Entraînement ».
+  const auj = L.isoJour(date), sports = sportsDuProfil();
+  const prochaine = `<div class="sec"><h2>Prochaine séance ${p ? `<span>${JOURS[p.j]}${pSuiv ? ' prochain' : ''} · ${L.hhmm(p.s)}</span>` : ''}</h2><div class="card seance">
     ${p ? `<b>${esc(p.titre)}${p.club ? ' · club' : ''}</b>` : '<p class="muted">Aucun créneau Sport prévu : ajoute-en un dans Semaine.</p>'}
     ${st ? `<table>${st.exos.filter(x => exo(x.exo)).map(x => `<tr><td>${esc(exo(x.exo).nom)}</td><td>${x.series} × ${cibleTxt(exo(x.exo), x.cible)}</td></tr>`).join('')}</table>`
       : p && !p.club ? '<p class="muted">Pas de séance prévue sur ce créneau : touche-le dans Semaine pour en choisir une.</p>' : ''}
     <button class="btn plein" data-act="seance" data-seance="${st ? st.id : ''}" data-slot="${p && !pSuiv && p.j === j ? p.id : ''}">${st ? 'Commencer cette séance' : 'Commencer une séance libre'}</button></div></div>`;
 
-  const groupes = [];
-  // Un bloc repliable par sport : sa fiche, ses réglages, ses entraînements, et les questions à l'IA.
-  sportsDuProfil().forEach((sp, i) => {
-    const f = L.ficheSport(sp), inf = infosSport(sp), nb = L.entrainementsFaits(data, sp);
-    groupes.push(groupe('sp-' + encodeURIComponent(sp), esc(sp), esc([inf.role, inf.club, pl(nb, 'entraînement fait', 'entraînements faits')].filter(Boolean).join(' · ')), `
-      ${f ? `<ul class="list">${f.lignes.map(([k, v]) => `<li><div class="txt"><b>${esc(k)}</b><small>${esc(v)}</small></div></li>`).join('')}</ul><p class="aide">${f.partielle ? 'Fiche partielle. ' : ''}Résumé fait avec une IA : il peut contenir des erreurs. Vérifie dans le règlement : ${esc(f.source)}.</p>` : '<p class="aide">Pas encore de fiche pour ce sport.</p>'}
-      ${inf.fiche ? `<div class="txt"><b>Ta fiche</b><small>Écrite par toi, non vérifiée${inf.ficheEnvoyee ? ' · envoyée pour vérification' : ' · pas encore envoyée'}</small><p>${esc(inf.fiche)}</p><p class="aide">Source indiquée : ${esc(inf.ficheSource)}</p></div>` : ''}
-      <button class="btn gris" data-act="sport-fiche" data-sport="${esc(sp)}">${f && !f.partielle ? 'Suggérer une correction' : inf.fiche ? 'Modifier ma fiche' : 'Écrire la fiche de ce sport'}</button>
-      <div class="rangee"><button class="btn gris" data-act="sport-regler" data-sport="${esc(sp)}">Régler</button><button class="btn plein" data-act="sport-question" data-sport="${esc(sp)}">Poser une question</button></div>`));
-  });
+  const entrainement = [];
   const avecProg = data.exos.filter(e => L.progression(data.journal, e.id, e.type).length);
   if (avecProg.length) {
     if (!avecProg.some(e => e.id === ui.progExo)) ui.progExo = avecProg[0].id;
     const e = exo(ui.progExo), pts = L.progression(data.journal, e.id, e.type), u = UNITE[e.type] === ' reps' ? ' kg' : UNITE[e.type];
-    groupes.push(groupe('s-prog', 'Progression', `Record ${esc(e.nom)} : ${Math.max(...pts.map(x => x.val))}${u}`, `<div class="chart">
+    entrainement.push(groupe('s-prog', 'Progression', `Record ${esc(e.nom)} : ${Math.max(...pts.map(x => x.val))}${u}`, `<div class="chart">
       <select class="choix" data-act="prog-exo" aria-label="Exercice">${avecProg.map(x => `<option value="${x.id}" ${x.id === e.id ? 'selected' : ''}>${esc(x.nom)}</option>`).join('')}</select>
       ${courbe(pts, u)}</div>`));
   }
   const entrees = [...data.journal.map(e => ({ ...e, club: false })), ...club.map(c => ({ ...c, club: true }))].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
-  groupes.push(groupe('s-journal', 'Journal', entrees.length ? `${pl(entrees.length, 'séance récente', 'séances récentes')}` : 'Vide pour l’instant', entrees.length ? `<ul class="list">${entrees.map(e => {
+  entrainement.push(groupe('s-journal', 'Journal', entrees.length ? `${pl(entrees.length, 'séance récente', 'séances récentes')}` : 'Vide pour l’instant', entrees.length ? `<ul class="list">${entrees.map(e => {
     const quand = L.deIso(e.date).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
     const sous = e.club ? `Club · ${L.heures(e.duree)}` : `${e.series.length} exercice${e.series.length > 1 ? 's' : ''} · ${e.series.reduce((k, x) => k + x.sets.length, 0)} séries${e.ressenti ? ` · ressenti ${e.ressenti}/5` : ''}`;
     return `<li ${e.club ? '' : `data-act="journal" data-id="${e.id}" role="button" tabindex="0"`}><div class="txt"><b>${esc(e.nom)}</b><small>${esc(sous)}</small></div><span class="pill">${quand}</span></li>`;
   }).join('')}</ul>` : '<p class="vide">Tes séances terminées et tes entraînements du club validés s’afficheront ici.</p>'));
-  groupes.push(groupe('s-types', 'Séances types', pl(data.seances.length, 'séance', 'séances'), `${data.seances.length ? `<ul class="list">${data.seances.map(s => `<li data-act="seance-type" data-id="${s.id}" role="button" tabindex="0"><div class="txt"><b>${esc(s.nom)}</b><small>${s.exos.length} exercice${s.exos.length > 1 ? 's' : ''}</small></div></li>`).join('')}</ul>` : '<p class="vide">Une séance type, c’est une liste d’exercices avec les séries prévues.</p>'}
+  entrainement.push(groupe('s-types', 'Séances types', pl(data.seances.length, 'séance', 'séances'), `${data.seances.length ? `<ul class="list">${data.seances.map(s => `<li data-act="seance-type" data-id="${s.id}" role="button" tabindex="0"><div class="txt"><b>${esc(s.nom)}</b><small>${s.exos.length} exercice${s.exos.length > 1 ? 's' : ''}</small></div></li>`).join('')}</ul>` : '<p class="vide">Une séance type, c’est une liste d’exercices avec les séries prévues.</p>'}
     <button class="btn gris" data-act="seance-type">Nouvelle séance type</button>`));
-  groupes.push(groupe('s-exos', 'Exercices', pl(data.exos.length, 'exercice', 'exercices'), `${data.exos.length ? `<ul class="list">${data.exos.map(e => `<li data-act="exo" data-id="${e.id}" role="button" tabindex="0"><div class="txt"><b>${esc(e.nom)}</b><small>${L.TYPES_EXO[e.type]}${e.notes ? ` · ${esc(e.notes)}` : ''}</small></div></li>`).join('')}</ul>` : ''}
+  entrainement.push(groupe('s-exos', 'Exercices', pl(data.exos.length, 'exercice', 'exercices'), `${data.exos.length ? `<ul class="list">${data.exos.map(e => `<li data-act="exo" data-id="${e.id}" role="button" tabindex="0"><div class="txt"><b>${esc(e.nom)}</b><small>${L.TYPES_EXO[e.type]}${e.notes ? ` · ${esc(e.notes)}` : ''}</small></div></li>`).join('')}</ul>` : ''}
     <form class="ajout" data-form="exo"><input name="txt" placeholder="Nouvel exercice" aria-label="Nouvel exercice" autocomplete="off"><select name="type" aria-label="Type">${Object.entries(L.TYPES_EXO).map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select><button aria-label="Ajouter">${I.plus}</button></form>`));
+  const repos = groupe('s-repos', 'Minuteur de repos', `${Math.floor(data.repos / 60)}:${String(data.repos % 60).padStart(2, '0')} entre deux séries`, `<div class="reglage"><span class="txt">Entre deux séries</span><select data-act="repos" aria-label="Durée du repos">${[30, 45, 60, 90, 120, 180].map(s => `<option value="${s}" ${s === data.repos ? 'selected' : ''}>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}</option>`).join('')}</select></div>`);
 
-  const auj = L.isoJour(date), sports = sportsDuProfil();
-  groupes.push(groupe('s-sports', 'Mes sports', sports.length ? esc(sports.join(' · ')) : 'Aucun choisi', `
-    ${sports.length ? `<div class="cats">${sports.map(sp => `<span class="theme" style="--c:var(--ink)">${esc(sp)}<button class="x" data-act="retirer-sport" data-sport="${esc(sp)}" aria-label="Retirer ${esc(sp)}">${I.x}</button></span>`).join('')}</div>` : '<p class="aide">Choisis ton sport : l’app te propose ses exercices et des séances prêtes.</p>'}
-    <form class="ajout" data-form="sport"><input name="txt" list="sports-suggestions" maxlength="40" placeholder="N’importe quel sport : escrime, judo…" aria-label="Ajouter un sport" autocomplete="off"><datalist id="sports-suggestions">${L.SPORTS.filter(x => !sports.includes(x)).map(x => `<option value="${x}">`).join('')}</datalist><button aria-label="Ajouter">${I.plus}</button></form>
-    ${sports.map(sp => `<button class="btn gris" data-act="sport-depart" data-sport="${esc(sp)}">${L.conseilsPour(sp) ? `Ajouter les exercices et séances de ${esc(sp.toLowerCase())}` : `Séances de départ pour ${esc(sp.toLowerCase())} (gainage, récupération)`}</button>`).join('')}
-    <p class="aide">Marque tes entraînements et tes matchs comme « club » dans leur créneau : validés, ils comptent dans le journal. Les exercices proposés sont du renforcement courant, à adapter avec ton coach.</p>`));
-  const avenir = data.competitions.filter(c => c.date >= auj).sort((a, b) => a.date.localeCompare(b.date));
-  const passees = data.competitions.filter(c => c.date < auj).sort((a, b) => b.date.localeCompare(a.date));
   const medaillesTxt = c => Object.keys(L.XP.medaille).filter(m => c.medailles?.[m]).map(m => `${c.medailles[m]} ${m}`).join(', ');
   // Les entraînements validés depuis la compétition précédente du même sport.
   const entAvant = c => { if (!c.sport) return ''; const prec = data.competitions.filter(x => x.sport === c.sport && x.date < c.date).map(x => x.date).sort().at(-1) || ''; return `${pl(L.entrainementsFaits(data, c.sport, prec, c.date), 'entraînement', 'entraînements')} avant`; };
   const compHtml = c => `<li data-act="competition" data-id="${c.id}" role="button" tabindex="0"><div class="txt"><b>${esc(c.nom)}</b><small>${[c.sport, c.lieu, c.categorie, c.resultat && `Résultat : ${c.resultat}`, medaillesTxt(c) && `Médailles : ${medaillesTxt(c)}`, entAvant(c)].filter(Boolean).map(esc).join(' · ')}</small></div><span class="pill${c.date < auj && !c.resultat ? ' retard' : ''}">${c.date >= auj ? `J-${L.joursAvant(c.date, date)}` : c.resultat ? L.deIso(c.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : 'Résultat ?'}</span></li>`;
-  groupes.push(groupe('s-comp', 'Compétitions', avenir.length ? `Prochaine : ${esc(avenir[0].nom)}, J-${L.joursAvant(avenir[0].date, date)}` : 'Aucune à venir', `
-    ${avenir.length || passees.length ? `<ul class="list">${[...avenir, ...passees.slice(0, 5)].map(compHtml).join('')}</ul>` : '<p class="vide">Ajoute tes matchs et tournois : compte à rebours sur Aujourd’hui, et une séance adaptée la veille.</p>'}
-    <button class="btn gris" data-act="competition">Nouvelle compétition</button>
-    <p class="aide">Veille : séance raccourcie de moitié, sans nouvel exercice. Jour J : pas de renfo. Lendemain : récupération ou repos. Des repères d’organisation, pas un conseil médical.</p>`));
-  groupes.push(groupe('s-repos', 'Minuteur de repos', `${Math.floor(data.repos / 60)}:${String(data.repos % 60).padStart(2, '0')} entre deux séries`, `<div class="reglage"><span class="txt">Entre deux séries</span><select data-act="repos" aria-label="Durée du repos">${[30, 45, 60, 90, 120, 180].map(s => `<option value="${s}" ${s === data.repos ? 'selected' : ''}>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}</option>`).join('')}</select></div>`));
-  html += `<div class="sec groupes">${groupes.join('')}</div>
+  const competitions = (liste, id) => {
+    const avenir = liste.filter(c => c.date >= auj).sort((a, b) => a.date.localeCompare(b.date)), passees = liste.filter(c => c.date < auj).sort((a, b) => b.date.localeCompare(a.date));
+    return groupe(id, 'Compétitions', avenir.length ? `Prochaine : ${esc(avenir[0].nom)}, J-${L.joursAvant(avenir[0].date, date)}` : 'Aucune à venir', `
+      ${avenir.length || passees.length ? `<ul class="list">${[...avenir, ...passees.slice(0, 5)].map(compHtml).join('')}</ul>` : '<p class="vide">Ajoute tes matchs et tournois : compte à rebours sur Aujourd’hui, et une séance adaptée la veille.</p>'}
+      <button class="btn gris" data-act="competition">Nouvelle compétition</button>
+      <p class="aide">Veille : séance raccourcie de moitié, sans nouvel exercice. Jour J : pas de renfo. Lendemain : récupération ou repos. Des repères d’organisation, pas un conseil médical.</p>`);
+  };
+  const memeSport = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  const ficheEtQuestions = sp => {
+    const f = L.ficheSport(sp), inf = infosSport(sp);
+    return `${f ? `<ul class="list">${f.lignes.map(([k, v]) => `<li><div class="txt"><b>${esc(k)}</b><small>${esc(v)}</small></div></li>`).join('')}</ul><p class="aide">${f.partielle ? 'Fiche partielle. ' : ''}Résumé fait avec une IA : il peut contenir des erreurs. Vérifie dans le règlement : ${esc(f.source)}.</p>` : '<p class="aide">Pas encore de fiche pour ce sport.</p>'}
+      ${inf.fiche ? `<div class="txt"><b>Ta fiche</b><small>Écrite par toi, non vérifiée${inf.ficheEnvoyee ? ' · envoyée pour vérification' : ' · pas encore envoyée'}</small><p>${esc(inf.fiche)}</p><p class="aide">Source indiquée : ${esc(inf.ficheSource)}</p></div>` : ''}
+      <button class="btn gris" data-act="sport-fiche" data-sport="${esc(sp)}">${f && !f.partielle ? 'Suggérer une correction' : inf.fiche ? 'Modifier ma fiche' : 'Écrire la fiche de ce sport'}</button>
+      <div class="rangee"><button class="btn gris" data-act="sport-regler" data-sport="${esc(sp)}">Régler</button><button class="btn plein" data-act="sport-question" data-sport="${esc(sp)}">Poser une question</button></div>`;
+  };
+  const resumeSport = sp => { const inf = infosSport(sp); return esc([inf.role, inf.club, pl(L.entrainementsFaits(data, sp), 'entraînement fait', 'entraînements faits')].filter(Boolean).join(' · ')); };
+  const mesSports = groupe('s-sports', sports.length ? 'Mes sports' : 'Choisis ton sport', sports.length ? esc(sports.join(' · ')) : 'Sa fiche, tes entraînements et tes questions au compagnon', `
+    ${sports.length ? `<div class="cats">${sports.map(sp => `<span class="theme" style="--c:var(--ink)">${esc(sp)}<button class="x" data-act="retirer-sport" data-sport="${esc(sp)}" aria-label="Retirer ${esc(sp)}">${I.x}</button></span>`).join('')}</div>` : '<p class="aide">Choisis ton sport : l’app te propose ses exercices, des séances prêtes et la fiche de ses règles.</p>'}
+    <form class="ajout" data-form="sport"><input name="txt" list="sports-suggestions" maxlength="40" placeholder="N’importe quel sport : escrime, judo…" aria-label="Ajouter un sport" autocomplete="off"><datalist id="sports-suggestions">${L.SPORTS.filter(x => !sports.includes(x)).map(x => `<option value="${x}">`).join('')}</datalist><button aria-label="Ajouter">${I.plus}</button></form>
+    ${sports.map(sp => `<button class="btn gris" data-act="sport-depart" data-sport="${esc(sp)}">${L.conseilsPour(sp) ? `Ajouter les exercices et séances de ${esc(sp.toLowerCase())}` : `Séances de départ pour ${esc(sp.toLowerCase())} (gainage, récupération)`}</button>`).join('')}
+    <p class="aide">Marque tes entraînements et tes matchs comme « club » dans leur créneau : validés, ils comptent dans le journal. Les exercices proposés sont du renforcement courant, à adapter avec ton coach.</p>`);
+
+  let blocs;
+  if (!sports.length) blocs = [mesSports, prochaine, ...entrainement, competitions(data.competitions, 's-comp'), repos];
+  else if (sports.length === 1) blocs = [groupe('sp-' + encodeURIComponent(sports[0]), esc(sports[0]), resumeSport(sports[0]),
+    ficheEtQuestions(sports[0]) + prochaine + entrainement.join('') + competitions(data.competitions, 's-comp') + repos), mesSports];
+  else blocs = [...sports.map(sp => groupe('sp-' + encodeURIComponent(sp), esc(sp), resumeSport(sp),
+    ficheEtQuestions(sp) + competitions(data.competitions.filter(c => memeSport(c.sport, sp)), 's-comp-' + encodeURIComponent(sp)))),
+    groupe('s-entrainement', 'Entraînement', 'Séances, journal, exercices, minuteur', prochaine + entrainement.join('') + competitions(data.competitions.filter(c => !sports.some(sp => memeSport(c.sport, sp))), 's-comp') + repos), mesSports];
+  html += `<div class="sec groupes">${blocs.join('')}</div>
     <button class="btn gris" data-act="masquer-sport">Je ne fais pas de sport : masquer cet onglet</button>`;
   $('#sport').innerHTML = html;
 }
@@ -1735,7 +1745,9 @@ function proposerProfil(p, titre = 'Importer ce profil ?') {
 // Le premier jour d'usage : avant le lendemain, sommeil, cours et repas ne comptent pas tout seuls dans les heures.
 function marquerDebut() { if (!data.debut) data.debut = L.isoJour(L.momentLogique(new Date()).date); }
 // Juste après avoir construit son app, le tutoriel (une seule fois), le temps de voir sa semaine.
-function tutoApresDepart() { if (!data.tutoVu && data.types.length) setTimeout(() => { if (!dlg.open) tutoriel(); }, 2000); }
+const TUTO_VERSION = 2;   // 2 : nouveautés de la V2, montrées une fois à tous
+const tutoAFaire = () => !!data.types.length && (!data.tutoVu || (data.tutoVersion || 1) < TUTO_VERSION);
+function tutoApresDepart() { if (tutoAFaire()) setTimeout(() => { if (!dlg.open) tutoriel(); }, 2000); }
 
 $('#fichier').addEventListener('change', async e => {
   const fichier = e.target.files[0];
@@ -2075,6 +2087,8 @@ const TUTO = [
   ['Plus qu’un agenda', 'Un agenda montre ce qui est prévu. Ici, tu valides ce que tu as vraiment fait : ta flamme s’allume, tu gagnes de l’XP, ton compagnon grandit. Tes tâches, tes habitudes, tes notes et ton sport sont au même endroit. Touche deux fois ton compagnon pour lui parler.'],
   ['Ta semaine', 'Aujourd’hui montre ta journée, Semaine la grille. Touche une case vide pour ajouter un créneau, touche un créneau pour le changer ce jour-là seulement ; appui long puis glisse pour le déplacer. Semaine › Modifier règle ce qui revient chaque semaine.'],
   ['Valider', 'Valide chaque créneau avec son bouton peu après sa fin : c’est ce qui fait compter ta journée. Sommeil, trajets et repas se valident tout seuls.'],
+  ['Ton compagnon parle', 'Touche-le deux fois pour lui parler. Il comprend « ajoute dentiste demain 18h » ou « déplace sport à jeudi 17h », et répond à tes questions sur l’app. Pour le reste, une IA prend le relais : elle peut se tromper, et rien n’est créé sans ton accord.'],
+  ['Ton sport', 'Dans Sport, touche le bloc de ton sport : la fiche de ses règles (résumée par une IA, à vérifier), tes séances et tes questions. Une compétition avec ses horaires va dans ta semaine, et ses médailles rapportent de l’XP.'],
   ['Tes données', 'Tout reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire. Seul ce que ton compagnon ne comprend pas part vers son IA, sans ton nom. Ne supprime pas l’icône : ça peut effacer tes données.'],
   ['Les rappels', 'Un rappel avant tes créneaux, à l’heure de tes habitudes, et avant le dîner pour le bilan. Seules les heures partent vers le serveur, jamais ce que tu as écrit.'],
 ];
@@ -2087,17 +2101,19 @@ function conditions() {
     <button class="btn plein">J’ai lu et j’accepte</button></form>`, () => {
     data.cgu = CGU; sauver();
     // Le tutoriel attend que l'app soit construite : d'abord ta semaine, ensuite l'explication.
-    const suite = () => { if (!data.tutoVu && data.types.length) setTimeout(tutoriel); };
+    const suite = () => { if (tutoAFaire()) setTimeout(tutoriel); };
     if (!sauvAuto() && L.sauvegardePossible() && !data.types.length) setTimeout(() => compte('creer', suite)); else suite();
   }, { collant: true });
 }
 function tutoriel(i = 0) {
+  // Déjà vu avant la V2 : montré une fois, et il peut se fermer (compté comme vu dès qu’il s’ouvre).
+  if (data.tutoVu && (data.tutoVersion || 1) < TUTO_VERSION) { data.tutoVersion = TUTO_VERSION; sauver(); }
   const [titre, texte] = TUTO[i], fin = i === TUTO.length - 1, rappels = titre === 'Les rappels' && peutActiverRappels();
   // La première fois, on ne le saute pas : il n'est compté comme vu qu'à la fin. Revu depuis Profil, on peut le fermer.
   ouvrirDlg(`<form><h2>${titre}</h2><p>${texte}</p>${titre === 'Les rappels' ? (rappels ? '<button type="button" class="btn plein" data-choix="rappels">Activer les rappels</button>' : '<p class="aide">Tu pourras les activer dans Profil › Réglages › Notifications, en ouvrant l’app depuis son icône.</p>') : ''}<p class="aide">${i + 1} sur ${TUTO.length}</p>
     <div class="rangee">${data.tutoVu ? '<button type="button" class="btn gris" data-fermer>Fermer</button>' : ''}<button class="btn ${rappels ? 'gris' : 'plein'}">${fin ? 'Terminer' : 'Suivant'}</button></div></form>`, choix => {
     if (choix === 'ok' && !fin) { tutoriel(i + 1); return false; }
-    data.tutoVu = true; sauver();
+    data.tutoVu = true; data.tutoVersion = TUTO_VERSION; sauver();
     if (choix === 'rappels') activerRappels();
   }, { collant: !data.tutoVu });
 }
@@ -2629,7 +2645,7 @@ dernier = L.stats(data, new Date());
 verifierNiveau(dernier);
 ouvrir(ui.onglet);
 const ecran = $('#chargement'); ecran.classList.add('fini'); setTimeout(() => ecran.remove(), 300);
-if (data.cgu !== CGU) conditions(); else if (!data.tutoVu && data.types.length) tutoriel();
+if (data.cgu !== CGU) conditions(); else if (tutoAFaire()) tutoriel();
 if (data.notifs?.actif) synchroRappels(false);
 majPastille();
 planifierSauvegarde();
