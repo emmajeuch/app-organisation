@@ -152,6 +152,7 @@ const radios = (nom, valeurs, sel) => `<div class="cats">${Object.entries(valeur
 
 function cocherTache(t) {
   Object.assign(t, L.cocher(t, new Date()));
+  placerTache(t);
   dire(t.fait ? 'Tâche faite' : `Prochaine fois : ${L.deIso(t.echeance).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}`);
 }
 function pillEcheance(t) {
@@ -605,6 +606,8 @@ function editerSlot(slot, cle) {
     sem.slots = L.poser(courant, c).slots || courant;
     if (recId) { L.regenerer(data); L.propager(data, [recId, ...absorbes.map(y => y.id)]); }
     if (c.competition) majCompetition(c, cle);
+    // Un créneau posé à la main pour une tâche remplace son créneau automatique.
+    if (neuf && c.tache) { const t = data.taches.find(x => x.id === c.tache); if (t) placerTache(t); }
     ui.derniereCat = c.cat;
     maj();
     }
@@ -613,6 +616,25 @@ function editerSlot(slot, cle) {
   suivreLieu();
 }
 
+// Une tâche à date et heure a son créneau de 30 min dans l'emploi du temps, posé et déplacé tout seul (Emma, 10/11).
+// Ce qui est passé ou validé ne bouge pas ; un créneau posé à la main (« Planifier un créneau ») passe avant.
+function placerTache(t, silencieux = false) {
+  const [p0, p1] = data.plage, auj = L.isoJour(L.momentLogique(new Date()).date);
+  const lies = Object.entries(data.semaines).flatMap(([cle, s]) => s.slots.filter(x => x.tache === t.id).map(x => ({ cle, x })));
+  const auto = lies.filter(l => l.x.auto && !l.x.fait && dateDuSlot(l.cle, l.x.j) >= auj), main = lies.some(l => !l.x.auto && !l.x.fait);
+  const voulu = !!data.types.length && !t.fait && !main && !!t.echeance && t.echeance >= auj && typeof t.heure === 'number' && t.heure >= p0 && t.heure + .5 <= p1;
+  const d = voulu && L.deIso(t.echeance), cle = voulu && cleSem(d), j = voulu && L.jourSemaine(d);
+  if (voulu && auto.length === 1 && auto[0].cle === cle && auto[0].x.j === j && auto[0].x.s === t.heure && auto[0].x.titre === t.titre) return;
+  for (const { cle: k, x } of auto) data.semaines[k].slots = data.semaines[k].slots.filter(y => y !== x);
+  if (!voulu) return;
+  const sem = semaineDe(cle), base = L.sansTrajets(sem.slots);
+  const x = { ...nouveauSlot(j, t.heure, t.heure + .5), titre: t.titre, tache: t.id, auto: true };
+  delete x.neuf;
+  if (data.cats.some(c => c.id === 'travail')) x.cat = 'travail';
+  const p = L.poser(base, x);
+  if (p.gene) { if (!silencieux) setTimeout(() => dire(`Pas de place à ${L.hhmm(t.heure)} pour « ${t.titre} » : planifie-la à la main.`), 400); return; }
+  sem.slots = L.trajets(p.slots);
+}
 // Une tâche se planifie en créneau ; valider le créneau coche la tâche.
 function planifier(t) {
   if (!data.types.length) return dire('Choisis d’abord comment commencer, dans Aujourd’hui.');
@@ -785,7 +807,7 @@ function gestesGrille(vue, cleDe) {
 function deplacerSlot(slot, cle, c) {
   const sem = data.semaines[cle];
   // Un morceau glissé seul se détache de son créneau.
-  const deplace = { ...slot, j: c.j, s: c.s, e: c.e }; delete deplace.groupe;
+  const deplace = { ...slot, j: c.j, s: c.s, e: c.e }; delete deplace.groupe; delete deplace.auto;   // déplacé à la main, il ne suit plus sa tâche
   let base = L.sansTrajets(sem.slots);
   const colles = slot.lien ? {} : L.trajetsColles(base, slot);
   for (const k of ['avant', 'apres']) if (colles[k] && !deplace[k]) { deplace[k] = L.minutes(colles[k]); base = base.filter(x => x !== colles[k]); }
@@ -975,7 +997,7 @@ function editerTache(t, defaut = {}) {
     <div class="rangee">${neuf ? '' : '<button type="button" class="btn rouge" data-choix="suppr" data-confirmer="Confirmer">Supprimer</button>'}<button type="button" class="btn gris" data-choix="planifier">Planifier un créneau</button></div>
     <div class="rangee"><button type="button" class="btn gris" data-fermer>Annuler</button><button class="btn plein">Enregistrer</button></div>
   </form>`, (choix, f) => {
-    if (choix === 'suppr') { data.taches = data.taches.filter(x => x !== t); maj(); dire('Tâche supprimée'); return; }
+    if (choix === 'suppr') { placerTache({ ...t, fait: true }); data.taches = data.taches.filter(x => x !== t); maj(); dire('Tâche supprimée'); return; }
     const faits = new Set(f.getAll('sf'));
     const h = L.versHeure(f.get('heure'), 1), rep = lireHoraires(f);
     const champs = { titre: f.get('titre').trim(), echeance: f.get('echeance') || null, heure: Number.isNaN(h) ? null : h, priorite: +f.get('priorite') || 2, fac: !!f.get('fac'), travail: !!f.get('travail'),
@@ -990,6 +1012,7 @@ function editerTache(t, defaut = {}) {
     let tache = t;
     if (neuf) { tache = { id: L.uid(), fait: false, ...champs }; data.taches.push(tache); } else { Object.assign(t, champs); delete t.recurrence; }
     noterUsage('taches');
+    if (choix !== 'planifier') placerTache(tache);
     maj();
     if (choix === 'planifier') { planifier(tache); return false; }
   });
@@ -2538,7 +2561,7 @@ document.addEventListener('change', e => {
   if (act === 'item') data.listes.find(l => l.id === t.dataset.liste).items.find(i => i.id === id).fait = t.checked;
   if (act === 'tache') {
     const x = data.taches.find(y => y.id === id);
-    if (t.checked) { if (!L.cochable(x, new Date())) return rendre(); cocherTache(x); } else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); }
+    if (t.checked) { if (!L.cochable(x, new Date())) return rendre(); cocherTache(x); } else { x.fait = false; x.faits = (x.faits || []).slice(0, -1); placerTache(x); }
   }
   if (act === 'son') data.son = t.checked;
   if (act === 'rappel') data.notifs[id] = t.type === 'checkbox' ? t.checked : +t.value;
@@ -2600,6 +2623,7 @@ document.addEventListener('visibilitychange', () => {
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 
+for (const t of data.taches) placerTache(t, true);   // les tâches à heure d'avant cette version ont aussi leur créneau
 rendre();
 dernier = L.stats(data, new Date());
 verifierNiveau(dernier);

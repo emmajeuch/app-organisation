@@ -365,7 +365,7 @@ const NUM_OU_VIDE = v => v === '' ? '' : NUM(v);
 const HEURE_OU_RIEN = v => v === null ? null : ENTRE(0, 26)(v);
 const SLOT = { id: ID, groupe: ID, j: ENTRE(0, 6), s: ENTRE(0, 26), e: ENTRE(0, 26), cat: ID, titre: TXT, salle: TXT, affaires: TXT, notes: TXT,
   fait: BOOL, xpDonne: BOOL, src: ID, tache: ID, seance: ID, club: BOOL, collegue: TXT,
-  avant: ENTRE(0, 180), apres: ENTRE(0, 180), lien: ID, cote: UN_DE('avant', 'apres'), competition: ID };
+  avant: ENTRE(0, 180), apres: ENTRE(0, 180), lien: ID, cote: UN_DE('avant', 'apres'), competition: ID, auto: BOOL };
 const SCHEMA = {
   version: UN_DE(1), debut: DATE, coursACocher: v => v === null ? null : DATE(v), plage: [ENTRE(0, 26)], typeDefaut: ID,
   recurrents: [{ id: ID, titre: TXT, cat: ID, s: ENTRE(0, 26), e: ENTRE(0, 26), jours: [ENTRE(0, 6)], salle: TXT, affaires: TXT, club: BOOL, origine: ID, exemple: BOOL, avant: ENTRE(0, 180), apres: ENTRE(0, 180) }], dernierExport: TXT, repos: ENTRE(5, 600), club: TXT,
