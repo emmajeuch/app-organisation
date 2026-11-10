@@ -2048,7 +2048,7 @@ const TUTO = [
 const CGU = 4;   // 2 : la sauvegarde automatique ; 3 : le compte (24/10) ; 4 : l'IA du compagnon (8/11)
 function conditions() {
   ouvrirDlg(`<form><h2>Avant de commencer</h2>
-    <p>L’app est gratuite. Ce que tu écris reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire est gardée sur le serveur. Si tu oublies ton mot de passe, personne ne peut la récupérer. Ce que ton compagnon ne comprend pas seul part, sans ton nom, vers l’IA de Cloudflare ; ses réponses peuvent être fausses. Les rappels peuvent arriver en retard ou pas du tout.</p>
+    <p>L’app est gratuite. Ce que tu écris reste sur ton téléphone ; avec un compte, une copie chiffrée que personne d’autre que toi ne peut lire est gardée sur le serveur. Si tu oublies ton mot de passe, personne ne peut la récupérer. Ce que ton compagnon ne comprend pas seul part, sans ton nom, vers l’IA de Cloudflare ; ses réponses peuvent être fausses. Une fiche de sport que tu écris part, sans ton nom, pour être vérifiée. Les rappels peuvent arriver en retard ou pas du tout.</p>
     <p><a href="conditions.html">Conditions d’utilisation</a> · <a href="confidentialite.html">Confidentialité</a></p>
     <button class="btn plein">J’ai lu et j’accepte</button></form>`, () => {
     data.cgu = CGU; sauver();
