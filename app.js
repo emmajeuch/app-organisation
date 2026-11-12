@@ -1084,6 +1084,7 @@ function regulariteHtml(hb, lundi) {
     const d = L.ajouterJours(lundi, i), iso = L.isoJour(d), lettre = 'LMMJVSD'[i];
     if (iso > auj) return `<span class="futur">${lettre}</span>`;
     const on = hb.faits.includes(iso);
+    if (!on && !L.habitudeDuJour(hb, i)) return `<span class="repos" aria-label="${esc(hb.nom)} : pas prévue ce jour-là">${lettre}</span>`;
     return `<button class="${on ? 'on' : ''}" data-act="habitude" data-id="${hb.id}" data-jour="${iso}" aria-pressed="${on}" aria-label="${esc(hb.nom)}, ${d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}">${lettre}</button>`;
   }).join('')}</div>`;
 }
