@@ -834,7 +834,11 @@ assert.ok(L.habitudeDuJour({ horaires: [] }, 4));
 // Étape 4 : fiches, entraînements comptés, plusieurs médailles.
 {
   assert.equal(L.ficheSport('Tennis de table').source.includes('Tennis de Table'), true);
-  assert.equal(L.ficheSport('Tennis').partielle, true);
+  assert.ok(L.ficheSport('Tennis').source.includes('ITF'));   // le tennis ne prend pas la fiche du tennis de table
+  assert.equal(L.ficheSport('Tennis').partielle, undefined);
+  // Prochain tirage : niveau 1 à 0 XP → niveau 5 dans 1 000 XP ; pile au niveau 5 → niveau 10 dans 3 500 XP.
+  assert.deepEqual(L.prochainTirage({ niveau: L.niveau(0), total: 0 }), { niveau: 5, xp: 1000 });
+  assert.deepEqual(L.prochainTirage({ niveau: L.niveau(1000), total: 1000 }), { niveau: 10, xp: 3500 });
   assert.equal(L.ficheSport('Sabre laser').modes, true);
   assert.equal(L.ficheSport('Karaté').partielle, undefined);
   assert.ok(L.ficheSport('Boxe').source.includes('boxe'));

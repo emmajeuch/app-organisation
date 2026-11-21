@@ -1,6 +1,6 @@
 // Fonctions pures de l'app (sans page) : dates, créneaux, sauvegarde. Vérifiées par test.mjs.
 
-export const VERSION = '2.0.4';
+export const VERSION = '2.0.5';
 export const uid = () => Math.random().toString(36).slice(2, 10);
 const pad = n => String(n).padStart(2, '0');
 
@@ -835,6 +835,11 @@ export const SUCCES = [
   ['10 entraînements du club', 'entrainements', 10], ['Première compétition', 'competitions', 1], ['Un record battu', 'records', 1],
 ];
 export const succesObtenus = st => SUCCES.filter(([, k, c]) => st[k] >= c).map(([nom]) => nom);
+// 2.0.4 (avis d'un testeur) : le prochain niveau à tirage et l'XP qu'il manque pour y arriver, montrés dans Profil.
+export function prochainTirage(st) {
+  const n = (Math.floor(st.niveau.n / 5) + 1) * 5;
+  return { niveau: n, xp: seuil(n) - st.total };
+}
 // V1.10.21 : un tirage tous les 5 niveaux (5, 10, 15…), plus le tirage de bienvenue tant que la collection est vide.
 // Les tirages déjà ouverts pour d'autres raisons (tâches, semaines, succès, séances) restent dans la collection.
 export function droitsTirage(data, st) {
@@ -1221,7 +1226,15 @@ export const FICHES_SPORT = [
     ['Bloc', 'Un départ marqué, une prise de zone et un Top. Top : les deux mains stables sur la prise finale, ou rétabli sur le haut du bloc. Zone : la prise de zone tenue d’une main. On compte les essais qu’il a fallu pour chacun.'],
     ['Vitesse', 'Le résultat est le temps de montée : on arrête le chrono en tapant le plot d’arrivée. Sinon, c’est une chute ou un faux départ.'],
     ['Classement', 'Le calcul des points et des classements est dans les règles des compétitions de la fédération, pas dans les règles du jeu.']] },
-  { re: /^tennis\b/, partielle: true, source: 'Fédération française de tennis, règles du jeu 2026', lignes: [['Filet', '0,914 m au centre, 1,07 m aux poteaux.'], ['Terrain', 'Lignes de service à 6,40 m du filet.']] },
+  { re: /^tennis\b/, source: 'Fédération internationale de tennis (ITF), Règles du tennis 2026 en français, que la FFT applique ; dimensions : FFT, règles du jeu 2026', lignes: [
+    ['Jeu', '0, 15, 30, 40, jeu (les points du serveur d’abord). À 40 partout, « égalité » : il faut gagner deux points de suite, le premier donne « avantage ».'],
+    ['Manche', 'Six jeux avec deux d’avance. À 6-6, selon l’épreuve, on continue jusqu’à deux jeux d’écart ou on joue un jeu décisif.'],
+    ['Jeu décisif', 'Points comptés 1, 2, 3… : sept points avec deux d’avance. Le serveur sert le premier point, puis chacun sert deux points à tour de rôle ; changement de côté tous les six points.'],
+    ['Partie', 'Au meilleur des 3 manches (2 gagnantes) ou des 5 (3 gagnantes).'],
+    ['Service', 'Deux balles : deux fautes de suite font perdre le point. Une balle qui touche le filet puis tombe dans le bon carré est à remettre (let).'],
+    ['Côtés', 'On change après le 1er jeu, puis à chaque nombre impair de jeux dans la manche.'],
+    ['Variantes', 'Prévues par le règlement, annoncées avant l’épreuve : point décisif à égalité (« no-ad »), manches courtes en 4 jeux, jeu décisif en 10 points à la place de la dernière manche.'],
+    ['Filet', '0,914 m au centre, 1,07 m aux poteaux.'], ['Terrain', 'Lignes de service à 6,40 m du filet.']] },
 ];
 export const ficheSport = nom => FICHES_SPORT.find(f => f.re.test(sansAccent(nom))) || null;
 // Les entraînements validés dans l'emploi du temps : créneaux Sport faits (pas les compétitions), entre deux dates exclues.

@@ -1524,7 +1524,7 @@ function vueProfil() {
       <div class="kv"><span class="num big">Niveau ${nv.n}</span><span class="num">${st.total - nv.de} / ${nv.a - nv.de} XP</span></div>
       <div class="xp"><div style="width:${(st.total - nv.de) / (nv.a - nv.de) * 100}%">${sources.map(([k, v]) => `<i style="--c:${SOURCES[k][1]};flex:${v}"></i>`).join('')}</div></div>
       ${sources.length ? `<div class="xp-leg">${sources.map(([k, v]) => `<span><i style="--c:${SOURCES[k][1]}"></i>${SOURCES[k][0]} ${v}</span>`).join('')}</div>` : '<p class="muted">L’XP se gagne en validant tes créneaux, tes tâches, tes séances, tes habitudes et tes objectifs.</p>'}
-      <small class="muted">${st.total} XP au total</small></div>
+      <small class="muted">${st.total} XP au total · prochain tirage au niveau ${L.prochainTirage(st).niveau}, dans ${L.prochainTirage(st).xp} XP</small></div>
     <div class="card serie" data-module="motivation">${flamme(st.valides.has(aujIso()))}<div><span class="num">${st.serie} jour${st.serie > 1 ? 's' : ''}</span><br><small class="muted">de journées validées · record ${st.record}</small></div><div class="jokers"><b>${st.jokers}</b>joker${st.jokers > 1 ? 's' : ''}</div></div>
     ${aBilan ? `<button class="card kv appel" data-act="bilan" data-cle="${aBilan}"><span class="txt"><b>C’est l’heure du bilan</b><small>Objectifs, tâches à reporter, heures de la semaine</small></span><span class="pill">+${L.XP.bilan} XP</span></button>` : ''}
     ${compagnonHtml(st)}
