@@ -1206,12 +1206,21 @@ export const FICHES_SPORT = [
     ['Points', 'Seulement ippon et waza-ari. Ippon : l’adversaire tombe sur le dos, avec vitesse, force et contrôle ; waza-ari si ces critères ne sont pas tous réunis.'],
     ['Pénalités', 'Shido ; trois shido font perdre le combat.'], ['Égalité', 'Prolongation au golden score.'],
     ['Jeunes', 'Adaptations françaises : par exemple, chez les poussins, randori arbitré de 1 min 30 et 1 min au sol ; étranglements interdits chez les vétérans de 60 ans et plus.']] },
-  { re: /natation/, partielle: true, source: 'Fédération française de natation, règlement natation course (édition de mai 2026)', lignes: [
+  { re: /natation/, source: 'Fédération française de natation, règlement natation course (édition du 18 mai 2026, d’après World Aquatics)', lignes: [
     ['Épreuves', 'Nage libre de 50 à 1 500 m ; brasse et papillon de 50 à 200 m ; 4 nages 200 et 400 m ; relais nage libre et 4 nages.'],
-    ['Départ', 'À l’ordre « à vos marques », les nageurs prennent position et restent immobiles jusqu’au signal.']] },
-  { re: /escalade/, partielle: true, source: 'Fédération française de la montagne et de l’escalade, règles du jeu 2026-2027', lignes: [
-    ['Disciplines', 'Bloc, difficulté et vitesse.'], ['Bloc', 'Un départ marqué, une prise de zone et un Top.'],
-    ['Tentatives', 'Au plus 6 minutes d’escalade par tentative ; en vitesse, une seule tentative par voie et par tour.']] },
+    ['Départ', 'Plongeon depuis le plot ; en dos et en relais 4 nages, départ dans l’eau. À « à vos marques », on se met en position et on ne bouge plus jusqu’au signal ; partir avant peut valoir la disqualification.'],
+    ['Nage libre', 'Style au choix. On touche le mur à chaque longueur ; pas plus de 15 m sous l’eau après le départ et chaque virage.'],
+    ['Dos', 'Sur le dos toute la course, sauf pendant le virage ; 15 m sous l’eau au plus ; on arrive sur le dos.'],
+    ['Brasse', 'À chaque cycle, un mouvement de bras puis un de jambes, bras et jambes ensemble ; un seul coup de pied de papillon après le départ et chaque virage ; virage et arrivée en touchant le mur des deux mains à la fois.'],
+    ['Papillon', 'Les deux bras reviennent ensemble par-dessus l’eau ; jambes ensemble, pas de jambes de brasse ; 15 m sous l’eau au plus ; toucher à deux mains.'],
+    ['4 nages', 'En individuel : papillon, dos, brasse, nage libre. En relais : dos, brasse, papillon, nage libre, un quart de la distance chacun.'],
+    ['Relais', 'Quatre nageurs (deux filles et deux garçons en relais mixte) ; le suivant garde les pieds sur le plot jusqu’à ce que le précédent touche le mur.']] },
+  { re: /escalade/, source: 'Fédération française de la montagne et de l’escalade, règles du jeu 2026-2027', lignes: [
+    ['Disciplines', 'Bloc, difficulté et vitesse.'],
+    ['Difficulté', 'Une seule tentative par voie et par tour, 6 minutes au plus. Résultat : le Top, sinon la dernière prise tenue, avec un « + » si le grimpeur s’en est servi pour avancer.'],
+    ['Bloc', 'Un départ marqué, une prise de zone et un Top. Top : les deux mains stables sur la prise finale, ou rétabli sur le haut du bloc. Zone : la prise de zone tenue d’une main. On compte les essais qu’il a fallu pour chacun.'],
+    ['Vitesse', 'Le résultat est le temps de montée : on arrête le chrono en tapant le plot d’arrivée. Sinon, c’est une chute ou un faux départ.'],
+    ['Classement', 'Le calcul des points et des classements est dans les règles des compétitions de la fédération, pas dans les règles du jeu.']] },
   { re: /^tennis\b/, partielle: true, source: 'Fédération française de tennis, règles du jeu 2026', lignes: [['Filet', '0,914 m au centre, 1,07 m aux poteaux.'], ['Terrain', 'Lignes de service à 6,40 m du filet.']] },
 ];
 export const ficheSport = nom => FICHES_SPORT.find(f => f.re.test(sansAccent(nom))) || null;
